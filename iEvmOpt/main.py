@@ -8,6 +8,6 @@ if __name__ == '__main__':
 
     builder = CfgBuilder(sys.argv[1])
     cfg = builder.getCfg()
-    # cfg.output()
-
-
+    tarjanAlg = TarjanAlgorithm(cfg.blocks.keys(), cfg.edges)
+    tarjanAlg.tarjan(cfg.initBlockId)
+    print(tarjanAlg.sccList)
