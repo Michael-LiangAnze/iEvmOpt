@@ -10,9 +10,9 @@ class Cfg:
         self.exitBlockId = 0
 
     def addBasicBlock(self, block: BasicBlock):
-        self.blocks[int(block.id)] = block
+        self.blocks[int(block.offset)] = block
 
-    def addEdge(self,edge:dict):
+    def addEdge(self, edge: dict):
         _from = int(edge["from"])
         self.edges[_from] = []
         for _to in edge["to"]:

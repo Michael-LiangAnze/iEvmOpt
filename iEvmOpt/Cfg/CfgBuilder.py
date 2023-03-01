@@ -8,13 +8,17 @@ from Cfg.Cfg import Cfg
 
 class CfgBuilder:
 
-    def __init__(self, _srcPath: str):
+    def __init__(self, _srcPath: str, isParseBefore:bool=False):
+        """ 使用EtherSolve工具分析字节码文件，得到对应的json、html、gv文件
+            并通过json文件构造cfg
+        :param isParseBefore:之前是否已经得到过了输出文件，若为False则不再对字节码使用EtherSolve分析，而是直接读取对应的输出文件
+        """
         self.srcPath = _srcPath  # 原bin文件的路径
         self.srcName = os.path.basename(_srcPath).split(".")[0]  # 原bin文件的文件名
         self.outputPath = "Cfg/CfgOutput/"  # 输出的目录名
         self.cfg = Cfg()
-
-        # self.__etherSolve()
+        if not isParseBefore:
+            self.__etherSolve()
         self.__buildCfg()
 
     def __etherSolve(self):

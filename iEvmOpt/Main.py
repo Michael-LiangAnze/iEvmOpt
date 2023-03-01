@@ -8,6 +8,9 @@ if __name__ == '__main__':
 
     builder = CfgBuilder(sys.argv[1])
     cfg = builder.getCfg()
-    tarjanAlg = TarjanAlgorithm(cfg.blocks.keys(), cfg.edges)
-    tarjanAlg.tarjan(cfg.initBlockId)
-    print(tarjanAlg.sccList)
+
+    # 测试计算有向环
+    # tarjanAlg = TarjanAlgorithm(cfg.blocks.keys(), cfg.edges)
+    # tarjanAlg.tarjan(cfg.initBlockId)
+    # print(tarjanAlg.sccList)
+
