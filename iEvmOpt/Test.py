@@ -14,45 +14,10 @@ if __name__ == '__main__':
     s = SymbolicExecutor()
     s.setBeginBlock(cfg.blocks[0])
 
-    s.execNextOpCode()
-    s.printState(False)
-    s.execNextOpCode()
-    s.printState(False)
-    # s.execNextOpCode()
-    # s.printState(False)
-    #
-    # s.execNextOpCode()
-    # s.printState(False)
-    # s.execNextOpCode()
-    # s.printState(False)
-    # s.execNextOpCode()
-    # s.printState(False)
-    #
-    # s.execNextOpCode()
-    # s.printState(False)
-    # s.execNextOpCode()
-    # s.printState(False)
-    # s.execNextOpCode()
-    # s.printState(False)
-    #
-    # s.execNextOpCode()
-    # s.printState(False)
-    # s.execNextOpCode()
-    # s.printState(False)
-    # s.execNextOpCode()
-    # s.printState(False)
-    #
-    # s.execNextOpCode()
-    # s.printState(False)
-    # s.execNextOpCode()
-    # s.printState(False)
-    # s.execNextOpCode()
-    # s.printState(False)
-    #
-    # s.execNextOpCode()
-    # s.printState(False)
-    # s.execNextOpCode()
-    # s.printState(False)
+    for i in range(2):
+        cond = s.execNextOpCode()
+        s.printState(False)
+
 
 
 

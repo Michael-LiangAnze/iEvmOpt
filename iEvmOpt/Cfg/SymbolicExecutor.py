@@ -32,12 +32,15 @@ class SymbolicExecutor:
 
     def execNextOpCode(self):
         """ 从当前PC开始，执行下一条指令
-        规定执行完当前指令之后，PC指向下一条指令的第一个字节
+        为了方便调试，暂时规定执行完当前指令之后，PC指向下一条指令的第一个字节
+        后续实际使用时，规定执行完当前指令之后，PC指向当前指令的最后一个字节
+        返回值为jumpi满足时的条件
         """
         assert self.curBlock.offset <= self.PC <= self.curBlock.offset + self.curBlock.length
         index = self.PC - self.curBlock.offset
         assert index < len(self.curBlock.bytecode)
         opCode = self.curBlock.bytecode[index]
+        jumpiCond = None  # 跳转条件,为真时进行跳转
         '''
         每个函数的执行思路：需要先判断操作数是否为bool表达式，如果是的话就用If(exp,a,b)来代替
         例子：
@@ -77,26 +80,54 @@ class SymbolicExecutor:
                 self.__execMulMod()
             case 0x10:
                 self.__execLT()
+            case 0x14:
+                self.__execEq()
+            case 0x15:
+                self.__execIsZero()
             case 0x16:
                 self.__execAnd()
+            case 0x34:
+                self.__execCallValue()
             case 0x35:
                 self.__execCalldataLoad()
             case 0x36:
                 self.__execCallDataSize()
+            case 0x50:
+                self.__execPop()
+            case 0x51:
+                self.__execMLoad()
             case 0x52:
                 self.__execMStore()
             case 0x53:
                 self.__execMStore8()
+            case 0x54:
+                self.__execSLoad()
+            case 0x55:
+                self.__execSStore()
+            case 0x56:
+                self.__execJump()
+            case 0x57:
+                jumpiCond = self.__execJumpi()
+            case 0x5b:
+                self.__execJumpDest()
             case i if 0x60 <= opCode <= 0x7f:  # push
                 self.__execPush(opCode)
             case i if 0x80 <= opCode <= 0x8f:  # dup
                 self.__execDup(opCode)
             case i if 0x90 <= opCode <= 0x9f:  # swap
                 self.__execSwap(opCode)
+            case 0xf3:
+                self.__execReturn()
+            case 0xfd:
+                self.__execRevert()
+            case 0xfe:
+                self.__execInvalid()
+
             case _:  # Pattern not attempted
                 err = 'Opcode {} is not found!'.format(hex(opCode))
                 assert 0, err
         self.PC += 1
+        return jumpiCond
 
     def __execAdd(self):  # 0x01
         a = self.stack.pop()
@@ -178,11 +209,49 @@ class SymbolicExecutor:
         res = simplify(If(c == 0, BitVecVal(0, 512), URem(res, c)))  # 再计算(a*b) % c
         self.stack.push(simplify(Extract(255, 0, res)))  # 先做截断再push
 
+    def __execExp(self):  # 0x0a
+        assert 0
+
+    def __execSignExtend(self):  # 0x0b
+        assert 0
+
     def __execLT(self):  # 0x10
         a = self.stack.pop()
         b = self.stack.pop()
         # 就算a,b是具体的数值，存储的也是一个bool表达式(z3.z3.BoolRef)，而不是基本变量True
         self.stack.push(simplify(ULT(a, b)))
+
+    def __execGt(self):  # 0x11
+        assert 0
+
+    def __execSlt(self):  # 0x12
+        assert 0
+
+    def __execSgt(self):  # 0x13
+        assert 0
+
+    def __execEq(self):  # 0x14
+        a = self.stack.pop()
+        b = self.stack.pop()
+        if (is_bool(a) and is_bool(b)) or (is_bv(a) and is_bv(b)):
+            self.stack.push(simplify(a == b))
+        else:
+            if is_bool(a):
+                a = If(a, BitVecVal(1, 256), BitVecVal(0, 256))
+            elif is_bool(b):
+                b = If(b, BitVecVal(1, 256), BitVecVal(0, 256))
+            else:
+                assert 0
+            self.stack.push(simplify(a == b))
+
+    def __execIsZero(self):  # 0x15
+        a = self.stack.pop()
+        if is_bool(a):
+            self.stack.push(simplify(Not(a)))
+        elif is_bv(a):
+            self.stack.push(simplify(a == 0))
+        else:
+            assert 0
 
     def __execAnd(self):  # 0x16
         a = self.stack.pop()
@@ -194,9 +263,54 @@ class SymbolicExecutor:
             self.stack.push(simplify(And(a, b)))
 
         def __execCalldataLoad(self):  # 0x35
-            top = self.stack.pop()
-            tmp = BitVec("CALLDATALOAD_" + top.__str__(), 256)
+            addr = self.stack.pop()
+            tmp = BitVec("CALLDATALOAD_" + addr.__str__(), 256)
             self.stack.push(tmp)
+
+    def __execOr(self):  # 0x17
+        assert 0
+
+    def __execXor(self):  # 0x18
+        assert 0
+
+    def __execNot(self):  # 0x19
+        assert 0
+
+    def __execByte(self):  # 0x1a
+        assert 0
+
+    def __execShl(self):  # 0x1b
+        assert 0
+
+    def __execShr(self):  # 0x1c
+        assert 0
+
+    def __execSar(self):  # 0x1d
+        assert 0
+
+    def __execSha3(self):  # 0x20
+        assert 0
+
+    def __execAddress(self):  # 0x30
+        assert 0
+
+    def __execBalance(self):  # 0x31
+        assert 0
+
+    def __execOrigin(self):  # 0x32
+        assert 0
+
+    def __execCaller(self):  # 0x33
+        assert 0
+
+    def __execCallValue(self):  # 0x34
+        tmp = BitVec("CALLVALUE", 256)
+        self.stack.push(tmp)
+
+    def __execCallDataLoad(self):  # 0x35
+        a = self.stack.pop()
+        tmp = BitVec("CALLDATALOAD_" + a.__str__(), 256)
+        self.stack.push(tmp)
 
     def __execCallDataSize(self):  # 0x36
         tmp = BitVec("CALLDATASIZE", 256)
@@ -205,6 +319,69 @@ class SymbolicExecutor:
     def __execCallDataCopy(self):  # 0x37
         for i in range(3):
             self.stack.pop()
+
+    def __execCodesize(self):  # 0x38
+        assert 0
+
+    def __execCodecopy(self):  # 0x39
+        assert 0
+
+    def __execGasPrice(self):  # 0x3a
+        assert 0
+
+    def __execExtCodeSize(self):  # 0x3b
+        assert 0
+
+    def __execExtCodeCopy(self):  # 0x3c
+        assert 0
+
+    def __execReturnDataSize(self):  # 0x3d
+        assert 0
+
+    def __execReturnDataCopy(self):  # 0x3e
+        assert 0
+
+    def __execExtCodeHash(self):  # 0x3f
+        assert 0
+
+    def __execBlockHash(self):  # 0x40
+        assert 0
+
+    def __execCoinBase(self):  # 0x41
+        assert 0
+
+    def __execTimeStamp(self):  # 0x42
+        assert 0
+
+    def __execNumber(self):  # 0x43
+        assert 0
+
+    def __execPrevrandao(self):  # 0x44
+        assert 0
+
+    def __execGasLimit(self):  # 0x45
+        assert 0
+
+    def __execChainId(self):  # 0x46
+        assert 0
+
+    def __execSelfBalance(self):  # 0x47
+        assert 0
+
+    def __execBaseFee(self):  # 0x48
+        assert 0
+
+    def __execPop(self):  # 0x50
+        self.stack.pop()
+
+    def __execMLoad(self):  # 0x51
+        startAddr = self.stack.pop()
+        endAddr = simplify(startAddr + 32)
+        addr = startAddr.__str__() + '$' + endAddr.__str__()
+        if addr in self.memory.keys():
+            self.stack.push(self.memory[addr])
+        else:
+            self.stack.push(BitVec("MLOAD_" + addr, 256))
 
     def __execMStore(self):  # 0x52
         # 将存储地址写为 起始地址$终止地址
@@ -226,6 +403,45 @@ class SymbolicExecutor:
         temp = BitVecVal(0xff, 256)
         self.memory[addr] = simplify(data & temp)
 
+    def __execSLoad(self):  # 0x54
+        addr = self.stack.pop()
+        addr = addr.__str__()
+        if addr in self.storage.keys():
+            self.stack.push(self.storage[addr])
+        else:
+            tmp = BitVec("SLOAD_" + addr, 256)
+            self.stack.push(tmp)
+
+    def __execSStore(self):  # 0x55
+        addr = self.stack.pop()
+        addr = addr.__str__()
+        data = self.stack.pop()
+        self.storage[addr] = data
+
+    def __execJump(self):  # 0x56
+        self.stack.pop()
+
+    def __execJumpi(self):  # 0x57
+        self.stack.pop()
+        cond = self.stack.pop()
+        if is_bv(cond):
+            return simplify(cond != 0)
+        else:
+            assert is_bool(cond)
+            return cond
+
+    def __execPc(self):  # 0x58
+        assert 0
+
+    def __execMSize(self):  # 0x59
+        assert 0
+
+    def __execGas(self):  # 0x5a
+        assert 0
+
+    def __execJumpDest(self):  # 0x5b
+        pass
+
     def __execPush(self, opCode):  # 0x60 <= opCode <= 0x7f
         byteNum = opCode - 0x5f  # push的字节数
         num = 0
@@ -245,6 +461,42 @@ class SymbolicExecutor:
     def __execSwap(self, opCode):  # 0x90 <= opCode <= 0x9f
         pos = opCode - 0x90 + 1
         self.stack.swap(0, pos)
+
+    def __execLog(self, opCode):  # 0xa0 <= opCode <= 0xa4
+        assert 0
+
+    def __execCreate(self):  # 0xf0
+        assert 0
+
+    def __execCall(self):  # 0xf1
+        assert 0
+
+    def __execCallCode(self):  # 0xf2
+        assert 0
+
+    def __execReturn(self):  # 0xf3
+        # 不分析合约间的跳转关系
+        self.stack.pop()
+        self.stack.pop()
+
+    def __execDelegateCall(self):  # 0xf4
+        assert 0
+
+    def __execCreate2(self):  # 0xf5
+        assert 0
+
+    def __execStaticCall(self):  # 0xfa
+        assert 0
+
+    def __execRevert(self):  # 0xfd
+        self.stack.pop()
+        self.stack.pop()
+
+    def __execInvalid(self):  # 0xfe
+        pass
+
+    def __execSelfDestruct(self):  # 0xff
+        assert 0
 
 
 class Stack:
