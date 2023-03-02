@@ -13,11 +13,47 @@ if __name__ == '__main__':
     # 测试符号执行
     s = SymbolicExecutor()
     s.setBeginBlock(cfg.blocks[0])
+
     s.execNextOpCode()
     s.printState(False)
     s.execNextOpCode()
     s.printState(False)
-    s.execNextOpCode()
-    s.printState(False)
-    s.execNextOpCode()
-    s.printState(False)
+    # s.execNextOpCode()
+    # s.printState(False)
+    #
+    # s.execNextOpCode()
+    # s.printState(False)
+    # s.execNextOpCode()
+    # s.printState(False)
+    # s.execNextOpCode()
+    # s.printState(False)
+    #
+    # s.execNextOpCode()
+    # s.printState(False)
+    # s.execNextOpCode()
+    # s.printState(False)
+    # s.execNextOpCode()
+    # s.printState(False)
+    #
+    # s.execNextOpCode()
+    # s.printState(False)
+    # s.execNextOpCode()
+    # s.printState(False)
+    # s.execNextOpCode()
+    # s.printState(False)
+    #
+    # s.execNextOpCode()
+    # s.printState(False)
+    # s.execNextOpCode()
+    # s.printState(False)
+    # s.execNextOpCode()
+    # s.printState(False)
+    #
+    # s.execNextOpCode()
+    # s.printState(False)
+    # s.execNextOpCode()
+    # s.printState(False)
+
+
+
+
