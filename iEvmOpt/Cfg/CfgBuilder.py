@@ -8,7 +8,7 @@ from Cfg.Cfg import Cfg
 
 class CfgBuilder:
 
-    def __init__(self, _srcPath: str, isParseBefore:bool=False):
+    def __init__(self, _srcPath: str, isParseBefore: bool = False):
         """ 使用EtherSolve工具分析字节码文件，得到对应的json、html、gv文件
             并通过json文件构造cfg
         :param isParseBefore:之前是否已经得到过了输出文件，若为False则不再对字节码使用EtherSolve分析，而是直接读取对应的输出文件
@@ -43,17 +43,30 @@ class CfgBuilder:
         with open(self.outputPath + self.srcName + "_cfg.json ", 'r', encoding='UTF-8') as f:
             json_dict = json.load(f)
         for b in json_dict["runtimeCfg"]["nodes"]:  # 读取基本块
-            # print(node)
             block = BasicBlock(b)
             self.cfg.addBasicBlock(block)
         for e in json_dict["runtimeCfg"]["successors"]:  # 读取边
             self.cfg.addEdge(e)
 
-        #获取起始基本块和终止基本块
+        # 获取起始基本块和终止基本块
         self.cfg.initBlockId = min(self.cfg.blocks.keys())
         assert (self.cfg.initBlockId == 0)
         self.cfg.exitBlockId = max(self.cfg.blocks.keys())
         assert (len(self.cfg.edges[self.cfg.exitBlockId]) == 0)
+
+        # 添加jumpi目标块的信息
+        for offset, b in self.cfg.blocks.items():
+            # 可能有多条，故不记录
+            # if b.blockType == "unconditional":
+            if b.blockType == "conditional":
+                assert len(self.cfg.edges[offset]) == 2
+                fallBlockOff = b.offset + b.length
+                dests = self.cfg.edges[offset]
+                jumpiTrueOff = dests[0] if dests[0] != fallBlockOff else dests[1]
+                b.jumpiDestBlockOffset[True] = jumpiTrueOff
+                b.jumpiDestBlockOffset[False] = fallBlockOff
+                # b.printBlockInfo()
+
 
     def getCfg(self):
         return self.cfg
