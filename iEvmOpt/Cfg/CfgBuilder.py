@@ -2,8 +2,11 @@ import os
 import subprocess
 import json
 
+import graphviz
+
 from Cfg.BasicBlock import BasicBlock
 from Cfg.Cfg import Cfg
+from graphviz import Digraph
 
 
 class CfgBuilder:
@@ -20,6 +23,8 @@ class CfgBuilder:
         if not isParseBefore:
             self.__etherSolve()
         self.__buildCfg()
+        if not isParseBefore:
+            self.__genDotGraph()
 
     def __etherSolve(self):
         cmd = "java -jar ./Cfg/EtherSolve.jar -c -H -o " + self.outputPath + self.srcName + "_cfg.html " + self.srcPath
@@ -34,10 +39,11 @@ class CfgBuilder:
         p = subprocess.Popen(cmd)
         if p.wait() == 0:
             pass
-        cmd = "dot " + self.outputPath + self.srcName + "_cfg.gv -Tpng -o " + self.outputPath + self.srcName + ".png"
-        p = subprocess.Popen(cmd)
-        if p.wait() == 0:
-            pass
+
+        with open(self.outputPath + self.srcName + "_cfg.gv ") as f:
+            g = f.read()  # 读取已经生成的gv文件
+        dot = graphviz.Source(g)
+        dot.render(outfile=self.outputPath + self.srcName + "_cfg.png", format='png')
 
     def __buildCfg(self):
         with open(self.outputPath + self.srcName + "_cfg.json ", 'r', encoding='UTF-8') as f:
@@ -67,6 +73,16 @@ class CfgBuilder:
                 b.jumpiDestBlockOffset[False] = fallBlockOff
                 # b.printBlockInfo()
 
+    def __genDotGraph(self):
+        # 根据生成的cfg生成点图
+        dot = Digraph()
+        # 添加点和边
+        for i in self.cfg.blocks.keys():
+            dot.node(str(i), str(i))
+        for _from in self.cfg.edges:
+            for _to in self.cfg.edges[_from]:
+                dot.edge(str(_from), str(_to))
+        dot.render(outfile=self.outputPath + self.srcName + "_cfg_graph.png", format='png')
 
     def getCfg(self):
         return self.cfg

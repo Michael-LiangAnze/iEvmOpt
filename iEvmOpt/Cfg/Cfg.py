@@ -5,7 +5,7 @@ class Cfg:
 
     def __init__(self):
         self.edges = {}  # 存储出边表，格式为 from:[to1,to2...]
-        self.blocks = {}  # 存储基本块，格式为 id:BasicBlock
+        self.blocks = {}  # 存储基本块，格式为 起始offset:BasicBlock
         self.initBlockId = 0
         self.exitBlockId = 0
 
