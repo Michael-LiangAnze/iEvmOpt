@@ -91,7 +91,7 @@
         "length": 12,
         "type": "dispatcher",
         "stackBalance": 0,
-        "bytecodeHex": "606060405260043610604957",
+        "bytecodeHex": "6001600201",
         "parsedOpcodes": "0: PUSH1 0x60\n2: PUSH1 0x40\n4: MSTORE\n5: PUSH1 0x04\n7: CALLDATASIZE\n8: LT\n9: PUSH1 0x49\n11: JUMPI"
       },
       {

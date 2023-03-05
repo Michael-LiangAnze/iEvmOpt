@@ -1,4 +1,5 @@
-# https://www.luogu.com.cn/problem/solution/P5180
+# 代码思路来源：https://www.luogu.com.cn/problem/solution/P5180
+# 输入与输出：使用Init方法输入，然后使用getIdom获取直接支配节点的映射关系
 
 class side:
     def __init__(self):
