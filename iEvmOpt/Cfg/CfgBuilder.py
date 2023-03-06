@@ -6,7 +6,7 @@ import graphviz
 
 from Cfg.BasicBlock import BasicBlock
 from Cfg.Cfg import Cfg
-from graphviz import Digraph
+from Utils import DotGraph
 
 
 class CfgBuilder:
@@ -24,7 +24,8 @@ class CfgBuilder:
             self.__etherSolve()
         self.__buildCfg()
         if not isParseBefore:
-            self.__genDotGraph()
+            dg = DotGraph(self.cfg.edges, self.cfg.blocks.keys(), self.outputPath, self.srcName)
+            dg.genDotGraph()
 
     def __etherSolve(self):
         cmd = "java -jar ./Cfg/EtherSolve.jar -c -H -o " + self.outputPath + self.srcName + "_cfg.html " + self.srcPath
@@ -72,17 +73,6 @@ class CfgBuilder:
                 b.jumpiDestBlockOffset[True] = jumpiTrueOff
                 b.jumpiDestBlockOffset[False] = fallBlockOff
                 # b.printBlockInfo()
-
-    def __genDotGraph(self):
-        # 根据生成的cfg生成点图
-        dot = Digraph()
-        # 添加点和边
-        for i in self.cfg.blocks.keys():
-            dot.node(str(i), str(i))
-        for _from in self.cfg.edges:
-            for _to in self.cfg.edges[_from]:
-                dot.edge(str(_from), str(_to))
-        dot.render(outfile=self.outputPath + self.srcName + "_cfg_graph.png", format='png')
 
     def getCfg(self):
         return self.cfg
