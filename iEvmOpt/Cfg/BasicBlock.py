@@ -16,15 +16,15 @@ class BasicBlock:
         self.instrNum = len(self.instrs)  # 指令的数量
         self.isInvalid = False  # 是否为invalid块
 
-        checher = self.instrs[self.instrNum - 1].split(' ')[1]
-        match checher:
+        checker = self.instrs[self.instrNum - 1].split(' ')[1]
+        match checker:
             case "JUMP":
                 self.blockType = "unconditional"
             case "JUMPI":
                 self.blockType = "conditional"
             case "INVALID" | "REVERT" | "RETURN" | "STOP":  # terminal
                 self.blockType = "terminal"
-                if checher == "INVALID":
+                if checker == "INVALID":
                     self.isInvalid = True
             case _:
                 self.blockType = "fall"

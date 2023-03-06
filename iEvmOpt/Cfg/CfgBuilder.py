@@ -24,8 +24,8 @@ class CfgBuilder:
             self.__etherSolve()
         self.__buildCfg()
         if not isParseBefore:
-            dg = DotGraph(self.cfg.edges, self.cfg.blocks.keys(), self.outputPath, self.srcName)
-            dg.genDotGraph()
+            dg = DotGraph(self.cfg.edges, self.cfg.blocks.keys())
+            dg.genDotGraph(self.outputPath, self.srcName)
 
     def __etherSolve(self):
         cmd = "java -jar ./Cfg/EtherSolve.jar -c -H -o " + self.outputPath + self.srcName + "_cfg.html " + self.srcPath
