@@ -57,9 +57,9 @@ class CfgBuilder:
 
         # 获取起始基本块和终止基本块
         self.cfg.initBlockId = min(self.cfg.blocks.keys())
-        assert (self.cfg.initBlockId == 0)
+        assert self.cfg.initBlockId == 0
         self.cfg.exitBlockId = max(self.cfg.blocks.keys())
-        assert (len(self.cfg.edges[self.cfg.exitBlockId]) == 0)
+        assert len(self.cfg.edges[self.cfg.exitBlockId]) == 0
 
         # 添加jumpi目标块的信息
         for offset, b in self.cfg.blocks.items():
