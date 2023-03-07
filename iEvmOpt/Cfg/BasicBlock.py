@@ -15,6 +15,10 @@ class BasicBlock:
         self.blockType = ""  # 论文中提及的类型：unconditional、conditional、terminal、fall
         self.instrNum = len(self.instrs)  # 指令的数量
         self.isInvalid = False  # 是否为invalid块
+        # 是否为函数起始节点。有两种判断方法：第一种是直接看dispatcher块的出边，如果有这样一条边：dispatcher->common，则将common
+        # 标记为函数起始节点；第二种是看这样的边：common-(unconditional jump)->common，则将后一个common标记为函数起始节点
+        # 其实这一个标记并不是严谨的，只是为了方便函数调用链的构建
+        self.isFuncBegin = False
 
         checker = self.instrs[self.instrNum - 1].split(' ')[1]
         match checker:
@@ -30,7 +34,8 @@ class BasicBlock:
                 self.blockType = "fall"
 
         # 块的辅助信息
-        self.jumpiDestBlockOffset = {}  # 记录jumpi的块条件为True的跳转目标节点的offset，格式为 True:offset,False:offset
+        self.jumpiDest = {}  # 记录jumpi的块条件为True的跳转目标节点的offset，格式为 True:offset,False:offset
+        self.jumpDest = []  # 记录jump的块的跳转目标节点的offset，格式为 [offset1,offset2...]
 
     def printBlockInfo(self):
         """ 打印基本块的信息
@@ -44,4 +49,7 @@ class BasicBlock:
         print("Block'instrutions:{}".format(self.instrs))
         print("Block'instruction number:{}".format(self.instrNum))
         print("Block is INVALID:{}".format(self.isInvalid))
-        print("Block jumpiDestBlockOffset:{}\n".format(self.jumpiDestBlockOffset))
+        print("Block is isFuncBegin:{}".format(self.isFuncBegin))
+        print("Block jumpiDest offset:{}".format(self.jumpiDest))
+        print("Block jumpDest offset:{}\n".format(self.jumpDest))
+

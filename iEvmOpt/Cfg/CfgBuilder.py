@@ -61,18 +61,30 @@ class CfgBuilder:
         self.cfg.exitBlockId = max(self.cfg.blocks.keys())
         assert len(self.cfg.edges[self.cfg.exitBlockId]) == 0
 
-        # 添加jumpi目标块的信息
+        # 添加unconditional、conditional跳转目标块的信息
         for offset, b in self.cfg.blocks.items():
-            # 可能有多条，故不记录
-            # if b.blockType == "unconditional":
-            if b.blockType == "conditional":
-                assert len(self.cfg.edges[offset]) == 2
-                fallBlockOff = b.offset + b.length
-                dests = self.cfg.edges[offset]
-                jumpiTrueOff = dests[0] if dests[0] != fallBlockOff else dests[1]
-                b.jumpiDestBlockOffset[True] = jumpiTrueOff
-                b.jumpiDestBlockOffset[False] = fallBlockOff
+            if b.blockType == "unconditional":
+                b.jumpDest = list(self.cfg.edges[offset])
                 # b.printBlockInfo()
+            elif b.blockType == "conditional":
+                fallBlockOff = b.offset + b.length
+                dests = list(self.cfg.edges[offset])
+                jumpiTrueOff = dests[0] if dests[0] != fallBlockOff else dests[1]
+                b.jumpiDest[True] = jumpiTrueOff
+                b.jumpiDest[False] = fallBlockOff
+                # b.printBlockInfo()
+
+        # 添加函数头信息
+        # for offset, node in self.cfg.blocks.items():
+        #     if node.cfgType == "dispatcher":  # dispatcher->common
+        #         for out in self.cfg.edges[offset]:
+        #             if self.cfg.blocks[out].cfgType == "common":
+        #                 self.cfg.blocks[out].isFuncBegin = True
+        #     elif node.cfgType == "common" and node.blockType == "unconditional":  # common-(unconditional)->common
+        #         for out in self.cfg.edges[offset]:
+        #             if self.cfg.blocks[out].cfgType == "common":
+        #                 self.cfg.blocks[out].isFuncBegin = True
+
 
     def getCfg(self):
         return self.cfg

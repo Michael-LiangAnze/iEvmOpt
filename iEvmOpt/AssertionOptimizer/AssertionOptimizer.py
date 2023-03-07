@@ -84,4 +84,5 @@ class AssertionOptimizer:
                 pg = PathGenerator(self.dagNodes, self.dagEdges)
                 pg.genPath(self.cfg.initBlockId, i.offset)
                 self.paths[self.invalidCnt] = pg.getPath()
-        print(self.paths)
+        # print(self.paths)
+

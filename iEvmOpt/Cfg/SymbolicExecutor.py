@@ -8,7 +8,7 @@ class SymbolicExecutor:
     def __init__(self):
         self.curBlock: BasicBlock = None  # 当前执行的基本块
         self.PC = 0  # 当前执行指令的指针
-        self.stack = Stack()  # 符号执行栈，重新封装一次
+        self.stack = Stack()  # 符号执行栈
         self.storage = dict()  # 使用字典存储，格式为  addr:data
         self.memory = dict()  # 使用字典存储，格式为  addr:data
         self.gasOpcCnt = 0  # 统计gas指令被调用的次数
@@ -19,6 +19,11 @@ class SymbolicExecutor:
         """
         self.curBlock = curBlock
         self.PC = self.curBlock.offset
+
+    def getCurState(self):
+        """ 获取程序当前的执行状态
+        """
+        pass
 
     def printState(self, printBlock: bool = True):
         """ 输出当前程序状态
