@@ -6,7 +6,7 @@ import graphviz
 
 from Cfg.BasicBlock import BasicBlock
 from Cfg.Cfg import Cfg
-from Utils import DotGraph
+from Utils import DotGraphGenerator
 
 
 class CfgBuilder:
@@ -24,7 +24,7 @@ class CfgBuilder:
             self.__etherSolve()
         self.__buildCfg()
         if not isParseBefore:
-            dg = DotGraph(self.cfg.edges, self.cfg.blocks.keys())
+            dg = DotGraphGenerator(self.cfg.edges, self.cfg.blocks.keys())
             dg.genDotGraph(self.outputPath, self.srcName)
 
     def __etherSolve(self):
@@ -63,10 +63,10 @@ class CfgBuilder:
 
         # 添加unconditional、conditional跳转目标块的信息
         for offset, b in self.cfg.blocks.items():
-            if b.blockType == "unconditional":
+            if b.jumpType == "unconditional":
                 b.jumpDest = list(self.cfg.edges[offset])
                 # b.printBlockInfo()
-            elif b.blockType == "conditional":
+            elif b.jumpType == "conditional":
                 fallBlockOff = b.offset + b.length
                 dests = list(self.cfg.edges[offset])
                 jumpiTrueOff = dests[0] if dests[0] != fallBlockOff else dests[1]

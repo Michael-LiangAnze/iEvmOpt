@@ -1,7 +1,7 @@
 from graphviz import Digraph
 
 
-class DotGraph:
+class DotGraphGenerator:
     def __init__(self, edges: dict, nodes: list):
         self.edges = edges  # 存储出边表，格式为 from:[to1,to2...]
         self.nodes = nodes  # 存储点，格式为 [n1,n2,n3...]

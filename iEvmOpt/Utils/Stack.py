@@ -29,6 +29,12 @@ class Stack:
     def clear(self):
         self.__stack.clear()
 
+    def empty(self):
+        if len(self.__stack) == 0:
+            return True
+        else:
+            return False
+
     def getStack(self, isHex: bool = False):
         if not isHex:
             return list(self.__stack)
