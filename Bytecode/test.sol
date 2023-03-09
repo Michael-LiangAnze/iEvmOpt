@@ -1,19 +1,16 @@
 pragma solidity ^0.4.0;
 
 contract assertExample{
-    uint a;
-    uint b;
 
-    function safeAdd(uint _a,uint _b)private returns(uint){
-        uint sum = _a + _b;
-        assert(sum >= _a && sum >= _b);
-        return sum;
+    function Abs(uint x)returns(uint){
+        if(x > 0)
+            return x;
+        else 
+            return -x;
     }
 
     function f1()public{
-        a = safeAdd(a,0x15);
-        b = 0x40;
-        a = safeAdd(a,0x35);
+        Abs(1);
     }
 
 }

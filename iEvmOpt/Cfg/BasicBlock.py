@@ -19,6 +19,7 @@ class BasicBlock:
         # 标记为函数起始节点；第二种是看这样的边：common-(unconditional jump)->common，则将后一个common标记为函数起始节点
         # 其实这一个标记并不是严谨的，只是为了方便函数调用链的构建
         self.isFuncBegin = False
+        self.isFuncEnd = False
 
         checker = self.instrs[self.instrNum - 1].split(' ')[1]
         match checker:
