@@ -1,5 +1,6 @@
 import sys
 
+from AssertionOptimizer.Function import Function
 from Cfg.Cfg import Cfg
 from Cfg.BasicBlock import BasicBlock
 from AssertionOptimizer.JumpEdge import JumpEdge
@@ -13,18 +14,20 @@ import json
 class AssertionOptimizer:
     def __init__(self, cfg: Cfg):
         self.cfg = cfg
-        # 函数识别时需要用到的信息
+        # 函数识别、处理时需要用到的信息
         self.uncondJumpEdge = []  # 存储所有的unconditional jump的边，类型为JumpEdge
         self.nodes = list(self.cfg.blocks.keys())  # 存储点，格式为 [n1,n2,n3...]
         self.edges = dict(self.cfg.edges)  # 存储出边表，格式为 from:[to1,to2...]
         self.inEdges = dict(self.cfg.inEdges)  # 存储入边表，格式为 to:[from1,from2...]
         self.funcCnt = 0  # 函数计数
-        self.funcBodyDict = {}  # 格式为：  funcId:[funcbodyNode1,funcbodyNode2.....]
+        self.funcBodyDict = {}  # 记录找到的所有函数，格式为：  funcId:function
+        self.isLoopRelated = dict(zip(self.nodes, [False for i in range(0, len(self.nodes))]))  # 标记各个节点是否为loop-related
+        self.newNodeId = max(self.nodes) + 1  # 找到函数内的环之后，需要添加的新节点的id(一个不存在的offset)
         # self.invalidCnt = 0  # 用于标记不同invalid对应的路径集合
         # self.paths = {}  # 用于记录不同invalid对应的路径集合，格式为：  invalidid:[[路径1中的点],[路径2中的点]]
 
     def optimize(self):
-        # 首先识别出所有的函数体
+        # 首先识别出所有的函数体，将每个函数体内的强连通分量的所有点压缩为一个点，同时标记为loop-related
         self.__identifyFunctions()
 
     def __identifyFunctions(self):
@@ -76,8 +79,6 @@ class AssertionOptimizer:
             for pair in pairs:
                 self.edges[pair[0]].append(pair[1])
                 self.inEdges[pair[1]].append(pair[0])
-        # g = DotGraphGenerator(self.edges, self.nodes)
-        # g.genDotGraph(sys.argv[0], "_removed_scc")
 
         # 第四步，从一个函数的funcbody的起始block开始dfs遍历，只走offset范围在 [第一条指令所在的block的offset,最后一条指令所在的block的offset]之间的节点，尝试寻找出所有的函数节点
         for rangeInfo in funcRange2Calls.keys():  # 找到一个函数
@@ -96,49 +97,36 @@ class AssertionOptimizer:
                         stack.push(out)
                         visited[out] = True
             self.funcCnt += 1
-            self.funcBodyDict[self.funcCnt] = funcBody
-            # 这里做一个检查，看看所有找到的同一个函数的节点的长度拼起来，是否是其应有的长度，防止漏掉一些顶点
             offsetRange[1] -= 1
-            funcLen =  offsetRange[1] + self.cfg.blocks[offsetRange[1]].length - offsetRange[0]
+            f = Function(self.funcCnt, offsetRange[0], offsetRange[1], funcBody, self.edges)
+            self.funcBodyDict[self.funcCnt] = f
+            # 这里做一个检查，看看所有找到的同一个函数的节点的长度拼起来，是否是其应有的长度，防止漏掉一些顶点
+            funcLen = offsetRange[1] + self.cfg.blocks[offsetRange[1]].length - offsetRange[0]
             tempLen = 0
             for n in funcBody:
                 tempLen += self.cfg.blocks[n].length
             assert funcLen == tempLen
-            # print(self.funcBodyDict)
+            # f.printFunc()
 
+        # 第五步，检查一个函数内的所有节点是否存在环，是则将其压缩为一个点
+        compressor = SccCompressor()
+        for func in self.funcBodyDict.values():  # 取出一个函数
+            tarjan = TarjanAlgorithm(func.funcBodyNodes, func.funcSubGraphEdges)
+            tarjan.tarjan(func.firstBodyBlockOffset)
+            sccList = tarjan.getSccList()
+            for scc in sccList:
+                if len(scc) > 1:  # 找到loop-related节点
+                    # 标记
+                    for node in scc:
+                        self.isLoopRelated[node] = True
+                    # 压缩为一个点，这个点也需要标记为loop-related
+                    self.isLoopRelated[self.newNodeId] = True
+                    compressor.setInfo(self.nodes, scc, self.edges, self.inEdges, self.newNodeId)
+                    compressor.compress()
+                    self.nodes, self.edges, self.inEdges = compressor.getNodes(), compressor.getEdges(), compressor.getInEdges()
+                    self.newNodeId += 1
+        # g = DotGraphGenerator(self.edges, self.nodes)
+        # g.genDotGraph(sys.argv[0], "_removed_scc")
 
-    # def __searchPaths(self):
-    #     # 首先寻找强连通分量，使用tarjan算法
-    #     tarjanAlg = TarjanAlgorithm(list(self.cfg.blocks.keys()), dict(self.cfg.edges))
-    #     tarjanAlg.tarjan(self.cfg.initBlockId)
-    #     sccList = tarjanAlg.getSccList()
-    #
-    #
-    #     # 测试使用
-    #     # self.dagNodes = [1, 2, 3, 4, 5, 6]
-    #     # self.dagEdges = {1: [2], 2: [3], 3: [1, 4], 4: [5], 5: [6], 6: [4]}
-    #     # self.dagInEdges = {1: [3], 2: [1], 3: [2], 4: [3, 6], 5: [4], 6: [5]}
-    #     # sccCnt = 6
-    #     # sccList = [[1, 2, 3], [4, 5, 6]]
-    #     # g = DotGraph(self.dagEdges, self.dagNodes)
-    #     # g.genDotGraph(sys.argv[0], "dag_init")
-    #
-    #     for scc in sccList:
-    #         if len(scc) > 1:
-    #             c = SccCompressor()
-    #             c.setInfo(self.blocks, scc, self.edges, self.inEdges, self.cfg.exitBlockId + 1)
-    #             c.compress()
-    #             self.blocks, self.edges, self.inEdges = c.getNodes(), c.getEdges(), c.getInEdges()
-    #
-    #     # 生成点图
-    #     g = DotGraph(self.edges, self.blocks)
-    #     g.genDotGraph(sys.argv[0], "_removed_scc")
-    #
-    #     # 对cfg中所有的invalid节点，搜索他们的路径
-    #     # for i in self.cfg.blocks.values():
-    #     #     if i.isInvalid:  # 是invalid节点
-    #     #         self.invalidCnt += 1
-    #     #         pg = PathGenerator(self.blocks, self.edges)
-    #     #         pg.genPath(self.cfg.initBlockId, i.offset)
-    #     #         self.paths[self.invalidCnt] = pg.getPath()
-    #     # # print(self.paths)
+    def __searchPaths(self):
+        pass

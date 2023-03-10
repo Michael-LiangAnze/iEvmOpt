@@ -6,16 +6,15 @@ class SccCompressor:
         self.inEdges = {}  # 存储入边表，格式为 to:[from1,from2...]
         self.sccId: int = -1  # scc的标号
 
-    def setInfo(self, nodes: list, scc: list, edges: dict, inEdges: dict, sccBeginId: int):
+    def setInfo(self, nodes: list, scc: list, edges: dict, inEdges: dict, sccId: int):  # 注意，这里的nodes是不包含压缩后的新点的
         self.nodes = list(nodes)  # 存储所有点，格式为 [n1,n2,n3...]
         self.scc = list(scc)  # 存储scc中的点
         self.edges = dict(edges)  # 存储出边表，格式为 from:[to1,to2...]
         self.inEdges = dict(inEdges)  # 存储入边表，格式为 to:[from1,from2...]
-        self.sccId = int(sccBeginId)  # scc的开始标号，每使用一次，标号+1
+        self.sccId = int(sccId)  # scc的标号
 
     def compress(self):
         if len(self.scc) > 1:
-            # 找到两个点以上的强连通分量
             # 将其收缩为一个点，ID为sccCnt+1
             self.nodes.append(self.sccId)
             self.edges[self.sccId] = []
