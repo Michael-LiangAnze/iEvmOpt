@@ -1,14 +1,14 @@
 {
-  "name": "Analysis_2023-03-08_17-51-35",
+  "name": "Analysis_2023-03-11_18-59-40",
   "address": "",
-  "binarySource": "608060405234801561001057600080fd5b5060f88061001f6000396000f300608060405260043610603f576000357c0100000000000000000000000000000000000000000000000000000000900463ffffffff168063b3de648b146044575b600080fd5b348015604f57600080fd5b50606c600480360381019080803590602001909291905050506082565b6040518082815260200191505060405180910390f35b6000608e600183036095565b9050919050565b600060a16001830360a8565b9050919050565b6000600a82111560c25760bc600183036082565b905060c7565b600090505b9190505600a165627a7a723058207c71a63d49585770ff0867d59eeb76edd0ffcc75276af1b7293b0451a8b0a6870029",
-  "binaryHash": "c47d7e21",
+  "binarySource": "608060405234801561001057600080fd5b50610102806100206000396000f300608060405260043610603f576000357c0100000000000000000000000000000000000000000000000000000000900463ffffffff168063b3de648b146044575b600080fd5b348015604f57600080fd5b50606c600480360381019080803590602001909291905050506082565b6040518082815260200191505060405180910390f35b6000608e600183036095565b9050919050565b600060a16001830360a8565b9050919050565b6000808211151560b457fe5b600a82111560cc5760c6600183036082565b905060d1565b600090505b9190505600a165627a7a723058206df570901502e119292a875c664ab3fe897c9192374d76b177d68fa595c917960029",
+  "binaryHash": "9655dc83",
   "isOnlyRuntime": false,
-  "metadata": "a165627a7a723058207c71a63d49585770ff0867d59eeb76edd0ffcc75276af1b7293b0451a8b0a6870029",
+  "metadata": "a165627a7a723058206df570901502e119292a875c664ab3fe897c9192374d76b177d68fa595c917960029",
   "solidityVersion": "\u003c 0.5.9",
   "constructorRemainingData": "",
   "constructorCfg": {
-    "bytecode": "608060405234801561001057600080fd5b5060f88061001f6000396000f300",
+    "bytecode": "608060405234801561001057600080fd5b50610102806100206000396000f300",
     "remainingData": "00",
     "nodes": [
       {
@@ -29,19 +29,19 @@
       },
       {
         "offset": 16,
-        "length": 14,
+        "length": 15,
         "type": "fallback",
         "stackBalance": -1,
-        "bytecodeHex": "5b5060f88061001f6000396000f3",
-        "parsedOpcodes": "16: JUMPDEST\n17: POP\n18: PUSH1 0xf8\n20: DUP1\n21: PUSH2 0x001f\n24: PUSH1 0x00\n26: CODECOPY\n27: PUSH1 0x00\n29: RETURN"
+        "bytecodeHex": "5b50610102806100206000396000f3",
+        "parsedOpcodes": "16: JUMPDEST\n17: POP\n18: PUSH2 0x0102\n21: DUP1\n22: PUSH2 0x0020\n25: PUSH1 0x00\n27: CODECOPY\n28: PUSH1 0x00\n30: RETURN"
       },
       {
-        "offset": 30,
+        "offset": 31,
         "length": 0,
         "type": "exit",
         "stackBalance": 0,
         "bytecodeHex": "",
-        "parsedOpcodes": "30: EXIT BLOCK"
+        "parsedOpcodes": "31: EXIT BLOCK"
       }
     ],
     "successors": [
@@ -55,17 +55,17 @@
       {
         "from": 12,
         "to": [
-          30
+          31
         ]
       },
       {
         "from": 16,
         "to": [
-          30
+          31
         ]
       },
       {
-        "from": 30,
+        "from": 31,
         "to": []
       }
     ],
@@ -79,11 +79,11 @@
       "blockLimitErrors": 0,
       "criticalErrors": 0,
       "errorLog": "",
-      "buildTimeMillis": 350
+      "buildTimeMillis": 35
     }
   },
   "runtimeCfg": {
-    "bytecode": "608060405260043610603f576000357c0100000000000000000000000000000000000000000000000000000000900463ffffffff168063b3de648b146044575b600080fd5b348015604f57600080fd5b50606c600480360381019080803590602001909291905050506082565b6040518082815260200191505060405180910390f35b6000608e600183036095565b9050919050565b600060a16001830360a8565b9050919050565b6000600a82111560c25760bc600183036082565b905060c7565b600090505b9190505600",
+    "bytecode": "608060405260043610603f576000357c0100000000000000000000000000000000000000000000000000000000900463ffffffff168063b3de648b146044575b600080fd5b348015604f57600080fd5b50606c600480360381019080803590602001909291905050506082565b6040518082815260200191505060405180910390f35b6000608e600183036095565b9050919050565b600060a16001830360a8565b9050919050565b6000808211151560b457fe5b600a82111560cc5760c6600183036082565b905060d1565b600090505b9190505600",
     "remainingData": "00",
     "nodes": [
       {
@@ -179,48 +179,64 @@
         "length": 11,
         "type": "common",
         "stackBalance": 1,
-        "bytecodeHex": "5b6000600a82111560c257",
-        "parsedOpcodes": "168: JUMPDEST\n169: PUSH1 0x00\n171: PUSH1 0x0a\n173: DUP3\n174: GT\n175: ISZERO\n176: PUSH1 0xc2\n178: JUMPI"
+        "bytecodeHex": "5b6000808211151560b457",
+        "parsedOpcodes": "168: JUMPDEST\n169: PUSH1 0x00\n171: DUP1\n172: DUP3\n173: GT\n174: ISZERO\n175: ISZERO\n176: PUSH1 0xb4\n178: JUMPI"
       },
       {
         "offset": 179,
+        "length": 1,
+        "type": "common",
+        "stackBalance": 0,
+        "bytecodeHex": "fe",
+        "parsedOpcodes": "179: INVALID"
+      },
+      {
+        "offset": 180,
+        "length": 9,
+        "type": "common",
+        "stackBalance": 0,
+        "bytecodeHex": "5b600a82111560cc57",
+        "parsedOpcodes": "180: JUMPDEST\n181: PUSH1 0x0a\n183: DUP3\n184: GT\n185: ISZERO\n186: PUSH1 0xcc\n188: JUMPI"
+      },
+      {
+        "offset": 189,
         "length": 9,
         "type": "common",
         "stackBalance": 2,
-        "bytecodeHex": "60bc60018303608256",
-        "parsedOpcodes": "179: PUSH1 0xbc\n181: PUSH1 0x01\n183: DUP4\n184: SUB\n185: PUSH1 0x82\n187: JUMP"
+        "bytecodeHex": "60c660018303608256",
+        "parsedOpcodes": "189: PUSH1 0xc6\n191: PUSH1 0x01\n193: DUP4\n194: SUB\n195: PUSH1 0x82\n197: JUMP"
       },
       {
-        "offset": 188,
+        "offset": 198,
         "length": 6,
         "type": "common",
         "stackBalance": -1,
-        "bytecodeHex": "5b905060c756",
-        "parsedOpcodes": "188: JUMPDEST\n189: SWAP1\n190: POP\n191: PUSH1 0xc7\n193: JUMP"
+        "bytecodeHex": "5b905060d156",
+        "parsedOpcodes": "198: JUMPDEST\n199: SWAP1\n200: POP\n201: PUSH1 0xd1\n203: JUMP"
       },
       {
-        "offset": 194,
+        "offset": 204,
         "length": 5,
         "type": "common",
         "stackBalance": 0,
         "bytecodeHex": "5b60009050",
-        "parsedOpcodes": "194: JUMPDEST\n195: PUSH1 0x00\n197: SWAP1\n198: POP"
+        "parsedOpcodes": "204: JUMPDEST\n205: PUSH1 0x00\n207: SWAP1\n208: POP"
       },
       {
-        "offset": 199,
+        "offset": 209,
         "length": 5,
         "type": "common",
         "stackBalance": -2,
         "bytecodeHex": "5b91905056",
-        "parsedOpcodes": "199: JUMPDEST\n200: SWAP2\n201: SWAP1\n202: POP\n203: JUMP"
+        "parsedOpcodes": "209: JUMPDEST\n210: SWAP2\n211: SWAP1\n212: POP\n213: JUMP"
       },
       {
-        "offset": 204,
+        "offset": 214,
         "length": 0,
         "type": "exit",
         "stackBalance": 0,
         "bytecodeHex": "",
-        "parsedOpcodes": "204: EXIT BLOCK"
+        "parsedOpcodes": "214: EXIT BLOCK"
       }
     ],
     "successors": [
@@ -241,7 +257,7 @@
       {
         "from": 63,
         "to": [
-          204
+          214
         ]
       },
       {
@@ -254,7 +270,7 @@
       {
         "from": 75,
         "to": [
-          204
+          214
         ]
       },
       {
@@ -267,7 +283,7 @@
       {
         "from": 108,
         "to": [
-          204
+          214
         ]
       },
       {
@@ -287,11 +303,11 @@
         "from": 142,
         "to": [
           108,
-          188,
-          188,
-          188,
-          188,
-          188
+          198,
+          198,
+          198,
+          198,
+          198
         ]
       },
       {
@@ -321,11 +337,24 @@
         "from": 168,
         "to": [
           179,
-          194
+          180
         ]
       },
       {
         "from": 179,
+        "to": [
+          214
+        ]
+      },
+      {
+        "from": 180,
+        "to": [
+          189,
+          204
+        ]
+      },
+      {
+        "from": 189,
         "to": [
           130,
           130,
@@ -337,24 +366,24 @@
         ]
       },
       {
-        "from": 188,
+        "from": 198,
         "to": [
-          199,
-          199,
-          199,
-          199,
-          199,
-          199
+          209,
+          209,
+          209,
+          209,
+          209,
+          209
         ]
       },
       {
-        "from": 194,
+        "from": 204,
         "to": [
-          199
+          209
         ]
       },
       {
-        "from": 199,
+        "from": 209,
         "to": [
           161,
           161,
@@ -370,7 +399,7 @@
         ]
       },
       {
-        "from": 204,
+        "from": 214,
         "to": []
       }
     ],
@@ -384,7 +413,7 @@
       "blockLimitErrors": 0,
       "criticalErrors": 0,
       "errorLog": "",
-      "buildTimeMillis": 147
+      "buildTimeMillis": 42
     }
   }
 }

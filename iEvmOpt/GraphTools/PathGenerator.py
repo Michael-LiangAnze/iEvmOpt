@@ -23,6 +23,7 @@ class PathGenerator:
 
         self.isLoopRelated = isLoopRelated
         self.pathRecorder = Stack()
+        self.returnAddrStack = Stack()
         self.paths = []
 
     def genPath(self, begin: int, target: int):
@@ -31,9 +32,9 @@ class PathGenerator:
         self.targetN = target
         self.pathRecorder.clear()
         self.paths.clear()
-
+        self.returnAddrStack.clear()
         # dfs寻路
-        self.returnAddrStack = Stack()
+
         self.__dfs(self.beginN)
 
     def __dfs(self, curNode: int):
@@ -50,14 +51,26 @@ class PathGenerator:
                 if key in self.uncondJumpEdges.keys():  # 这是一条调用边或者返回边
                     e = self.uncondJumpEdges[key]
                     if e.isCallerEdge:  # 是一条调用边
+                        if self.isLoopRelated[node]:  # 不能是环相关的点，例如循环内调用函数，会出现无限递归的情况
+                            continue
+                        if self.returnAddrStack.hasItem(e.tetrad[1]):  # 不能是已经调用过的函数
+                            continue
                         self.returnAddrStack.push(e.tetrad[1])  # push返回地址
                         self.__dfs(node)
                     else:  # 是一条返回边
-                        if not self.returnAddrStack.empty():  # 栈里还有地址
-                            if e.tetrad[3] == self.returnAddrStack.getTop():  # 和之前push的返回地址相同，才能做返回
-                                self.returnAddrStack.pop()
-                                self.__dfs(node)
+                        if self.returnAddrStack.empty():  # 栈里必须还有地址
+                            continue
+                        if e.tetrad[3] != self.returnAddrStack.getTop():  # 和之前push的返回地址相同，才能做返回
+                            continue
+                        if self.isLoopRelated[node]:  # 不能是环相关的点
+                            continue
+                        retAddr = self.returnAddrStack.pop()  # 模拟返回后的效果
+                        self.__dfs(node)  # 返回
+                        self.returnAddrStack.push(retAddr)  # 返回后又回来，相当于没返回，最新的调用还是当前函数
+
                 else:  # 是其他跳转边
+                    if self.isLoopRelated[node]:
+                        continue
                     self.__dfs(node)
         self.pathRecorder.pop()
 

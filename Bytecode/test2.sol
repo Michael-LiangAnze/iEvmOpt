@@ -7,6 +7,7 @@ contract test2{
     }
 
     function h()private returns(uint){
+		assert(1>2);
         return 0;
     }
 

@@ -7,6 +7,7 @@ contract test2{
     }
 
     function h(uint x)private returns(uint){
+		assert(x > 0);
         if (x > 10)
             return f(x - 1);
         else 

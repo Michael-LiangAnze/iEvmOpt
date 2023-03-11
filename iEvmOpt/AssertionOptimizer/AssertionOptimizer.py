@@ -132,16 +132,19 @@ class AssertionOptimizer:
                     compressor.compress()
                     self.nodes, self.edges, self.inEdges = compressor.getNodes(), compressor.getEdges(), compressor.getInEdges()
                     self.newNodeId += 1
-        # g = DotGraphGenerator(self.edges, self.nodes)
-        # g.genDotGraph(sys.argv[0], "_removed_scc")
+        g = DotGraphGenerator(self.edges, self.nodes)
+        g.genDotGraph(sys.argv[0], "_removed_scc")
 
         # 第六步，去除之前添加的边，因为下面要开始做路径搜索了，新加入的边并不是原来cfg中应该出现的边
+        # 需要注意，因为前面已经做了scc压缩，要移除的边可能已经不存在了
         for pairs in funcRange2Calls.values():
             for pair in pairs:
-                self.edges[pair[0]].remove(pair[1])
-                self.inEdges[pair[1]].remove(pair[0])
-        # g = DotGraphGenerator(self.edges, self.nodes)
-        # g.genDotGraph(sys.argv[0], "_removed_edge")
+                if pair[0] in self.edges.keys():
+                    if pair[1] in self.edges[pair[0]]:  # 边还存在
+                        self.edges[pair[0]].remove(pair[1])
+                        self.inEdges[pair[1]].remove(pair[0])
+        g = DotGraphGenerator(self.edges, self.nodes)
+        g.genDotGraph(sys.argv[0], "_removed_edge")
 
     def __searchPaths(self):
         '''
@@ -154,12 +157,12 @@ class AssertionOptimizer:
         # print(self.invalidList)
 
         # 第二步，搜索从起点到invalid节点的所有路径
-        generator = PathGenerator(self.nodes, self.edges, self.uncondJumpEdge,self.isLoopRelated)
+        generator = PathGenerator(self.nodes, self.edges, self.uncondJumpEdge, self.isLoopRelated)
         for invNode in self.invalidList:
             generator.genPath(self.cfg.initBlockId, invNode)
             paths = generator.getPath()
             self.invalidPaths[invNode] = paths
-        for k,v in self.invalidPaths.items():
+        for k, v in self.invalidPaths.items():
             print(k)
             for path in v:
                 print(path)
