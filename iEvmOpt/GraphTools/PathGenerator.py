@@ -6,7 +6,7 @@ from Utils import Stack
 
 
 class PathGenerator:
-    def __init__(self, nodes: list, edges: dict):
+    def __init__(self, nodes: list, edges: dict, uncondJumpEdges: list):
         """初始化路径搜索需要的信息
         :param nodes:图的节点信息，格式为[n1,n2,n3]
         :param edges: 图的出边表，格式为{from:[to1,to2.....]}
@@ -15,6 +15,7 @@ class PathGenerator:
         self.edges = edges
         self.beginN = 0  # 起始点和终结点
         self.targetN = 0
+        self.uncondJumpEdges = uncondJumpEdges  # 记录调用边信息，防止走入调用关系不当出现的环
         self.pathRecorder = Stack()
         self.paths = []
 
@@ -33,13 +34,22 @@ class PathGenerator:
         路径记录：每访问一个新节点，则将其加入到路径栈，离开时pop一次(其实就是pop自己)
         访问控制：每访问一个新节点，则将其设置为true状态，退出时设置为false
         """
-        self.pathRecorder.push(curNode)
-        if curNode == self.targetN:  # 到达终点，生成一条路径，并返回
-            self.paths.append(self.pathRecorder.getStack())
-        else:
-            for i in self.edges[curNode]:
-                self.__dfs(i)
-        assert self.pathRecorder.pop() == curNode
+        stack = Stack()
+        stack.push(curNode)
+        while not stack.empty():
+            node = stack.pop()
+            self.pathRecorder.push(node)
+            if node == self.targetN:# 找到一条路径
+                self.paths.append(self.pathRecorder.getStack())
+            for i in self.edges[curNode]: # 遍历出边，但是要注意返回地址栈中的值
+                pass
+        # self.pathRecorder.push(curNode)
+        # if curNode == self.targetN:  # 到达终点，生成一条路径，并返回
+        #     self.paths.append(self.pathRecorder.getStack())
+        # else:
+        #     for i in self.edges[curNode]:
+        #         self.__dfs(i)
+
 
     def getPath(self):
         return list(self.paths)

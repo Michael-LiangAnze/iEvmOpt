@@ -23,12 +23,16 @@ class AssertionOptimizer:
         self.funcBodyDict = {}  # 记录找到的所有函数，格式为：  funcId:function
         self.isLoopRelated = dict(zip(self.nodes, [False for i in range(0, len(self.nodes))]))  # 标记各个节点是否为loop-related
         self.newNodeId = max(self.nodes) + 1  # 找到函数内的环之后，需要添加的新节点的id(一个不存在的offset)
-        # self.invalidCnt = 0  # 用于标记不同invalid对应的路径集合
-        # self.paths = {}  # 用于记录不同invalid对应的路径集合，格式为：  invalidid:[[路径1中的点],[路径2中的点]]
+        # 路径搜索需要用到的信息
+        self.invalidCnt = 1  # 用于标记不同invalid对应的路径集合
+        self.invalidList = []  # 记录所有invalid节点的offset
+        self.invalidPaths = {}  # 用于记录不同invalid对应的路径集合，格式为：  invalidid:[Path1,Path2]
 
     def optimize(self):
         # 首先识别出所有的函数体，将每个函数体内的强连通分量的所有点压缩为一个点，同时标记为loop-related
         self.__identifyFunctions()
+        # 然后找到所有invalid节点，找出他们到起始节点之间所有的边
+        self.__searchPaths()
 
     def __identifyFunctions(self):
         '''
@@ -54,7 +58,7 @@ class AssertionOptimizer:
 
         # 第二步，两两之间进行匹配
         funcRange2Calls = {}  # 一个映射，格式为:
-        # 一个函数的区间(一个字符串，内容为"[第一条指令所在的block的offset,最后一条指令所在的block的offset]"):[(funcbody调用者的起始node,funcbody返回边的目的node)]
+        # 一个函数的区间(一个字符串，内容为"[第一条指令所在的block的offset,最后一条指令所在的block的offset]"):[[funcbody调用者的起始node,funcbody返回边的目的node]]
         # 解释一下value为什么要存这个：如果发现出现了函数调用，那么就在其调用者调用前的节点和调用后的返回节点之间加一条边
         # 这样在使用dfs遍历一个函数内的所有节点时，就可以只看地址范围位于key内的节点，如果当前遍历的函数出现了函数调用，那么不需要进入调用的函数体，
         # 也能成功找到它的所有节点
@@ -66,6 +70,8 @@ class AssertionOptimizer:
                 e1, e2 = self.uncondJumpEdge[i], self.uncondJumpEdge[j]  # 取出两个不同的边进行匹配
                 if e1.tetrad[0] == e2.tetrad[2] and e1.tetrad[1] == e2.tetrad[3] and e1.tetrad[
                     0] is not None:  # 匹配成功，e1为调用边，e2为返回边。注意None之间是不匹配的
+                    e1.isCallerEdge = True
+                    e2.isReturnEdge = True
                     key = [e1.targetNode, e2.beginNode].__str__()
                     value = [e1.beginNode, e2.targetNode]
                     if key not in funcRange2Calls.keys():
@@ -128,5 +134,27 @@ class AssertionOptimizer:
         # g = DotGraphGenerator(self.edges, self.nodes)
         # g.genDotGraph(sys.argv[0], "_removed_scc")
 
+        # 第六步，去除之前添加的边，因为下面要开始做路径搜索了，新加入的边并不是原来cfg中应该出现的边
+        for pairs in funcRange2Calls.values():
+            for pair in pairs:
+                self.edges[pair[0]].remove(pair[1])
+                self.inEdges[pair[1]].remove(pair[0])
+        # g = DotGraphGenerator(self.edges, self.nodes)
+        # g.genDotGraph(sys.argv[0], "_removed_edge")
+
     def __searchPaths(self):
-        pass
+        '''
+        找到所有的Invalid节点，并搜索从起点到他们的所有路径
+        '''
+        # 第一步，找出所有的invalid节点
+        for node in self.cfg.blocks.values():
+            if node.isInvalid:
+                self.invalidList.append(node.offset)
+        # print(self.invalidList)
+
+        # 第二步，搜索从起点到invalid节点的所有路径
+        generator = PathGenerator(self.nodes, self.edges, self.uncondJumpEdge)
+        for invNode in self.invalidList:
+            generator.genPath(self.cfg.initBlockId, invNode)
+            path = generator.getPath()
+            # print(path)

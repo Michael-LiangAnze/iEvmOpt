@@ -13,13 +13,16 @@ class JumpEdge:
         self.beginAddr = beginBlock.offset + beginBlock.length - 1
         self.targetAddr = targetBlock.offset
         self.tetrad = [None, None, None, None]  # 匹配四元组
-        self.couldBeCallEdge = beginBlock.couldBeCaller
+        self.couldBeCallEdge = beginBlock.couldBeCaller  # 还没有做匹配
         if self.couldBeCallEdge:  # 可能是调用边，存储(a,a+1,None,None)
             self.tetrad[0] = self.beginAddr
             self.tetrad[1] = self.beginAddr + 1
         else:  # 不可能是调用边，可能是返回边，存储(None,None,b-1,b)
             self.tetrad[2] = self.targetAddr - 1
             self.tetrad[3] = self.targetAddr
+        # 匹配之后，确定是跳转边还是返回边
+        self.isCallerEdge = False
+        self.isReturnEdge = False
 
     def output(self):
         print("Edge'beginNode:{}".format(self.beginNode))
