@@ -35,6 +35,9 @@ class Stack:
         else:
             return False
 
+    def getTop(self):
+        return self.__stack[len(self.__stack)-1]
+
     def getStack(self, isHex: bool = False):
         if not isHex:
             return list(self.__stack)

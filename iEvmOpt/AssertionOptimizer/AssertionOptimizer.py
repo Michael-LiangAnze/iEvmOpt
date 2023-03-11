@@ -23,6 +23,7 @@ class AssertionOptimizer:
         self.funcBodyDict = {}  # 记录找到的所有函数，格式为：  funcId:function
         self.isLoopRelated = dict(zip(self.nodes, [False for i in range(0, len(self.nodes))]))  # 标记各个节点是否为loop-related
         self.newNodeId = max(self.nodes) + 1  # 找到函数内的环之后，需要添加的新节点的id(一个不存在的offset)
+
         # 路径搜索需要用到的信息
         self.invalidCnt = 1  # 用于标记不同invalid对应的路径集合
         self.invalidList = []  # 记录所有invalid节点的offset
@@ -153,8 +154,12 @@ class AssertionOptimizer:
         # print(self.invalidList)
 
         # 第二步，搜索从起点到invalid节点的所有路径
-        generator = PathGenerator(self.nodes, self.edges, self.uncondJumpEdge)
+        generator = PathGenerator(self.nodes, self.edges, self.uncondJumpEdge,self.isLoopRelated)
         for invNode in self.invalidList:
             generator.genPath(self.cfg.initBlockId, invNode)
-            path = generator.getPath()
-            # print(path)
+            paths = generator.getPath()
+            self.invalidPaths[invNode] = paths
+        for k,v in self.invalidPaths.items():
+            print(k)
+            for path in v:
+                print(path)
