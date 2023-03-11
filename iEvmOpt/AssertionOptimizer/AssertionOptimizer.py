@@ -1,6 +1,7 @@
 import sys
 
 from AssertionOptimizer.Function import Function
+from AssertionOptimizer.Path import Path
 from Cfg.Cfg import Cfg
 from Cfg.BasicBlock import BasicBlock
 from AssertionOptimizer.JumpEdge import JumpEdge
@@ -161,8 +162,10 @@ class AssertionOptimizer:
         for invNode in self.invalidList:
             generator.genPath(self.cfg.initBlockId, invNode)
             paths = generator.getPath()
-            self.invalidPaths[invNode] = paths
+            self.invalidPaths[invNode] = []
+            for pathNodeList in paths:
+                self.invalidPaths[invNode].append(Path(pathNodeList))
         for k, v in self.invalidPaths.items():
             print(k)
             for path in v:
-                print(path)
+                path.printPath()

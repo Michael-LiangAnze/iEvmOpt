@@ -64,9 +64,11 @@ class PathGenerator:
                             continue
                         if self.isLoopRelated[node]:  # 不能是环相关的点
                             continue
+                        stackItems = self.returnAddrStack.getStack()  # 保存之前的栈，防止栈因为走向终止节点而被清空
                         retAddr = self.returnAddrStack.pop()  # 模拟返回后的效果
                         self.__dfs(node)  # 返回
-                        self.returnAddrStack.push(retAddr)  # 返回后又回来，相当于没返回，最新的调用还是当前函数
+                        if self.returnAddrStack.getTop() != retAddr:  # 先检查栈有没有走到过终点。因为如果走到过，则当前函数的返回地址以及前面函数的返回地址都没了，需要恢复
+                            self.returnAddrStack.setStack(stackItems)
 
                 else:  # 是其他跳转边
                     if self.isLoopRelated[node]:

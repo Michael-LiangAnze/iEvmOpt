@@ -16,7 +16,7 @@ class Stack:
             assert 0, "stack is empty!"
 
     def size(self):
-        return len(self.__stack)
+        return self.__stack.__len__()
 
     def swap(self, pos1: int, pos2: int):
         temp = self.__stack[pos1]
@@ -30,16 +30,22 @@ class Stack:
         self.__stack.clear()
 
     def empty(self):
-        if len(self.__stack) == 0:
+        if self.__stack.__len__() == 0:
             return True
         else:
             return False
 
     def getTop(self):
-        return self.__stack[len(self.__stack)-1]
+        if self.__stack.__len__() != 0:
+            return self.__stack[self.__stack.__len__()-1]
+        else:
+            return None
 
     def hasItem(self,item):
         return self.__stack.__contains__(item)
+
+    def setStack(self,stackItems:list):
+        self.__stack = deque(stackItems)
 
     def getStack(self, isHex: bool = False):
         if not isHex:
