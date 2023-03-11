@@ -27,6 +27,12 @@ class PathGenerator:
         self.paths = []
 
     def genPath(self, begin: int, target: int):
+        '''
+        生成从begin到target的所有路径，这些路径符合函数的调用关系
+        :param begin:路径搜索的起始节点
+        :param target:路径搜索的终止节点
+        :return:[路径1的点组成的list，路径2的点组成的list....]
+        '''
         # 初始化，清除之前的信息
         self.beginN = begin
         self.targetN = target

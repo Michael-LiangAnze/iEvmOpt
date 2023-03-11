@@ -11,6 +11,8 @@ from GraphTools.SccCompressor import SccCompressor
 from Utils import DotGraphGenerator, Stack
 import json
 
+from Utils.Logger import Logger
+
 
 class AssertionOptimizer:
     def __init__(self, cfg: Cfg):
@@ -26,15 +28,21 @@ class AssertionOptimizer:
         self.newNodeId = max(self.nodes) + 1  # 找到函数内的环之后，需要添加的新节点的id(一个不存在的offset)
 
         # 路径搜索需要用到的信息
-        self.invalidCnt = 1  # 用于标记不同invalid对应的路径集合
         self.invalidList = []  # 记录所有invalid节点的offset
         self.invalidPaths = {}  # 用于记录不同invalid对应的路径集合，格式为：  invalidid:[Path1,Path2]
 
     def optimize(self):
+        logger = Logger()
         # 首先识别出所有的函数体，将每个函数体内的强连通分量的所有点压缩为一个点，同时标记为loop-related
         self.__identifyFunctions()
+        logger.info("函数体识别完毕，一共识别到:{}个函数体".format(self.funcCnt))
+
         # 然后找到所有invalid节点，找出他们到起始节点之间所有的边
         self.__searchPaths()
+        pathCnt = 0
+        for offset, paths in self.invalidPaths.items():
+            pathCnt += paths.__len__()
+        logger.info("路径搜索完毕，一共找到{}个Invalid节点，一共找到{}条路径".format(self.invalidList.__len__(), pathCnt))
 
     def __identifyFunctions(self):
         '''
@@ -165,7 +173,7 @@ class AssertionOptimizer:
             self.invalidPaths[invNode] = []
             for pathNodeList in paths:
                 self.invalidPaths[invNode].append(Path(pathNodeList))
-        for k, v in self.invalidPaths.items():
-            print(k)
-            for path in v:
-                path.printPath()
+        # for k, v in self.invalidPaths.items():
+        #     print(k)
+        #     for path in v:
+        #         path.printPath()
