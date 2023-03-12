@@ -24,6 +24,9 @@ class AssertionOptimizer:
         self.inEdges = dict(self.cfg.inEdges)  # 存储入边表，格式为 to:[from1,from2...]
         self.funcCnt = 0  # 函数计数
         self.funcBodyDict = {}  # 记录找到的所有函数，格式为：  funcId:function
+        self.node2FuncId = {}  # 记录节点属于哪个函数，注意只记录函数体头节点，格式为：  node：funcId
+        self.isFuncBodyHeadNode = dict(
+            zip(self.nodes, [False for i in range(0, len(self.nodes))]))  # 函数体头结点信息，用于后续路径搜索时，得到的函数调用链
         self.isLoopRelated = dict(zip(self.nodes, [False for i in range(0, len(self.nodes))]))  # 标记各个节点是否为loop-related
         self.newNodeId = max(self.nodes) + 1  # 找到函数内的环之后，需要添加的新节点的id(一个不存在的offset)
 
@@ -31,7 +34,8 @@ class AssertionOptimizer:
         self.invalidNodeList = []  # 记录所有invalid节点的offset
         self.invalidPathId = 0  # 路径id
         self.invalidPaths = {}  # 用于记录不同invalid对应的路径集合，格式为：  invalidPathId:Path
-        self.invalidNode2Paths = {}  # 记录每个invalid节点包含的路径，格式为：  invalidNodeOffset:[pathId1,pathId2]
+        self.invalidNode2PathIds = {}  # 记录每个invalid节点包含的路径，格式为：  invalidNodeOffset:[pathId1,pathId2]
+        self.invalidNode2CallChain = {}  # 记录每个invalid节点包含的调用链，格式为： invalidNodeOffset:[[callchain1中的pathid],[callchain2中的pathid]]
 
     def optimize(self):
         logger = Logger()
@@ -41,7 +45,12 @@ class AssertionOptimizer:
 
         # 然后找到所有invalid节点，找出他们到起始节点之间所有的边
         self.__searchPaths()
-        logger.info("路径搜索完毕，一共找到{}个Invalid节点，一共找到{}条路径".format(self.invalidNodeList.__len__(), self.invalidPaths.__len__()))
+        callChainNum = 0
+        for invNode in self.invalidNodeList:
+            callChainNum += self.invalidNode2CallChain[invNode].__len__()
+        logger.info(
+            "路径搜索完毕，一共找到{}个Invalid节点，一共找到{}条路径，{}条函数调用链".format(self.invalidNodeList.__len__(),
+                                                                self.invalidPaths.__len__(), callChainNum))
 
     def __identifyFunctions(self):
         '''
@@ -81,6 +90,7 @@ class AssertionOptimizer:
                     0] is not None:  # 匹配成功，e1为调用边，e2为返回边。注意None之间是不匹配的
                     e1.isCallerEdge = True
                     e2.isReturnEdge = True
+                    self.isFuncBodyHeadNode[e1.targetNode] = True
                     key = [e1.targetNode, e2.beginNode].__str__()
                     value = [e1.beginNode, e2.targetNode]
                     if key not in funcRange2Calls.keys():
@@ -115,6 +125,7 @@ class AssertionOptimizer:
             offsetRange[1] -= 1
             f = Function(self.funcCnt, offsetRange[0], offsetRange[1], funcBody, self.edges)
             self.funcBodyDict[self.funcCnt] = f
+            self.node2FuncId[offsetRange[0]] = self.funcCnt
             # 这里做一个检查，看看所有找到的同一个函数的节点的长度拼起来，是否是其应有的长度，防止漏掉一些顶点
             funcLen = offsetRange[1] + self.cfg.blocks[offsetRange[1]].length - offsetRange[0]
             tempLen = 0
@@ -134,8 +145,10 @@ class AssertionOptimizer:
                     # 标记
                     for node in scc:
                         self.isLoopRelated[node] = True
+                        assert not self.isFuncBodyHeadNode[node]  # 函数头不应该出现在函数内的scc，否则可能会引起错误
                     # 压缩为一个点，这个点也需要标记为loop-related
                     self.isLoopRelated[self.newNodeId] = True
+                    self.isFuncBodyHeadNode[self.newNodeId] = False  # 这个点也不是函数头
                     compressor.setInfo(self.nodes, scc, self.edges, self.inEdges, self.newNodeId)
                     compressor.compress()
                     self.nodes, self.edges, self.inEdges = compressor.getNodes(), compressor.getEdges(), compressor.getInEdges()
@@ -169,11 +182,11 @@ class AssertionOptimizer:
         for invNode in self.invalidNodeList:
             generator.genPath(self.cfg.initBlockId, invNode)
             paths = generator.getPath()
-            self.invalidNode2Paths[invNode] = []
+            self.invalidNode2PathIds[invNode] = []
             for pathNodeList in paths:
-                path = Path(self.invalidPathId,pathNodeList)
+                path = Path(self.invalidPathId, pathNodeList)
                 self.invalidPaths[self.invalidPathId] = path
-                self.invalidNode2Paths[invNode].append(self.invalidPathId)
+                self.invalidNode2PathIds[invNode].append(self.invalidPathId)
                 self.invalidPathId += 1
         # for k, v in self.invalidNode2Paths.items():
         #     print("invalid node is:{}".format(k))
@@ -181,3 +194,26 @@ class AssertionOptimizer:
         #         self.invalidPaths[pathId].printPath()
 
         # 第三步，对于每个invalid节点，将其所有路径根据函数调用链进行划分
+        for invNode in self.invalidNodeList:  # 取出一个invalid节点
+            callChain2PathIds = {}  # 记录调用链内所有的点,格式： 调用链 : [pathId1,pathId2]
+            for pathId in self.invalidNode2PathIds[invNode]:  # 取出他所有路径的id
+                # 检查这条路径的函数调用链
+                callChain = []
+                for node in self.invalidPaths[pathId].pathNodes:
+                    if self.isFuncBodyHeadNode[node]:
+                        callChain.append(self.node2FuncId[node])
+                # 得到一条函数调用链
+                self.invalidPaths[pathId].setFuncCallChain(callChain)
+                key = callChain.__str__()
+                if key not in callChain2PathIds.keys():
+                    callChain2PathIds[key] = []
+                callChain2PathIds[key].append(pathId)
+            # 已经得到了invalid节点所有调用链的路径id
+            self.invalidNode2CallChain[invNode] = []
+            for callChain, pathIds in callChain2PathIds.items():
+                self.invalidNode2CallChain[invNode].append(pathIds)
+        # for k, v in self.invalidNode2PathIds.items():
+        #     print("invalid node is:{}".format(k))
+        #     for pathId in v:
+        #         self.invalidPaths[pathId].printPath()
+        # print(self.invalidNode2CallChain)
