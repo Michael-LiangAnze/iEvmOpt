@@ -54,7 +54,7 @@ class PathGenerator:
         else:
             for node in self.edges[curNode]:  # 查看每一个出边
                 key = [curNode, node].__str__()
-                if key in self.uncondJumpEdges.keys():  # 这是一条调用边或者返回边
+                if key in self.uncondJumpEdges.keys():  # 这是一条uncondjump边，但是不确定是调用边还是返回边
                     e = self.uncondJumpEdges[key]
                     if e.isCallerEdge:  # 是一条调用边
                         if self.isLoopRelated[node]:  # 不能是环相关的点，例如循环内调用函数，会出现无限递归的情况
@@ -63,7 +63,7 @@ class PathGenerator:
                             continue
                         self.returnAddrStack.push(e.tetrad[1])  # push返回地址
                         self.__dfs(node)
-                    else:  # 是一条返回边
+                    elif e.isReturnEdge:  # 是一条返回边
                         if self.returnAddrStack.empty():  # 栈里必须还有地址
                             continue
                         if e.tetrad[3] != self.returnAddrStack.getTop():  # 和之前push的返回地址相同，才能做返回
@@ -75,7 +75,10 @@ class PathGenerator:
                         self.__dfs(node)  # 返回
                         if self.returnAddrStack.getTop() != retAddr:  # 先检查栈有没有走到过终点。因为如果走到过，则当前函数的返回地址以及前面函数的返回地址都没了，需要恢复
                             self.returnAddrStack.setStack(stackItems)
-
+                    else:  # 是一条普通的uncondjump边
+                        if self.isLoopRelated[node]:
+                            continue
+                        self.__dfs(node)
                 else:  # 是其他跳转边
                     if self.isLoopRelated[node]:
                         continue

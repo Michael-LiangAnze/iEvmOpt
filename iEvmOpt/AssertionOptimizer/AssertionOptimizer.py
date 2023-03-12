@@ -188,7 +188,7 @@ class AssertionOptimizer:
                 self.invalidPaths[self.invalidPathId] = path
                 self.invalidNode2PathIds[invNode].append(self.invalidPathId)
                 self.invalidPathId += 1
-        # for k, v in self.invalidNode2Paths.items():
+        # for k, v in self.invalidNode2PathIds.items():
         #     print("invalid node is:{}".format(k))
         #     for pathId in v:
         #         self.invalidPaths[pathId].printPath()
