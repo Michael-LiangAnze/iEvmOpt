@@ -1,11 +1,11 @@
 pragma solidity ^0.4.0;
 
-contract test{
+contract test1{
 
     function sum(uint x)private returns(uint){
+        assert(x > 0);
         uint j;
-        uint sum;
-        sum = 0;
+        uint sum = 0;
         for(j=0;j < x;++j)
             sum += j;
         return sum;

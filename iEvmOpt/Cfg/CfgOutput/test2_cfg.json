@@ -1,5 +1,5 @@
 {
-  "name": "Analysis_2023-03-11_17-46-50",
+  "name": "Analysis_2023-03-13_15-57-12",
   "address": "",
   "binarySource": "608060405234801561001057600080fd5b5060af8061001f6000396000f300608060405260043610603f576000357c0100000000000000000000000000000000000000000000000000000000900463ffffffff16806326121ff0146044575b600080fd5b348015604f57600080fd5b5060566058565b005b605e6061565b50565b60006069606e565b905090565b600060026001111515607c57fe5b60009050905600a165627a7a723058205a295f802f8c05acc42a4171becd84db1be1a55ed8024378680d0504f47400e40029",
   "binaryHash": "e2e218e8",
@@ -79,7 +79,7 @@
       "blockLimitErrors": 0,
       "criticalErrors": 0,
       "errorLog": "",
-      "buildTimeMillis": 26
+      "buildTimeMillis": 28
     }
   },
   "runtimeCfg": {
@@ -314,7 +314,7 @@
       "blockLimitErrors": 0,
       "criticalErrors": 0,
       "errorLog": "",
-      "buildTimeMillis": 8
+      "buildTimeMillis": 11
     }
   }
 }
