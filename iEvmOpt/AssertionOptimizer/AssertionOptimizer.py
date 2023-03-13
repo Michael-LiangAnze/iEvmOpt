@@ -17,6 +17,7 @@ from Utils.Logger import Logger
 class AssertionOptimizer:
     def __init__(self, cfg: Cfg):
         self.cfg = cfg
+        self.log = Logger()
         # 函数识别、处理时需要用到的信息
         self.uncondJumpEdge = []  # 存储所有的unconditional jump的边，类型为JumpEdge
         self.nodes = list(self.cfg.blocks.keys())  # 存储点，格式为 [n1,n2,n3...]
@@ -24,11 +25,13 @@ class AssertionOptimizer:
         self.inEdges = dict(self.cfg.inEdges)  # 存储入边表，格式为 to:[from1,from2...]
         self.funcCnt = 0  # 函数计数
         self.funcBodyDict = {}  # 记录找到的所有函数，格式为：  funcId:function
-        self.node2FuncId = {}  # 记录节点属于哪个函数，注意只记录函数体头节点，格式为：  node：funcId
+        self.node2FuncId = dict(
+            zip(self.nodes, [None for i in range(0, self.nodes.__len__())]))  # 记录节点属于哪个函数，格式为：  node：funcId
         self.isFuncBodyHeadNode = dict(
-            zip(self.nodes, [False for i in range(0, len(self.nodes))]))  # 函数体头结点信息，用于后续路径搜索时，得到的函数调用链
+            zip(self.nodes, [False for i in range(0, len(self.nodes))]))  # 函数体头结点信息，用于后续做函数内环压缩时，判断某个函数是否存在递归的情况
         self.isLoopRelated = dict(zip(self.nodes, [False for i in range(0, len(self.nodes))]))  # 标记各个节点是否为loop-related
         self.newNodeId = max(self.nodes) + 1  # 找到函数内的环之后，需要添加的新节点的id(一个不存在的offset)
+        self.recursionExist = False #是否存在递归调用的情况，用于log输出
 
         # 路径搜索需要用到的信息
         self.invalidNodeList = []  # 记录所有invalid节点的offset
@@ -38,19 +41,25 @@ class AssertionOptimizer:
         self.invalidNode2CallChain = {}  # 记录每个invalid节点包含的调用链，格式为： invalidNodeOffset:[[callchain1中的pathid],[callchain2中的pathid]]
 
     def optimize(self):
-        logger = Logger()
+        self.log.info("开始进行字节码分析")
+
         # 首先识别出所有的函数体，将每个函数体内的强连通分量的所有点压缩为一个点，同时标记为loop-related
         self.__identifyFunctions()
-        logger.info("函数体识别完毕，一共识别到:{}个函数体".format(self.funcCnt))
+        self.log.info("函数体识别完毕，一共识别到:{}个函数体".format(self.funcCnt))
+        if self.recursionExist: #存在递归调用的情况
+            self.log.warning("因为存在递归调用的情况，因此函数体识别的数量可能有误")
 
         # 然后找到所有invalid节点，找出他们到起始节点之间所有的边
         self.__searchPaths()
         callChainNum = 0
         for invNode in self.invalidNodeList:
             callChainNum += self.invalidNode2CallChain[invNode].__len__()
-        logger.info(
+
+        self.log.info(
             "路径搜索完毕，一共找到{}个Invalid节点，一共找到{}条路径，{}条函数调用链".format(self.invalidNodeList.__len__(),
                                                                 self.invalidPaths.__len__(), callChainNum))
+
+
 
     def __identifyFunctions(self):
         '''
@@ -125,7 +134,8 @@ class AssertionOptimizer:
             offsetRange[1] -= 1
             f = Function(self.funcCnt, offsetRange[0], offsetRange[1], funcBody, self.edges)
             self.funcBodyDict[self.funcCnt] = f
-            self.node2FuncId[offsetRange[0]] = self.funcCnt
+            for node in funcBody:
+                self.node2FuncId[node] = self.funcCnt
             # 这里做一个检查，看看所有找到的同一个函数的节点的长度拼起来，是否是其应有的长度，防止漏掉一些顶点
             funcLen = offsetRange[1] + self.cfg.blocks[offsetRange[1]].length - offsetRange[0]
             tempLen = 0
@@ -143,12 +153,17 @@ class AssertionOptimizer:
             for scc in sccList:
                 if len(scc) > 1:  # 找到loop-related节点
                     # 标记
+                    self.isLoopRelated[self.newNodeId] = True
+                    self.isFuncBodyHeadNode[self.newNodeId] = False  # 这个点默认不是函数头，但是可能会是
                     for node in scc:
                         self.isLoopRelated[node] = True
-                        assert not self.isFuncBodyHeadNode[node]  # 函数头不应该出现在函数内的scc，否则可能会引起错误
-                    # 压缩为一个点，这个点也需要标记为loop-related
-                    self.isLoopRelated[self.newNodeId] = True
-                    self.isFuncBodyHeadNode[self.newNodeId] = False  # 这个点也不是函数头
+                        # assert not self.isFuncBodyHeadNode[node]  # 函数头不应该出现在函数内的scc，否则可能会引起错误
+                        if self.isFuncBodyHeadNode[node]: # 函数头存在于scc，出现了递归的情况
+                            self.isFuncBodyHeadNode[self.newNodeId] = True
+                            self.recursionExist = True
+                            self.log.warning("检测到函数递归调用的情况，该函数将不会被优化")
+                    # 压缩为一个点，这个点也需要标记为loop-related，并标记为funcid
+                    self.node2FuncId[self.newNodeId] = func.funcId
                     compressor.setInfo(self.nodes, scc, self.edges, self.inEdges, self.newNodeId)
                     compressor.compress()
                     self.nodes, self.edges, self.inEdges = compressor.getNodes(), compressor.getEdges(), compressor.getInEdges()
@@ -199,9 +214,12 @@ class AssertionOptimizer:
             for pathId in self.invalidNode2PathIds[invNode]:  # 取出他所有路径的id
                 # 检查这条路径的函数调用链
                 callChain = []
+                preFuncId = None
                 for node in self.invalidPaths[pathId].pathNodes:
-                    if self.isFuncBodyHeadNode[node]:
+                    if self.node2FuncId[node] != preFuncId: # 进入了一个新函数
                         callChain.append(self.node2FuncId[node])
+                        preFuncId = self.node2FuncId[node]
+
                 # 得到一条函数调用链
                 self.invalidPaths[pathId].setFuncCallChain(callChain)
                 key = callChain.__str__()
@@ -212,8 +230,10 @@ class AssertionOptimizer:
             self.invalidNode2CallChain[invNode] = []
             for callChain, pathIds in callChain2PathIds.items():
                 self.invalidNode2CallChain[invNode].append(pathIds)
+
         # for k, v in self.invalidNode2PathIds.items():
         #     print("invalid node is:{}".format(k))
         #     for pathId in v:
         #         self.invalidPaths[pathId].printPath()
         # print(self.invalidNode2CallChain)
+

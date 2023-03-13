@@ -10,6 +10,7 @@ class Cfg:
         self.initBlockId = 0
         self.exitBlockId = 0
 
+
     def addBasicBlock(self, block: BasicBlock):
         self.blocks[int(block.offset)] = block
 

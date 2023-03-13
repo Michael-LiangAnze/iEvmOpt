@@ -7,6 +7,7 @@ import graphviz
 from Cfg.BasicBlock import BasicBlock
 from Cfg.Cfg import Cfg
 from Utils import DotGraphGenerator
+from Utils.Logger import Logger
 
 
 class CfgBuilder:
@@ -20,6 +21,7 @@ class CfgBuilder:
         self.srcName = os.path.basename(_srcPath).split(".")[0]  # 原bin文件的文件名
         self.outputPath = "Cfg/CfgOutput/"  # 输出的目录名
         self.cfg = Cfg()
+        self.log = Logger()
         if not isParseBefore:
             self.__etherSolve()
         self.__buildCfg()
@@ -27,7 +29,9 @@ class CfgBuilder:
             dg = DotGraphGenerator(self.cfg.edges, self.cfg.blocks.keys())
             dg.genDotGraph(self.outputPath, self.srcName)
 
+
     def __etherSolve(self):
+        self.log.info("正在使用EtherSolve处理字节码")
         cmd = "java -jar ./Cfg/EtherSolve.jar -c -H -o " + self.outputPath + self.srcName + "_cfg.html " + self.srcPath
         p = subprocess.Popen(cmd)
         if p.wait() == 0:
@@ -45,8 +49,10 @@ class CfgBuilder:
             g = f.read()  # 读取已经生成的gv文件
         dot = graphviz.Source(g)
         dot.render(outfile=self.outputPath + self.srcName + "_cfg.png", format='png')
+        self.log.info("EtherSolve处理完毕")
 
     def __buildCfg(self):
+        self.log.info("正在构建CFG")
         with open(self.outputPath + self.srcName + "_cfg.json ", 'r', encoding='UTF-8') as f:
             json_dict = json.load(f)
         for b in json_dict["runtimeCfg"]["nodes"]:  # 读取基本块
@@ -84,7 +90,7 @@ class CfgBuilder:
         #         for out in self.cfg.edges[offset]:
         #             if self.cfg.blocks[out].cfgType == "common":
         #                 self.cfg.blocks[out].isFuncBegin = True
-
+        self.log.info("CFG构建完毕")
 
     def getCfg(self):
         return self.cfg
