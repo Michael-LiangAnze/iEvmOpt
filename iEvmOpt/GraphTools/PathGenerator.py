@@ -4,10 +4,12 @@
 
 from Utils import Stack
 from AssertionOptimizer.JumpEdge import JumpEdge
+from Utils.Logger import Logger
 
 
 class PathGenerator:
-    def __init__(self, nodes: list, edges: dict, uncondJumpEdges: list, isLoopRelated: dict):
+    def __init__(self, nodes: list, edges: dict, uncondJumpEdges: list, isLoopRelated: dict, node2FuncId: dict,
+                 funcBodyDict: dict):
         """初始化路径搜索需要的信息
         :param nodes:图的节点信息，格式为[n1,n2,n3]
         :param edges: 图的出边表，格式为{from:[to1,to2.....]}
@@ -20,11 +22,16 @@ class PathGenerator:
         for e in uncondJumpEdges:
             key = [e.beginNode, e.targetNode].__str__()
             self.uncondJumpEdges[key] = e
-
         self.isLoopRelated = isLoopRelated
+        self.node2FuncId = node2FuncId  # 用于检测递归调用
+        self.funcBodyDict = funcBodyDict  # 用于检测递归调用
+        self.isLoopFuncCallChain = dict(zip(self.nodes, [False for i in range(0, len(self.nodes))]))  # 记录节点是否为环形函数调用链相关
+
         self.pathRecorder = Stack()
         self.returnAddrStack = Stack()
         self.paths = []
+
+        self.log = Logger()
 
     def genPath(self, begin: int, target: int):
         '''
@@ -42,6 +49,7 @@ class PathGenerator:
         # dfs寻路
 
         self.__dfs(self.beginN)
+        print(self.isLoopFuncCallChain)
 
     def __dfs(self, curNode: int):
         """
@@ -53,14 +61,34 @@ class PathGenerator:
             self.paths.append(self.pathRecorder.getStack())
         else:
             for node in self.edges[curNode]:  # 查看每一个出边
+                if self.isLoopRelated[curNode]:  # 在做出边遍历的时候，可能某一条出边的路径上会发现调用环，而环上可能会存在当前节点
+                    break
                 key = [curNode, node].__str__()
                 if key in self.uncondJumpEdges.keys():  # 这是一条uncondjump边，但是不确定是调用边还是返回边
                     e = self.uncondJumpEdges[key]
                     if e.isCallerEdge:  # 是一条调用边
                         if self.isLoopRelated[node]:  # 不能是环相关的点，例如循环内调用函数，会出现无限递归的情况
                             continue
-                        if self.returnAddrStack.hasItem(e.tetrad[1]):  # 不能是已经调用过的函数
-                            continue
+                        if self.returnAddrStack.hasItem(
+                                e.tetrad[1]):  # 如果是已经调用过的函数，则要将两次调用之间的所有函数的所有节点，标记为环形函数调用链相关
+                            # 首先找出所有环相关的函数
+                            callFuncId = self.node2FuncId[e.targetNode]
+                            loopRelatedFuncId = {}  # 用字典只是为了过滤相同的函数id
+                            tempPathRecorder = Stack()
+                            tempPathRecorder.setStack(self.pathRecorder.getStack())
+                            isStop = False
+                            while not isStop:
+                                n = tempPathRecorder.pop()
+                                if self.node2FuncId[n] == callFuncId and self.node2FuncId[
+                                    tempPathRecorder.getTop()] != callFuncId:  # 已经彻底退出环了
+                                    isStop = True
+                                loopRelatedFuncId[self.node2FuncId[n]] = None
+                            # 然后将这些函数的所有节点都标记为loop-ralated
+                            for funcId in loopRelatedFuncId.keys():
+                                for funcNode in self.funcBodyDict[funcId].funcBodyNodes:
+                                    self.isLoopFuncCallChain[funcNode] = True
+                            self.log.warning("检测到环形函数调用链的情况，涉及的函数id有：{}".format([i for i in loopRelatedFuncId.keys()]))
+                            continue  # 防止死循环
                         self.returnAddrStack.push(e.tetrad[1])  # push返回地址
                         self.__dfs(node)
                     elif e.isReturnEdge:  # 是一条返回边

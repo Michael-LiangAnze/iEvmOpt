@@ -31,7 +31,7 @@ class AssertionOptimizer:
             zip(self.nodes, [False for i in range(0, len(self.nodes))]))  # 函数体头结点信息，用于后续做函数内环压缩时，判断某个函数是否存在递归的情况
         self.isLoopRelated = dict(zip(self.nodes, [False for i in range(0, len(self.nodes))]))  # 标记各个节点是否为loop-related
         self.newNodeId = max(self.nodes) + 1  # 找到函数内的环之后，需要添加的新节点的id(一个不存在的offset)
-        self.recursionExist = False #是否存在递归调用的情况，用于log输出
+        self.recursionExist = False  # 是否存在递归调用的情况，用于log输出
 
         # 路径搜索需要用到的信息
         self.invalidNodeList = []  # 记录所有invalid节点的offset
@@ -46,7 +46,7 @@ class AssertionOptimizer:
         # 首先识别出所有的函数体，将每个函数体内的强连通分量的所有点压缩为一个点，同时标记为loop-related
         self.__identifyFunctions()
         self.log.info("函数体识别完毕，一共识别到:{}个函数体".format(self.funcCnt))
-        if self.recursionExist: #存在递归调用的情况
+        if self.recursionExist:  # 存在递归调用的情况
             self.log.warning("因为存在递归调用的情况，因此函数体识别的数量可能有误")
 
         # 然后找到所有invalid节点，找出他们到起始节点之间所有的边
@@ -58,8 +58,6 @@ class AssertionOptimizer:
         self.log.info(
             "路径搜索完毕，一共找到{}个Invalid节点，一共找到{}条路径，{}条函数调用链".format(self.invalidNodeList.__len__(),
                                                                 self.invalidPaths.__len__(), callChainNum))
-
-
 
     def __identifyFunctions(self):
         '''
@@ -158,7 +156,7 @@ class AssertionOptimizer:
                     for node in scc:
                         self.isLoopRelated[node] = True
                         # assert not self.isFuncBodyHeadNode[node]  # 函数头不应该出现在函数内的scc，否则可能会引起错误
-                        if self.isFuncBodyHeadNode[node]: # 函数头存在于scc，出现了递归的情况
+                        if self.isFuncBodyHeadNode[node]:  # 函数头存在于scc，出现了递归的情况
                             self.isFuncBodyHeadNode[self.newNodeId] = True
                             self.recursionExist = True
                             self.log.warning("检测到函数递归调用的情况，该函数将不会被优化")
@@ -193,7 +191,8 @@ class AssertionOptimizer:
         # print(self.invalidList)
 
         # 第二步，搜索从起点到invalid节点的所有路径
-        generator = PathGenerator(self.nodes, self.edges, self.uncondJumpEdge, self.isLoopRelated)
+        generator = PathGenerator(self.nodes, self.edges, self.uncondJumpEdge, self.isLoopRelated, self.node2FuncId,
+                                  self.funcBodyDict)
         for invNode in self.invalidNodeList:
             generator.genPath(self.cfg.initBlockId, invNode)
             paths = generator.getPath()
@@ -216,7 +215,7 @@ class AssertionOptimizer:
                 callChain = []
                 preFuncId = None
                 for node in self.invalidPaths[pathId].pathNodes:
-                    if self.node2FuncId[node] != preFuncId: # 进入了一个新函数
+                    if self.node2FuncId[node] != preFuncId:  # 进入了一个新函数
                         callChain.append(self.node2FuncId[node])
                         preFuncId = self.node2FuncId[node]
 
@@ -231,9 +230,8 @@ class AssertionOptimizer:
             for callChain, pathIds in callChain2PathIds.items():
                 self.invalidNode2CallChain[invNode].append(pathIds)
 
-        for k, v in self.invalidNode2PathIds.items():
-            print("invalid node is:{}".format(k))
-            for pathId in v:
-                self.invalidPaths[pathId].printPath()
-        print(self.invalidNode2CallChain)
-
+        # for k, v in self.invalidNode2PathIds.items():
+        #     print("invalid node is:{}".format(k))
+        #     for pathId in v:
+        #         self.invalidPaths[pathId].printPath()
+        # print(self.invalidNode2CallChain)
