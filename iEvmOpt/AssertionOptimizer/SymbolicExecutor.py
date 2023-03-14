@@ -1,11 +1,13 @@
 from Cfg.BasicBlock import BasicBlock
 from z3 import *
 
+from Cfg.Cfg import Cfg
 from Utils import Stack
 
 
 class SymbolicExecutor:
-    def __init__(self):
+    def __init__(self, cfg: Cfg):
+        self.cfg = cfg
         self.curBlock: BasicBlock = None  # 当前执行的基本块
         self.PC = 0  # 当前执行指令的指针
         self.stack = Stack()  # 符号执行栈
@@ -13,11 +15,23 @@ class SymbolicExecutor:
         self.memory = dict()  # 使用字典存储，格式为  addr:data
         self.gasOpcCnt = 0  # 统计gas指令被调用的次数
 
-    def setBeginBlock(self, curBlock: BasicBlock):
-        """ 设置起始执行块，同时设置PC为块的偏移量
-        :param curBlock: 起始块
+    def clearExecutor(self):
+        '''
+        清空符号执行器
+        :return: None
+        '''
+        self.curBlock = None
+        self.PC = 0
+        self.stack.clear()
+        self.storage.clear()
+        self.memory.clear()
+        self.gasOpcCnt = 0
+
+    def setBeginBlock(self, curBlockId: int):
+        """ 设置执行块，同时设置PC为块的偏移量
+        :param curBlockId: 起始块的id(offset)
         """
-        self.curBlock = curBlock
+        self.curBlock = self.cfg.blocks[curBlockId]
         self.PC = self.curBlock.offset
 
     def getCurState(self):
@@ -537,4 +551,3 @@ class SymbolicExecutor:
 
     def __execSelfDestruct(self):  # 0xff
         assert 0
-

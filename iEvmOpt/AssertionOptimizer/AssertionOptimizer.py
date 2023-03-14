@@ -2,6 +2,7 @@ import sys
 
 from AssertionOptimizer.Function import Function
 from AssertionOptimizer.Path import Path
+from AssertionOptimizer.SymbolicExecutor import SymbolicExecutor
 from Cfg.Cfg import Cfg
 from Cfg.BasicBlock import BasicBlock
 from AssertionOptimizer.JumpEdge import JumpEdge
@@ -30,6 +31,7 @@ class AssertionOptimizer:
         self.isFuncBodyHeadNode = dict(
             zip(self.nodes, [False for i in range(0, len(self.nodes))]))  # 函数体头结点信息，用于后续做函数内环压缩时，判断某个函数是否存在递归的情况
         self.isLoopRelated = dict(zip(self.nodes, [False for i in range(0, len(self.nodes))]))  # 标记各个节点是否为loop-related
+        self.isFuncCallLoopRelated = None  # 记录节点是否在函数调用环之内，该信息只能由路径搜索得到
         self.newNodeId = max(self.nodes) + 1  # 找到函数内的环之后，需要添加的新节点的id(一个不存在的offset)
         self.recursionExist = False  # 是否存在递归调用的情况，用于log输出
 
@@ -39,6 +41,9 @@ class AssertionOptimizer:
         self.invalidPaths = {}  # 用于记录不同invalid对应的路径集合，格式为：  invalidPathId:Path
         self.invalidNode2PathIds = {}  # 记录每个invalid节点包含的路径，格式为：  invalidNodeOffset:[pathId1,pathId2]
         self.invalidNode2CallChain = {}  # 记录每个invalid节点包含的调用链，格式为： invalidNodeOffset:[[callchain1中的pathid],[callchain2中的pathid]]
+
+        # 可达性分析需要用到的信息
+        self.invNodeReachable = None  # 某个Invalid节点是否可达
 
     def optimize(self):
         self.log.info("开始进行字节码分析")
@@ -56,8 +61,8 @@ class AssertionOptimizer:
             callChainNum += self.invalidNode2CallChain[invNode].__len__()
 
         self.log.info(
-            "路径搜索完毕，一共找到{}个Invalid节点，一共找到{}条路径，{}条函数调用链".format(self.invalidNodeList.__len__(),
-                                                                self.invalidPaths.__len__(), callChainNum))
+            "路径搜索完毕，一共找到{}个可优化的Invalid节点，一共找到{}条路径，{}条函数调用链".format(self.invalidNodeList.__len__(),
+                                                                    self.invalidPaths.__len__(), callChainNum))
 
     def __identifyFunctions(self):
         '''
@@ -207,7 +212,38 @@ class AssertionOptimizer:
         #     for pathId in v:
         #         self.invalidPaths[pathId].printPath()
 
-        # 第三步，对于每个invalid节点，将其所有路径根据函数调用链进行划分
+        # 第三步，对于一个Invalid节点，检查它的所有路径中，是否存在
+        # scc或者函数调用环相关的节点
+        self.isFuncCallLoopRelated = generator.getFuncCallLoopRelated()
+        removedInvPaths = []
+        removedInvNodes = []
+        for invNode in self.invalidNodeList:
+            isProcess = True
+            for pathId in self.invalidNode2PathIds[invNode]:
+                for node in self.invalidPaths[pathId].pathNodes:
+                    if self.isLoopRelated[node] or self.isFuncCallLoopRelated[node]:  # 存在
+                        isProcess = False
+                        break
+                if not isProcess:
+                    break
+            if not isProcess:
+                removedInvNodes.append(invNode)
+                for pathId in self.invalidNode2PathIds[invNode]:
+                    removedInvPaths.append(pathId)
+        for pathId in removedInvPaths:
+            self.invalidPaths.pop(pathId)
+        for node in removedInvNodes:
+            self.invalidNode2PathIds.pop(node)
+        for node in removedInvNodes:
+            self.invalidNodeList.remove(node)
+
+        # for k, v in self.invalidNode2PathIds.items():
+        #     print("invalid node is:{}".format(k))
+        #     for pathId in v:
+        #         self.invalidPaths[pathId].printPath()
+        # print(self.isFuncCallLoopRelated)
+
+        # 第四步，对于每个可优化的invalid节点，将其所有路径根据函数调用链进行划分
         for invNode in self.invalidNodeList:  # 取出一个invalid节点
             callChain2PathIds = {}  # 记录调用链内所有的点,格式： 调用链 : [pathId1,pathId2]
             for pathId in self.invalidNode2PathIds[invNode]:  # 取出他所有路径的id
@@ -230,8 +266,21 @@ class AssertionOptimizer:
             for callChain, pathIds in callChain2PathIds.items():
                 self.invalidNode2CallChain[invNode].append(pathIds)
 
-        for k, v in self.invalidNode2PathIds.items():
-            print("invalid node is:{}".format(k))
-            for pathId in v:
-                self.invalidPaths[pathId].printPath()
-        print(self.invalidNode2CallChain)
+        # for k, v in self.invalidNode2PathIds.items():
+        #     print("invalid node is:{}".format(k))
+        #     for pathId in v:
+        #         self.invalidPaths[pathId].printPath()
+        # print(self.invalidNode2CallChain)
+
+    def __reachabilityAnalysis(self):
+        '''
+        可达性分析：对于一个invalid节点，检查它的所有路径是否可达
+        :return:
+        '''
+        self.invNodeReachable = dict(zip(self.invalidNodeList, [False for i in range(self.invalidNodeList.__len__())]))
+        executor = SymbolicExecutor()
+        for invNode in self.invalidNodeList:
+            for pathId in self.invalidNode2PathIds[invNode]: # 取出一条路径
+                executor.clearExecutor()
+                for node in self.invalidPaths[pathId]: # 取出一个节点
+                    executor.setBeginBlock(node)

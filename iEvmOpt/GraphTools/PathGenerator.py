@@ -127,3 +127,6 @@ class PathGenerator:
 
     def getPath(self):
         return list(self.paths)
+
+    def getFuncCallLoopRelated(self):
+        return self.isFuncCallLoopRelated
