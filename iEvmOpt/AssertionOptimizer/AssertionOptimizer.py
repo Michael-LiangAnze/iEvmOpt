@@ -230,8 +230,8 @@ class AssertionOptimizer:
             for callChain, pathIds in callChain2PathIds.items():
                 self.invalidNode2CallChain[invNode].append(pathIds)
 
-        # for k, v in self.invalidNode2PathIds.items():
-        #     print("invalid node is:{}".format(k))
-        #     for pathId in v:
-        #         self.invalidPaths[pathId].printPath()
-        # print(self.invalidNode2CallChain)
+        for k, v in self.invalidNode2PathIds.items():
+            print("invalid node is:{}".format(k))
+            for pathId in v:
+                self.invalidPaths[pathId].printPath()
+        print(self.invalidNode2CallChain)
