@@ -298,7 +298,6 @@ class AssertionOptimizer:
                 for nodeIndex in range(0, nodeList.__len__() - 1):  # invalid节点不计入计算
                     node = nodeList[nodeIndex]  # 取出一个节点
                     executor.setBeginBlock(node)
-                    jumpCond = None  # 跳转条件
                     while not executor.allInstrsExecuted():  # block还没有执行完
                         executor.execNextOpCode()
                     jumpType = executor.getBlockJumpType()
@@ -313,18 +312,7 @@ class AssertionOptimizer:
                     self.pathReachable[pathId] = True
                 else:
                     self.pathReachable[pathId] = False
-                # print(res)
-                # future = pool.submit(self.__worker, pathId)
-                # futures.append(future)
-        # for f in futures:
-        #     f.result()
-        pool.shutdown()
+
         for pid, r in self.pathReachable.items():
             print(pid, r)
 
-    def __worker(self, pathId: int):
-        pass
-        # s = Solver()
-        # res = s.check(self.constrains[pathId])
-        # self.invNodeReachable[pathId] = res == "sat"
-        # print(self.constrains[pathId])

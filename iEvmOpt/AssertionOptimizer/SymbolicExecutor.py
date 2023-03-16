@@ -35,7 +35,7 @@ class SymbolicExecutor:
         :param jumpOrNot:当前block的跳转出口为true时Jump还是false时jump
         :return:挑战条件的z3表达式
         '''
-        if jumpOrNot: # 为true时进行Jump
+        if jumpOrNot: # 走的是true的边
             if is_bool(self.jumpCond):
                 return simplify(self.jumpCond)
             elif is_bv(self.jumpCond):
