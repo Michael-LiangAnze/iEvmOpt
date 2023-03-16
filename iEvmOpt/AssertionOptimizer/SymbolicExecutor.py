@@ -14,6 +14,7 @@ class SymbolicExecutor:
         self.storage = dict()  # 使用字典存储，格式为  addr:data
         self.memory = dict()  # 使用字典存储，格式为  addr:data
         self.gasOpcCnt = 0  # 统计gas指令被调用的次数
+        self.lastInstrAddrOfBlock = 0  # block内最后一个指令的地址
 
     def clearExecutor(self):
         '''
@@ -26,6 +27,38 @@ class SymbolicExecutor:
         self.storage.clear()
         self.memory.clear()
         self.gasOpcCnt = 0
+        self.jumpCond = None # 如果当前的Block为无条件Jump，记录跳转的条件
+
+    def getJumpCond(self,jumpOrNot:bool):
+        '''
+        获取跳转条件
+        :param jumpOrNot:当前block的跳转出口为true时Jump还是false时jump
+        :return:挑战条件的z3表达式
+        '''
+        if jumpOrNot: # 为true时进行Jump
+            if is_bool(self.jumpCond):
+                return simplify(self.jumpCond)
+            elif is_bv(self.jumpCond):
+                self.stack.push(simplify(self.jumpCond != 0))
+            else:
+                assert 0
+        else:
+            if is_bool(self.jumpCond):
+                return simplify(Not(self.jumpCond))
+            elif is_bv(self.jumpCond):
+                self.stack.push(simplify(self.jumpCond == 0))
+            else:
+                assert 0
+
+    def allInstrsExecuted(self):
+        return self.PC > self.lastInstrAddrOfBlock
+
+    def getBlockJumpType(self):
+        '''
+        返回当前节点的跳转类型
+        :return:跳转类型，包括：unconditional、conditional、terminal、fall
+        '''
+        return self.curBlock.jumpType
 
     def setBeginBlock(self, curBlockId: int):
         """ 设置执行块，同时设置PC为块的偏移量
@@ -33,6 +66,7 @@ class SymbolicExecutor:
         """
         self.curBlock = self.cfg.blocks[curBlockId]
         self.PC = self.curBlock.offset
+        self.lastInstrAddrOfBlock = int(self.curBlock.instrs[self.curBlock.instrNum - 1].split(":")[0])
 
     def getCurState(self):
         """ 获取程序当前的执行状态
@@ -53,15 +87,13 @@ class SymbolicExecutor:
 
     def execNextOpCode(self):
         """ 从当前PC开始，执行下一条指令
-        为了方便调试，暂时规定执行完当前指令之后，PC指向下一条指令的第一个字节
-        后续实际使用时，规定执行完当前指令之后，PC指向当前指令的最后一个字节
+        规定执行完当前指令之后，PC指向下一条指令的第一个字节
         返回值为jumpi满足时的条件
         """
         assert self.curBlock.offset <= self.PC <= self.curBlock.offset + self.curBlock.length
         index = self.PC - self.curBlock.offset
         assert index < len(self.curBlock.bytecode)
         opCode = self.curBlock.bytecode[index]
-        jumpiCond = None  # 跳转条件,为真时进行跳转
         '''
         每个函数的执行思路：需要先判断操作数是否为bool表达式，如果是的话就用If(exp,a,b)来代替
         例子：
@@ -132,7 +164,7 @@ class SymbolicExecutor:
             case 0x34:
                 self.__execCallValue()
             case 0x35:
-                self.__execCalldataLoad()
+                self.__execCallDataLoad()
             case 0x36:
                 self.__execCallDataSize()
             case 0x50:
@@ -150,7 +182,7 @@ class SymbolicExecutor:
             case 0x56:
                 self.__execJump()
             case 0x57:
-                jumpiCond = self.__execJumpi()
+                self.__execJumpi()
             case 0x58:
                 self.__execPc()
             case 0x5a:
@@ -173,7 +205,6 @@ class SymbolicExecutor:
                 err = 'Opcode {} is not found!'.format(hex(opCode))
                 assert 0, err
         self.PC += 1
-        return jumpiCond
 
     def __execAdd(self):  # 0x01
         a, b = self.stack.pop(), self.stack.pop()
@@ -478,10 +509,10 @@ class SymbolicExecutor:
         self.stack.pop()
         cond = self.stack.pop()
         if is_bv(cond):
-            return simplify(cond != 0)
+            self.jumpCond = simplify(cond != 0)
         else:
             assert is_bool(cond)
-            return cond
+            self.jumpCond = cond
 
     def __execPc(self):  # 0x58
         self.stack.push(BitVecVal(self.PC, 256))
@@ -509,7 +540,7 @@ class SymbolicExecutor:
 
     def __execDup(self, opCode):  # 0x80
         pos = opCode - 0x80
-        print(pos)
+        # print(pos)
         self.stack.push(self.stack.getItem(self.stack.size() - 1 - pos))
 
     def __execSwap(self, opCode):  # 0x90 <= opCode <= 0x9f

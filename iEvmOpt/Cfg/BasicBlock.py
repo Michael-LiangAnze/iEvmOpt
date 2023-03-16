@@ -13,7 +13,7 @@ class BasicBlock:
         self.bytecode = bytearray.fromhex(blockInfo["bytecodeHex"])  # 字节码，存储为字节数组
         self.instrs = str(blockInfo["parsedOpcodes"]).split('\n')  # 存储的指令汇编码
         self.jumpType = ""  # 论文中提及的类型：unconditional、conditional、terminal、fall
-        self.instrNum = len(self.instrs)  # 指令的数量
+        self.instrNum = self.instrs.__len__()  # 指令的数量
         self.isInvalid = False  # 是否为invalid块
         self.couldBeCaller = False
 

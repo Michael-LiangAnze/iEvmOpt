@@ -10,3 +10,6 @@ class Logger:
 
     def warning(self, strInfo: str):
         print("\033[31m{}\033[0m".format(time.strftime('%Y-%m-%d %H:%M:%S - WARNING : ', time.localtime()) + strInfo))
+
+    def error(self,strInfo:str):
+        print("\033[31m{}\033[0m".format(time.strftime('%Y-%m-%d %H:%M:%S - ERROR : ', time.localtime()) + strInfo))

@@ -1,5 +1,7 @@
 import sys
 
+from z3 import *
+
 from AssertionOptimizer.Function import Function
 from AssertionOptimizer.Path import Path
 from AssertionOptimizer.SymbolicExecutor import SymbolicExecutor
@@ -11,7 +13,8 @@ from GraphTools.PathGenerator import PathGenerator
 from GraphTools.SccCompressor import SccCompressor
 from Utils import DotGraphGenerator, Stack
 import json
-
+from concurrent.futures import ThreadPoolExecutor
+import threading
 from Utils.Logger import Logger
 
 
@@ -43,6 +46,8 @@ class AssertionOptimizer:
         self.invalidNode2CallChain = {}  # 记录每个invalid节点包含的调用链，格式为： invalidNodeOffset:[[callchain1中的pathid],[callchain2中的pathid]]
 
         # 可达性分析需要用到的信息
+        self.constrains = {}  # 每条路径包含的约束
+        self.pathReachable = {}  # 某条路径是否可达
         self.invNodeReachable = None  # 某个Invalid节点是否可达
 
     def optimize(self):
@@ -63,6 +68,9 @@ class AssertionOptimizer:
         self.log.info(
             "路径搜索完毕，一共找到{}个可优化的Invalid节点，一共找到{}条路径，{}条函数调用链".format(self.invalidNodeList.__len__(),
                                                                     self.invalidPaths.__len__(), callChainNum))
+
+        # 求解各条路径是否可行
+        self.__reachabilityAnalysis()
 
     def __identifyFunctions(self):
         '''
@@ -266,11 +274,11 @@ class AssertionOptimizer:
             for callChain, pathIds in callChain2PathIds.items():
                 self.invalidNode2CallChain[invNode].append(pathIds)
 
-        # for k, v in self.invalidNode2PathIds.items():
-        #     print("invalid node is:{}".format(k))
-        #     for pathId in v:
-        #         self.invalidPaths[pathId].printPath()
-        # print(self.invalidNode2CallChain)
+        for k, v in self.invalidNode2PathIds.items():
+            print("invalid node is:{}".format(k))
+            for pathId in v:
+                self.invalidPaths[pathId].printPath()
+        print(self.invalidNode2CallChain)
 
     def __reachabilityAnalysis(self):
         '''
@@ -278,9 +286,45 @@ class AssertionOptimizer:
         :return:
         '''
         self.invNodeReachable = dict(zip(self.invalidNodeList, [False for i in range(self.invalidNodeList.__len__())]))
-        executor = SymbolicExecutor()
+        executor = SymbolicExecutor(self.cfg)
+        pool = ThreadPoolExecutor(max_workers=4)
+        futures = []
         for invNode in self.invalidNodeList:
-            for pathId in self.invalidNode2PathIds[invNode]: # 取出一条路径
+            for pathId in self.invalidNode2PathIds[invNode]:  # 取出一条路径
+                self.pathReachable[pathId] = False
                 executor.clearExecutor()
-                for node in self.invalidPaths[pathId]: # 取出一个节点
+                self.constrains[pathId] = []
+                nodeList = self.invalidPaths[pathId].pathNodes
+                for nodeIndex in range(0, nodeList.__len__() - 1):  # invalid节点不计入计算
+                    node = nodeList[nodeIndex]  # 取出一个节点
                     executor.setBeginBlock(node)
+                    jumpCond = None  # 跳转条件
+                    while not executor.allInstrsExecuted():  # block还没有执行完
+                        executor.execNextOpCode()
+                    jumpType = executor.getBlockJumpType()
+                    if jumpType == "conditional":  # 是conditional，但是需要判断是true还是false才jump
+                        nextNode = nodeList[nodeIndex + 1]
+                        if nextNode == self.cfg.blocks[nodeList[nodeIndex]].jumpiDest[True]:
+                            self.constrains[pathId].append(executor.getJumpCond(True))
+                        else:
+                            self.constrains[pathId].append(executor.getJumpCond(False))
+                s = Solver()
+                if s.check(self.constrains[pathId]) == sat:
+                    self.pathReachable[pathId] = True
+                else:
+                    self.pathReachable[pathId] = False
+                # print(res)
+                # future = pool.submit(self.__worker, pathId)
+                # futures.append(future)
+        # for f in futures:
+        #     f.result()
+        pool.shutdown()
+        for pid, r in self.pathReachable.items():
+            print(pid, r)
+
+    def __worker(self, pathId: int):
+        pass
+        # s = Solver()
+        # res = s.check(self.constrains[pathId])
+        # self.invNodeReachable[pathId] = res == "sat"
+        # print(self.constrains[pathId])

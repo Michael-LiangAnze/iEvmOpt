@@ -182,6 +182,6 @@ contract test7 {
 
 #### 路径分类
 
-对于同一个invalid节点，对它的所有节点进行分类时。
+#### 约束求解
 
-
+给定一个假设：所有的invalid节点都是通过jumpi跳转进入的。因此只需要收集每次jumpi的condition，并加入求解器即可。
