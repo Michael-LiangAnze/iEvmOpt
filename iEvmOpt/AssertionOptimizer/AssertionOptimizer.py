@@ -17,6 +17,14 @@ from concurrent.futures import ThreadPoolExecutor
 import threading
 from Utils.Logger import Logger
 
+# 调试用
+fullyRedundant = "fullyRedundant"
+partiallyRedundant = "partiallyRedundant"
+
+
+# fullyRedundant = 0
+# partiallyRedundant = 1
+
 
 class AssertionOptimizer:
     def __init__(self, cfg: Cfg):
@@ -49,6 +57,7 @@ class AssertionOptimizer:
         self.constrains = {}  # 每条路径包含的约束
         self.pathReachable = {}  # 某条路径是否可达
         self.invNodeReachable = None  # 某个Invalid节点是否可达
+        self.redundantType = {}  # 每个invalid节点的冗余类型，类型包括fullyredundant和partiallyredundant，格式为： invNode: type
 
     def optimize(self):
         self.log.info("开始进行字节码分析")
@@ -244,7 +253,6 @@ class AssertionOptimizer:
             self.invalidNodeList.remove(node)
             self.invalidNode2PathIds.pop(node)
 
-
         # for k, v in self.invalidNode2PathIds.items():
         #     print("invalid node is:{}".format(k))
         #     for pathId in v:
@@ -274,20 +282,21 @@ class AssertionOptimizer:
             for callChain, pathIds in callChain2PathIds.items():
                 self.invalidNode2CallChain[invNode].append(pathIds)
 
-        for k, v in self.invalidNode2PathIds.items():
-            print("invalid node is:{}".format(k))
-            for pathId in v:
-                self.invalidPaths[pathId].printPath()
-        print(self.invalidNode2CallChain)
+        # for k, v in self.invalidNode2PathIds.items():
+        #     print("invalid node is:{}".format(k))
+        #     for pathId in v:
+        #         self.invalidPaths[pathId].printPath()
+        # print(self.invalidNode2CallChain)
 
     def __reachabilityAnalysis(self):
         '''
-        可达性分析：对于一个invalid节点，检查它的所有路径是否可达
-        :return:
+        可达性分析：对于一个invalid节点，检查它的所有路径是否可达，并根据这些可达性信息判断冗余类型
+        :return:None
         '''
+
+        # 第一步，使用求解器判断各条路径是否是可达的
         self.invNodeReachable = dict(zip(self.invalidNodeList, [False for i in range(self.invalidNodeList.__len__())]))
         executor = SymbolicExecutor(self.cfg)
-        removedPath = []
         for invNode in self.invalidNodeList:
             for pathId in self.invalidNode2PathIds[invNode]:  # 取出一条路径
                 self.pathReachable[pathId] = False
@@ -300,21 +309,19 @@ class AssertionOptimizer:
                     executor.setBeginBlock(node)
                     while not executor.allInstrsExecuted():  # block还没有执行完
                         executor.execNextOpCode()
-                        # if (node == 197 or node == 215 or node == 220) and pathId == 3:
-                        #     executor.printState(False)
                     jumpType = executor.getBlockJumpType()
                     if jumpType == "conditional":
                         # 先判断，是否为确定的跳转地址
                         curNode = nodeList[nodeIndex]
                         nextNode = nodeList[nodeIndex + 1]
-                        checkInfo = executor.checkIsCertainJumpDest()
-                        if checkInfo[0]:  # 是一个固定的跳转地址
+                        isCertainJumpDest, jumpCond = executor.checkIsCertainJumpDest()
+                        if isCertainJumpDest:  # 是一个固定的跳转地址
                             # 检查预期的跳转地址是否和栈的信息匹配
-                            expectedTarget = self.cfg.blocks[curNode].jumpiDest[checkInfo[1]]
+                            expectedTarget = self.cfg.blocks[curNode].jumpiDest[jumpCond]
                             if nextNode != expectedTarget:  # 不匹配，直接置为不可达，后续不做check
                                 self.pathReachable[pathId] = False
                                 isSolve = False  # 不处理这一条路径了
-                                self.log.info(
+                                self.log.processing(
                                     "路径{}在实际运行中不可能出现：在节点{}处本应跳转到{}，却跳转到了{}".format(pathId, curNode, expectedTarget,
                                                                                    nextNode))
                                 break
@@ -328,11 +335,18 @@ class AssertionOptimizer:
                 if isSolve:
                     s = Solver()
                     self.pathReachable[pathId] = s.check(self.constrains[pathId]) == sat
-
-        # for pathId in removedPath:
-        #     self.invalidPaths.pop(pathId)
-        #     self.pathReachable.pop(pathId)
-        #     self.constrains.pop(pathId)
-
         for pid, r in self.pathReachable.items():
             print(pid, r)
+
+        # 第二步，根据各条路径的可达性，判断每个invalid节点的冗余类型
+        for invNode in self.invalidNodeList:
+            hasReachable = False  # 一个invalid的路径中是否包含可达的路径
+            for pathId in self.invalidNode2PathIds[invNode]:  # 取出一条路径
+                if self.pathReachable[pathId]:  # 找到一条可达的
+                    hasReachable = True
+            if not hasReachable:  # 没有一条路径可达，是完全冗余
+                self.redundantType[invNode] = fullyRedundant
+            else:  # 既有可达的也有不可达的，是部分冗余
+                self.redundantType[invNode] = partiallyRedundant
+        for pid, t in self.redundantType.items():
+            print(pid, t)

@@ -36,13 +36,13 @@ class SymbolicExecutor:
         '''
         if is_bool(self.jumpCond):  # 是bool类型，但是不知道是不是value
             if is_true(self.jumpCond) or is_false(self.jumpCond):  # 是一个value
-                return [True, is_true(self.jumpCond)]
+                return True, is_true(self.jumpCond)
             else:
-                return [False, None]
+                return False, None
         elif is_bv_value(self.jumpCond):  # 是bitvecval类型
-            return [True, simplify(self.jumpCond != 0)]
+            return True, simplify(self.jumpCond != 0)
         else:
-            return [False, None]
+            return False, None
 
     def getJumpCond(self, jumpOrNot: bool):
         '''
