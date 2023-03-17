@@ -544,8 +544,10 @@ class SymbolicExecutor:
         self.stack.push(self.stack.getItem(self.stack.size() - 1 - pos))
 
     def __execSwap(self, opCode):  # 0x90 <= opCode <= 0x9f
-        pos = opCode - 0x90 + 1
-        self.stack.swap(0, pos)
+        depth = opCode - 0x90 + 1
+        stackSize = self.stack.size()
+        pos = stackSize-1-depth
+        self.stack.swap(stackSize-1, pos)
 
     def __execLog(self, opCode):  # 0xa0 <= opCode <= 0xa4
         assert 0

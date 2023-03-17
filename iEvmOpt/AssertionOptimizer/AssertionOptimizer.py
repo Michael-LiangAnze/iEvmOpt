@@ -300,14 +300,19 @@ class AssertionOptimizer:
                     executor.setBeginBlock(node)
                     while not executor.allInstrsExecuted():  # block还没有执行完
                         executor.execNextOpCode()
+                        # if node == 197 and pathId == 2:
+                        #     executor.printState(False)
                     jumpType = executor.getBlockJumpType()
                     if jumpType == "conditional":  # 是conditional，但是需要判断是true还是false才jump
                         nextNode = nodeList[nodeIndex + 1]
                         if nextNode == self.cfg.blocks[nodeList[nodeIndex]].jumpiDest[True]:
                             self.constrains[pathId].append(executor.getJumpCond(True))
-                        else:
+                        elif nextNode == self.cfg.blocks[nodeList[nodeIndex]].jumpiDest[False]:
                             self.constrains[pathId].append(executor.getJumpCond(False))
+                        else:
+                            assert 0
                 s = Solver()
+                print("curPath:{},cur constrains:{}".format(pathId, self.constrains[pathId]))
                 if s.check(self.constrains[pathId]) == sat:
                     self.pathReachable[pathId] = True
                 else:
@@ -315,4 +320,3 @@ class AssertionOptimizer:
 
         for pid, r in self.pathReachable.items():
             print(pid, r)
-
