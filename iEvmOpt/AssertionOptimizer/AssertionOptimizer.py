@@ -241,9 +241,9 @@ class AssertionOptimizer:
         for pathId in removedInvPaths:
             self.invalidPaths.pop(pathId)
         for node in removedInvNodes:
-            self.invalidNode2PathIds.pop(node)
-        for node in removedInvNodes:
             self.invalidNodeList.remove(node)
+            self.invalidNode2PathIds.pop(node)
+
 
         # for k, v in self.invalidNode2PathIds.items():
         #     print("invalid node is:{}".format(k))
@@ -300,6 +300,8 @@ class AssertionOptimizer:
                     executor.setBeginBlock(node)
                     while not executor.allInstrsExecuted():  # block还没有执行完
                         executor.execNextOpCode()
+                        # if (node == 197 or node == 215 or node == 220) and pathId == 3:
+                        #     executor.printState(False)
                     jumpType = executor.getBlockJumpType()
                     if jumpType == "conditional":
                         # 先判断，是否为确定的跳转地址
@@ -325,10 +327,7 @@ class AssertionOptimizer:
                                 assert 0
                 if isSolve:
                     s = Solver()
-                    if s.check(self.constrains[pathId]) == sat:
-                        self.pathReachable[pathId] = True
-                    else:
-                        self.pathReachable[pathId] = False
+                    self.pathReachable[pathId] = s.check(self.constrains[pathId]) == sat
 
         # for pathId in removedPath:
         #     self.invalidPaths.pop(pathId)
