@@ -12,7 +12,7 @@ contract assertExample{
 
     function f1()public{
         a = safeAdd(a,0x15);
-        b = 0x40;
+        a = 0x40;
         a = safeAdd(a,0x35);
     }
 

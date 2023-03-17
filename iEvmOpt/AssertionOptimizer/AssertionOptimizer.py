@@ -287,36 +287,53 @@ class AssertionOptimizer:
         '''
         self.invNodeReachable = dict(zip(self.invalidNodeList, [False for i in range(self.invalidNodeList.__len__())]))
         executor = SymbolicExecutor(self.cfg)
-        pool = ThreadPoolExecutor(max_workers=4)
-        futures = []
+        removedPath = []
         for invNode in self.invalidNodeList:
             for pathId in self.invalidNode2PathIds[invNode]:  # 取出一条路径
                 self.pathReachable[pathId] = False
                 executor.clearExecutor()
                 self.constrains[pathId] = []
                 nodeList = self.invalidPaths[pathId].pathNodes
+                isSolve = True  # 默认是做约束检查的。如果发现路径走到了一个不应该到达的节点，则不做check，相当于是优化了过程
                 for nodeIndex in range(0, nodeList.__len__() - 1):  # invalid节点不计入计算
                     node = nodeList[nodeIndex]  # 取出一个节点
                     executor.setBeginBlock(node)
                     while not executor.allInstrsExecuted():  # block还没有执行完
                         executor.execNextOpCode()
-                        # if node == 197 and pathId == 2:
-                        #     executor.printState(False)
                     jumpType = executor.getBlockJumpType()
-                    if jumpType == "conditional":  # 是conditional，但是需要判断是true还是false才jump
+                    if jumpType == "conditional":
+                        # 先判断，是否为确定的跳转地址
+                        curNode = nodeList[nodeIndex]
                         nextNode = nodeList[nodeIndex + 1]
-                        if nextNode == self.cfg.blocks[nodeList[nodeIndex]].jumpiDest[True]:
-                            self.constrains[pathId].append(executor.getJumpCond(True))
-                        elif nextNode == self.cfg.blocks[nodeList[nodeIndex]].jumpiDest[False]:
-                            self.constrains[pathId].append(executor.getJumpCond(False))
-                        else:
-                            assert 0
-                s = Solver()
-                print("curPath:{},cur constrains:{}".format(pathId, self.constrains[pathId]))
-                if s.check(self.constrains[pathId]) == sat:
-                    self.pathReachable[pathId] = True
-                else:
-                    self.pathReachable[pathId] = False
+                        checkInfo = executor.checkIsCertainJumpDest()
+                        if checkInfo[0]:  # 是一个固定的跳转地址
+                            # 检查预期的跳转地址是否和栈的信息匹配
+                            expectedTarget = self.cfg.blocks[curNode].jumpiDest[checkInfo[1]]
+                            if nextNode != expectedTarget:  # 不匹配，直接置为不可达，后续不做check
+                                self.pathReachable[pathId] = False
+                                isSolve = False  # 不处理这一条路径了
+                                self.log.info(
+                                    "路径{}在实际运行中不可能出现：在节点{}处本应跳转到{}，却跳转到了{}".format(pathId, curNode, expectedTarget,
+                                                                                   nextNode))
+                                break
+                        else:  # 不是固定的跳转地址
+                            if nextNode == self.cfg.blocks[curNode].jumpiDest[True]:
+                                self.constrains[pathId].append(executor.getJumpCond(True))
+                            elif nextNode == self.cfg.blocks[curNode].jumpiDest[False]:
+                                self.constrains[pathId].append(executor.getJumpCond(False))
+                            else:
+                                assert 0
+                if isSolve:
+                    s = Solver()
+                    if s.check(self.constrains[pathId]) == sat:
+                        self.pathReachable[pathId] = True
+                    else:
+                        self.pathReachable[pathId] = False
+
+        # for pathId in removedPath:
+        #     self.invalidPaths.pop(pathId)
+        #     self.pathReachable.pop(pathId)
+        #     self.constrains.pop(pathId)
 
         for pid, r in self.pathReachable.items():
             print(pid, r)

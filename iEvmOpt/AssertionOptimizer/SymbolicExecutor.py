@@ -27,26 +27,41 @@ class SymbolicExecutor:
         self.storage.clear()
         self.memory.clear()
         self.gasOpcCnt = 0
-        self.jumpCond = None # 如果当前的Block为无条件Jump，记录跳转的条件
+        self.jumpCond = None  # 如果当前的Block为无条件Jump，记录跳转的条件
 
-    def getJumpCond(self,jumpOrNot:bool):
+    def checkIsCertainJumpDest(self):
+        '''
+        检查是否为固定的跳转地址
+        :return:[是否为固定的跳转地址,跳转的条件]
+        '''
+        if is_bool(self.jumpCond):  # 是bool类型，但是不知道是不是value
+            if is_true(self.jumpCond) or is_false(self.jumpCond):  # 是一个value
+                return [True, is_true(self.jumpCond)]
+            else:
+                return [False, None]
+        elif is_bv_value(self.jumpCond):  # 是bitvecval类型
+            return [True, simplify(self.jumpCond != 0)]
+        else:
+            return [False, None]
+
+    def getJumpCond(self, jumpOrNot: bool):
         '''
         获取跳转条件
         :param jumpOrNot:当前block的跳转出口为true时Jump还是false时jump
         :return:挑战条件的z3表达式
         '''
-        if jumpOrNot: # 走的是true的边
+        if jumpOrNot:  # 走的是true的边
             if is_bool(self.jumpCond):
                 return simplify(self.jumpCond)
             elif is_bv(self.jumpCond):
-                self.stack.push(simplify(self.jumpCond != 0))
+                return simplify(self.jumpCond != 0)
             else:
                 assert 0
-        else:
+        else: # 走的是false的边
             if is_bool(self.jumpCond):
                 return simplify(Not(self.jumpCond))
             elif is_bv(self.jumpCond):
-                self.stack.push(simplify(self.jumpCond == 0))
+                return simplify(self.jumpCond == 0)
             else:
                 assert 0
 
@@ -546,8 +561,8 @@ class SymbolicExecutor:
     def __execSwap(self, opCode):  # 0x90 <= opCode <= 0x9f
         depth = opCode - 0x90 + 1
         stackSize = self.stack.size()
-        pos = stackSize-1-depth
-        self.stack.swap(stackSize-1, pos)
+        pos = stackSize - 1 - depth
+        self.stack.swap(stackSize - 1, pos)
 
     def __execLog(self, opCode):  # 0xa0 <= opCode <= 0xa4
         assert 0
