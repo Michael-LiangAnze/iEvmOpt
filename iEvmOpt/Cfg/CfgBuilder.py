@@ -47,6 +47,7 @@ class CfgBuilder:
 
         with open(self.outputPath + self.srcName + "_cfg.gv ") as f:
             g = f.read()  # 读取已经生成的gv文件
+        f.close()
         dot = graphviz.Source(g)
         dot.render(outfile=self.outputPath + self.srcName + "_cfg.png", format='png')
         self.log.info("EtherSolve处理完毕")
@@ -55,6 +56,7 @@ class CfgBuilder:
         self.log.info("正在构建CFG")
         with open(self.outputPath + self.srcName + "_cfg.json ", 'r', encoding='UTF-8') as f:
             json_dict = json.load(f)
+        f.close()
         for b in json_dict["runtimeCfg"]["nodes"]:  # 读取基本块
             block = BasicBlock(b)
             self.cfg.addBasicBlock(block)

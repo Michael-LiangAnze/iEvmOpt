@@ -226,11 +226,14 @@ contract test8{
 
 给定一个假设：所有的invalid节点都是通过jumpi跳转进入的。因此只需要收集每次jumpi的condition，并加入求解器即可。
 
+
+
 ### 完全冗余的优化
 
 #### 基本假设
 
-要进入invalid节点，必然通过jumpi。其中jumpi判断false则跳转到invalid，判断true则跳转到invalid的下一个地址。
+* 要进入invalid节点，必然通过jumpi。其中jumpi判断false则跳转到invalid，判断true则跳转到invalid的下一个地址。
+* dispatcher中的内容不能被修改。
 
 #### 基本思路
 
@@ -240,4 +243,10 @@ contract test8{
 2. 取出一个invalid节点，取出其中一条函数调用链，随意指定其中一条路径，开始做符号执行，并记录路径上各个地址的程序状态以及tagstack
 3. 在支配树中，从invalid节点开始向根出发，找到程序状态相同的最远的地址，这个地址到invalid节点之间的序列便是assertion相关的序列
 4. 直接在对应位置插入jump，目的地为invalid的地址+1
+
+
+
+#### 修改字节码
+
+将原字节码的内容读入，然后进行匹配，找到offset为0的block的起始位置，后面根据偏移量直接填入内容即可。
 

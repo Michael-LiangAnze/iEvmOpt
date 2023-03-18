@@ -9,10 +9,11 @@ from Cfg.Cfg import Cfg
 from Cfg.BasicBlock import BasicBlock
 from AssertionOptimizer.JumpEdge import JumpEdge
 from GraphTools import DominatorTreeBuilder
+from GraphTools.GraphMapper import GraphMapper
 from GraphTools.TarjanAlgorithm import TarjanAlgorithm
 from GraphTools.PathGenerator import PathGenerator
 from GraphTools.SccCompressor import SccCompressor
-from Utils import DotGraphGenerator, Stack, GraphMapper
+from Utils import DotGraphGenerator, Stack
 import json
 from concurrent.futures import ThreadPoolExecutor
 import threading
@@ -28,9 +29,12 @@ partiallyRedundant = "partiallyRedundant"
 
 
 class AssertionOptimizer:
-    def __init__(self, cfg: Cfg):
+    def __init__(self, cfg: Cfg, inputFile: str, outputFile: str):
         self.cfg = cfg
+        self.inputFile = inputFile  # 处理前的bin文件
+        self.outputPath = outputFile  # 处理后的新bin文件的地址
         self.log = Logger()
+
         # 函数识别、处理时需要用到的信息
         self.uncondJumpEdge = []  # 存储所有的unconditional jump的边，类型为JumpEdge
         self.nodes = list(self.cfg.blocks.keys())  # 存储点，格式为 [n1,n2,n3...]
@@ -439,7 +443,6 @@ class AssertionOptimizer:
                         if stateMap[addr] == targetState:  # 找到一个状态相同的点
                             targetAddr = addr
                             targetNode = node
-
                     node = self.domTree[node]
                 assert targetAddr and targetNode  # 不能为none
                 assert self.cfg.blocks[targetNode].blockType != "dispatcher"  # 不应该出现在dispatcher中
@@ -447,8 +450,59 @@ class AssertionOptimizer:
                 # print(targetNode)
 
                 # 第三步，直接修改该地址处的字节码，将其变为unconditional jump，跳转到invalid前的jumpi的true的地方，即invalid的地址+1处
-                invAddr = str(hex(invNode))[2:]  # 转为了十六进制，并且去除了0x
-                if invAddr.__len__() % 2 == 1:  # 为奇数，需要在前面补0
-                    invAddr = '0' + invAddr
-                pushOpcode = 60 + int(invAddr.__len__() / 2) - 1  # push指令的操作码
-                # print("put {}:{} in addr {}".format(pushOpcode, invAddr, targetAddr))
+                jumpDestAddr = str(hex(invNode + 1))[2:]  # 转为了十六进制，并且去除了0x
+                # jumpDestAddr = str(hex(0xffffff))[2:] # 测试用
+                if jumpDestAddr.__len__() % 2 == 1:  # 为奇数，需要在前面补0
+                    jumpDestAddr = '0' + jumpDestAddr
+                jumpDestAddr = [int(jumpDestAddr[i:i + 2], 16) for i in
+                                range(jumpDestAddr.__len__() // 2)]  # 转为了数字数组，每个数字代表一个字节的内容，内容是从最高字节存到最低字节
+                pushOpcode = 0x60 + jumpDestAddr.__len__() - 1  # push指令的操作码
+                # print("put {}:{} in addr {}".format(pushOpcode, jumpDestAddr, targetAddr))
+                newBytecode = bytearray()
+                originalBytecode = self.cfg.blocks[targetNode].bytecode
+                pushOffsetInTargetBlock = targetAddr - targetNode  # push指令的偏移量
+                jumpOffsetInTargetBlock = pushOffsetInTargetBlock + jumpDestAddr.__len__() + 1  # jump指令的偏移量
+
+                assert jumpOffsetInTargetBlock < self.cfg.blocks[
+                    targetNode].length  # 这里做一个检查，即修改的所有内容，不应当超出原有的block的字节码范围
+
+                for i in range(self.cfg.blocks[targetNode].length):
+                    if i < pushOffsetInTargetBlock:  # 还没到push指令，直接复制
+                        newBytecode.append(originalBytecode[i])
+                    elif i == pushOffsetInTargetBlock:  # 到了push指令处
+                        newBytecode.append(pushOpcode)
+                    elif i < pushOffsetInTargetBlock + 1 + jumpDestAddr.__len__():  # 到了push指令的内容处
+                        addrIndex = i - pushOffsetInTargetBlock - 1  # 计算
+                        newBytecode.append(jumpDestAddr[addrIndex])
+                    elif i == jumpOffsetInTargetBlock:  # 到了jump指令的内容处
+                        newBytecode.append(0x56)  # jump
+                    else:  # 过了jump指令，后面全部用00
+                        newBytecode.append(0x00)
+                assert newBytecode.__len__() == originalBytecode.__len__()
+                self.cfg.blocks[targetNode].bytecode = newBytecode  # 改为新的字节数组
+                self.cfg.blocks[targetNode].isModified = True
+                # for i in range(18):
+                #     print(hex(originalBytecode[i]),hex(newBytecode[i]))
+
+        # 第四步，将所有修改过的内容写回到bin文件中
+        self.__outputFile()
+
+    def __outputFile(self):
+        '''
+        将修改后的cfg写回到文件中
+        :return:
+        '''
+
+        # 给定一个假设，dispatcher中的内容不能被修改
+        # 第一步，将原文件读入一个字符串，然后让0号block做匹配，找到offset为0对应的下标
+        with open(self.inputFile,"rb") as f:
+            originalBytecodeStr = f.read()
+        f.close()
+
+        print(originalBytecodeStr)
+        # initBlockBytecode = [str(hex(num))[2:4] for num in self.cfg.blocks[0].bytecode]
+        initBlockBytecode = ['{:08b}'.format(num) for num in self.cfg.blocks[0].bytecode]
+        initBlockBytecodeStr = ''.join(initBlockBytecode)
+        print(initBlockBytecodeStr)
+        zeroOffsetBeginIndex = originalBytecodeStr.find(initBlockBytecodeStr)
+        print(zeroOffsetBeginIndex)

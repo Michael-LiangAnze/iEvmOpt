@@ -12,7 +12,6 @@ class BasicBlock:
         self.stackBalance = int(blockInfo["stackBalance"])  # 这是什么？
         self.bytecode = bytearray.fromhex(blockInfo["bytecodeHex"])  # 字节码，存储为字节数组
         self.instrs = str(blockInfo["parsedOpcodes"]).split('\n')  # 存储的指令汇编码
-        self.instrAddrs = [int(instr.split(':')[0]) for instr in self.instrs]  # 存储的指令的地址，用于优化时使用
         self.jumpType = ""  # 论文中提及的类型：unconditional、conditional、terminal、fall
         self.instrNum = self.instrs.__len__()  # 指令的数量
         self.isInvalid = False  # 是否为invalid块
@@ -36,6 +35,8 @@ class BasicBlock:
         # 块的辅助信息
         self.jumpiDest = {}  # 记录jumpi的块条件为True的跳转目标节点的offset，格式为 True:offset,False:offset
         self.jumpDest = []  # 记录jump的块的跳转目标节点的offset，格式为 [offset1,offset2...]
+        self.instrAddrs = [int(instr.split(':')[0]) for instr in self.instrs]  # 存储的指令的地址，用于优化时使用
+        self.isModified = False # 块内的字节码是否被修改过
 
     def printBlockInfo(self):
         """ 打印基本块的信息
