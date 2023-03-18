@@ -57,7 +57,7 @@ class SymbolicExecutor:
                 return simplify(self.jumpCond != 0)
             else:
                 assert 0
-        else: # 走的是false的边
+        else:  # 走的是false的边
             if is_bool(self.jumpCond):
                 return simplify(Not(self.jumpCond))
             elif is_bv(self.jumpCond):
@@ -84,9 +84,12 @@ class SymbolicExecutor:
         self.lastInstrAddrOfBlock = int(self.curBlock.instrs[self.curBlock.instrNum - 1].split(":")[0])
 
     def getCurState(self):
-        """ 获取程序当前的执行状态
-        """
-        pass
+        '''
+        获取程序当前的执行状态
+        :return:一个PC；一个字符串，分别包含了栈、memory、storage的状态
+        '''
+        state = self.stack.getStack().__str__() + "<=>" + self.memory.__str__() + "<=>" + self.storage.__str__()
+        return self.PC, state
 
     def printState(self, printBlock: bool = True):
         """ 输出当前程序状态

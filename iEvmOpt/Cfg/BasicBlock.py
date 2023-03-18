@@ -12,6 +12,7 @@ class BasicBlock:
         self.stackBalance = int(blockInfo["stackBalance"])  # 这是什么？
         self.bytecode = bytearray.fromhex(blockInfo["bytecodeHex"])  # 字节码，存储为字节数组
         self.instrs = str(blockInfo["parsedOpcodes"]).split('\n')  # 存储的指令汇编码
+        self.instrAddrs = [int(instr.split(':')[0]) for instr in self.instrs]  # 存储的指令的地址，用于优化时使用
         self.jumpType = ""  # 论文中提及的类型：unconditional、conditional、terminal、fall
         self.instrNum = self.instrs.__len__()  # 指令的数量
         self.isInvalid = False  # 是否为invalid块
@@ -50,4 +51,3 @@ class BasicBlock:
         print("Block is INVALID:{}".format(self.isInvalid))
         print("Block jumpiDest offset:{}".format(self.jumpiDest))
         print("Block jumpDest offset:{}\n".format(self.jumpDest))
-

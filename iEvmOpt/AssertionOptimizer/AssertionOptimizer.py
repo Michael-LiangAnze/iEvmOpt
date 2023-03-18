@@ -86,6 +86,9 @@ class AssertionOptimizer:
         self.__reachabilityAnalysis()
         self.log.info("可达性分析完毕")
 
+        # 生成cfg的支配树
+        self.__buildDominatorTree()
+
         # 根据冗余类型进行优化
         fullyRedundantNodes = []
         partiallyRedundantNodes = []
@@ -375,13 +378,7 @@ class AssertionOptimizer:
         # for pid, t in self.redundantType.items():
         #     print(pid, t)
 
-    def __optimizeFullyRedundantAssertion(self, fullyRedundantNodes: list):
-        '''
-        对字节码中完全冗余的assertion进行优化
-        :return:
-        '''
-
-        # 第一步，生成该cfg的支配树
+    def __buildDominatorTree(self):
         # 因为支配树算法中，节点是按1~N进行标号的，因此需要先做一个标号映射，并处理映射后的边，才能进行支配树的生成
         mapper = GraphMapper(self.nodes, self.edges)
         # mapper.output()
@@ -395,17 +392,63 @@ class AssertionOptimizer:
         domTree.buildTreeFrom(1)  # 原图的偏移量为0的block对应新图中标号为1的节点
         # domTree.outputIdom()
         idoms = domTree.getIdom()
-        for node in self.nodes:
-            self.domTree[node] = []
         for _to in idoms.keys():
             _from = idoms[_to]
             if _from != 0:  # 初始节点没有支配节点，被算法标记为0
-                self.domTree[mapper.newToOffset(_to)].append(mapper.newToOffset(_from))
+                self.domTree[mapper.newToOffset(_to)] = mapper.newToOffset(_from)
+        # 边格式不可用
         # g3 = DotGraphGenerator(self.domTree, self.nodes)
         # g3.genDotGraph(sys.argv[0], "_dom_tree")
 
-        # 第二步，对invalid节点进行优化
+    def __optimizeFullyRedundantAssertion(self, fullyRedundantNodes: list):
+        '''
+        对字节码中完全冗余的assertion进行优化
+        :return:
+        '''
+        # for pid, t in self.redundantType.items():
+        #     print(pid, t)
+        executor = SymbolicExecutor(self.cfg)
         for invNode in fullyRedundantNodes:
             # 首先做一个检查，检查是否为jumpi的失败边走向Invalid，且该invalid节点只有一个入边
             assert self.cfg.inEdges[invNode].__len__() == 1
             assert invNode == self.cfg.blocks[self.cfg.inEdges[invNode][0]].jumpiDest[False]
+
+            executor.clearExecutor()
+            for pathsOfCallChain in self.invalidNode2CallChain[invNode]:  # 取出一条调用链
+                # 第一步，获取路径上所有指令位置的程序状态
+                pathNodes = self.invalidPaths[pathsOfCallChain[0]].pathNodes  # 随意取出一条路径
+                stateMap = {}  # 状态map，实际存储的是，地址处的指令在执行前的程序状态
+                for node in pathNodes:
+                    executor.setBeginBlock(node)
+                    while not executor.allInstrsExecuted():  # block还没有执行完
+                        offset, state = executor.getCurState()
+                        stateMap[offset] = state
+                        executor.execNextOpCode()
+                # print(statemap)
+
+                # 第二步，在支配树中，从invalid节点出发，寻找程序状态与之相同的地址
+                # 因为在符号执行中，invalid指令没有做任何操作，因此invalid处的状态和执行完jumpi的状态是一致的
+                # 即 targetState = stateMap[invNode]
+                targetAddr = None
+                targetNode = None
+                targetState = stateMap[invNode]
+                node = self.domTree[invNode]
+                while node != 0:
+                    addrs = self.cfg.blocks[node].instrAddrs
+                    for addr in reversed(addrs):  # 从后往前遍历
+                        if stateMap[addr] == targetState:  # 找到一个状态相同的点
+                            targetAddr = addr
+                            targetNode = node
+
+                    node = self.domTree[node]
+                assert targetAddr and targetNode  # 不能为none
+                assert self.cfg.blocks[targetNode].blockType != "dispatcher"  # 不应该出现在dispatcher中
+                # print(targetAddr)
+                # print(targetNode)
+
+                # 第三步，直接修改该地址处的字节码，将其变为unconditional jump，跳转到invalid前的jumpi的true的地方，即invalid的地址+1处
+                invAddr = str(hex(invNode))[2:]  # 转为了十六进制，并且去除了0x
+                if invAddr.__len__() % 2 == 1:  # 为奇数，需要在前面补0
+                    invAddr = '0' + invAddr
+                pushOpcode = 60 + int(invAddr.__len__() / 2) - 1  # push指令的操作码
+                # print("put {}:{} in addr {}".format(pushOpcode, invAddr, targetAddr))
