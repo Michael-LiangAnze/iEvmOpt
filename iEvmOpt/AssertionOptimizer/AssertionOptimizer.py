@@ -8,10 +8,11 @@ from AssertionOptimizer.SymbolicExecutor import SymbolicExecutor
 from Cfg.Cfg import Cfg
 from Cfg.BasicBlock import BasicBlock
 from AssertionOptimizer.JumpEdge import JumpEdge
+from GraphTools import DominatorTreeBuilder
 from GraphTools.TarjanAlgorithm import TarjanAlgorithm
 from GraphTools.PathGenerator import PathGenerator
 from GraphTools.SccCompressor import SccCompressor
-from Utils import DotGraphGenerator, Stack
+from Utils import DotGraphGenerator, Stack, GraphMapper
 import json
 from concurrent.futures import ThreadPoolExecutor
 import threading
@@ -59,6 +60,9 @@ class AssertionOptimizer:
         self.invNodeReachable = None  # 某个Invalid节点是否可达
         self.redundantType = {}  # 每个invalid节点的冗余类型，类型包括fullyredundant和partiallyredundant，格式为： invNode: type
 
+        # 冗余assertion优化需要用到的信息
+        self.domTree = {}  # 支配树。注意，为了方便从invalid节点往前做遍历，该支配树存储的是入边，格式为   to:from
+
     def optimize(self):
         self.log.info("开始进行字节码分析")
 
@@ -73,13 +77,33 @@ class AssertionOptimizer:
         callChainNum = 0
         for invNode in self.invalidNodeList:
             callChainNum += self.invalidNode2CallChain[invNode].__len__()
-
         self.log.info(
             "路径搜索完毕，一共找到{}个可优化的Invalid节点，一共找到{}条路径，{}条函数调用链".format(self.invalidNodeList.__len__(),
                                                                     self.invalidPaths.__len__(), callChainNum))
 
         # 求解各条路径是否可行
+        self.log.info("正在分析路径可达性")
         self.__reachabilityAnalysis()
+        self.log.info("可达性分析完毕")
+
+        # 根据冗余类型进行优化
+        fullyRedundantNodes = []
+        partiallyRedundantNodes = []
+        for invNode, rType in self.redundantType.items():
+            if rType == fullyRedundant:
+                fullyRedundantNodes.append(invNode)
+            else:
+                partiallyRedundantNodes.append(invNode)
+        if fullyRedundantNodes.__len__() > 0:  # 存在完全冗余的节点
+            self.log.info("正在对完全冗余的Assertion进行优化")
+            self.__optimizeFullyRedundantAssertion(fullyRedundantNodes)
+            self.log.info("完全冗余Assertion优化完毕")
+        # if partiallyRedundantNodes.__len__() > 0:
+        #     self.log.info("正在对部分冗余的Assertion进行优化")
+        #     self.log.info("部分冗余Assertion优化完毕")
+        if fullyRedundantNodes.__len__() == 0 and partiallyRedundantNodes.__len__() == 0:
+            self.log.info("不存在可优化的Assertion，退出优化模块")
+            return
 
     def __identifyFunctions(self):
         '''
@@ -335,8 +359,8 @@ class AssertionOptimizer:
                 if isSolve:
                     s = Solver()
                     self.pathReachable[pathId] = s.check(self.constrains[pathId]) == sat
-        for pid, r in self.pathReachable.items():
-            print(pid, r)
+        # for pid, r in self.pathReachable.items():
+        #     print(pid, r)
 
         # 第二步，根据各条路径的可达性，判断每个invalid节点的冗余类型
         for invNode in self.invalidNodeList:
@@ -348,5 +372,40 @@ class AssertionOptimizer:
                 self.redundantType[invNode] = fullyRedundant
             else:  # 既有可达的也有不可达的，是部分冗余
                 self.redundantType[invNode] = partiallyRedundant
-        for pid, t in self.redundantType.items():
-            print(pid, t)
+        # for pid, t in self.redundantType.items():
+        #     print(pid, t)
+
+    def __optimizeFullyRedundantAssertion(self, fullyRedundantNodes: list):
+        '''
+        对字节码中完全冗余的assertion进行优化
+        :return:
+        '''
+
+        # 第一步，生成该cfg的支配树
+        # 因为支配树算法中，节点是按1~N进行标号的，因此需要先做一个标号映射，并处理映射后的边，才能进行支配树的生成
+        mapper = GraphMapper(self.nodes, self.edges)
+        # mapper.output()
+        newEdges = mapper.getNewEdges()
+        domTreeEdges = []
+        for _from in newEdges.keys():
+            for _to in newEdges[_from]:
+                domTreeEdges.append([_from, _to])
+        domTree = DominatorTreeBuilder()
+        domTree.initGraph(self.nodes.__len__(), domTreeEdges)
+        domTree.buildTreeFrom(1)  # 原图的偏移量为0的block对应新图中标号为1的节点
+        # domTree.outputIdom()
+        idoms = domTree.getIdom()
+        for node in self.nodes:
+            self.domTree[node] = []
+        for _to in idoms.keys():
+            _from = idoms[_to]
+            if _from != 0:  # 初始节点没有支配节点，被算法标记为0
+                self.domTree[mapper.newToOffset(_to)].append(mapper.newToOffset(_from))
+        # g3 = DotGraphGenerator(self.domTree, self.nodes)
+        # g3.genDotGraph(sys.argv[0], "_dom_tree")
+
+        # 第二步，对invalid节点进行优化
+        for invNode in fullyRedundantNodes:
+            # 首先做一个检查，检查是否为jumpi的失败边走向Invalid，且该invalid节点只有一个入边
+            assert self.cfg.inEdges[invNode].__len__() == 1
+            assert invNode == self.cfg.blocks[self.cfg.inEdges[invNode][0]].jumpiDest[False]

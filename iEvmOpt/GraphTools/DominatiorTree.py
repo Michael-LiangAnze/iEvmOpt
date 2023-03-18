@@ -127,4 +127,4 @@ class DominatorTreeBuilder:
 
     def outputIdom(self):
         for i in range(1, self.n + 1):
-            print(self.idom[i])
+            print("node:{},idom:{}".format(i,self.idom[i]))
