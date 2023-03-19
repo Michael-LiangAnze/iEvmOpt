@@ -11,6 +11,7 @@ class BasicBlock:
         self.blockType = blockInfo["type"]
         self.stackBalance = int(blockInfo["stackBalance"])  # 这是什么？
         self.bytecode = bytearray.fromhex(blockInfo["bytecodeHex"])  # 字节码，存储为字节数组
+        self.bytecodeStr = blockInfo["bytecodeHex"] # 字节码，存储为字符串
         self.instrs = str(blockInfo["parsedOpcodes"]).split('\n')  # 存储的指令汇编码
         self.jumpType = ""  # 论文中提及的类型：unconditional、conditional、terminal、fall
         self.instrNum = self.instrs.__len__()  # 指令的数量
@@ -46,9 +47,9 @@ class BasicBlock:
         print("Block'block type:{}".format(self.blockType))
         print("Block'jump type:{}".format(self.jumpType))
         print("Block'stackBalance:{}".format(self.stackBalance))
-        print("Block'bytecode:{}".format(self.bytecode))
+        print("Block'bytecode:{}".format([hex(i) for i in self.bytecode]))
         print("Block'instrutions:{}".format(self.instrs))
         print("Block'instruction number:{}".format(self.instrNum))
         print("Block is INVALID:{}".format(self.isInvalid))
         print("Block jumpiDest offset:{}".format(self.jumpiDest))
-        print("Block jumpDest offset:{}\n".format(self.jumpDest))
+        print("Block isModified:{}\n".format(self.isModified))

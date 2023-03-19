@@ -112,6 +112,11 @@ class AssertionOptimizer:
             self.log.info("不存在可优化的Assertion，退出优化模块")
             return
 
+        # 将优化后的字节码写入文件
+        self.log.info("正在将优化后的字节码写入文件")
+        self.__outputFile()
+        self.log.info("写入完毕")
+
     def __identifyFunctions(self):
         '''
         识别所有的函数
@@ -416,74 +421,80 @@ class AssertionOptimizer:
             # 首先做一个检查，检查是否为jumpi的失败边走向Invalid，且该invalid节点只有一个入边
             assert self.cfg.inEdges[invNode].__len__() == 1
             assert invNode == self.cfg.blocks[self.cfg.inEdges[invNode][0]].jumpiDest[False]
-
             executor.clearExecutor()
-            for pathsOfCallChain in self.invalidNode2CallChain[invNode]:  # 取出一条调用链
-                # 第一步，获取路径上所有指令位置的程序状态
-                pathNodes = self.invalidPaths[pathsOfCallChain[0]].pathNodes  # 随意取出一条路径
-                stateMap = {}  # 状态map，实际存储的是，地址处的指令在执行前的程序状态
-                for node in pathNodes:
-                    executor.setBeginBlock(node)
-                    while not executor.allInstrsExecuted():  # block还没有执行完
-                        offset, state = executor.getCurState()
-                        stateMap[offset] = state
-                        executor.execNextOpCode()
-                # print(statemap)
+            # for pathsOfCallChain in self.invalidNode2CallChain[invNode]:  # 取出一条调用链
+            pathsOfCallChain = self.invalidNode2CallChain[invNode][0]  # 随意取出一条调用链，格式为[pathId1,pathId2]
 
-                # 第二步，在支配树中，从invalid节点出发，寻找程序状态与之相同的地址
-                # 因为在符号执行中，invalid指令没有做任何操作，因此invalid处的状态和执行完jumpi的状态是一致的
-                # 即 targetState = stateMap[invNode]
-                targetAddr = None
-                targetNode = None
-                targetState = stateMap[invNode]
-                node = self.domTree[invNode]
-                while node != 0:
-                    addrs = self.cfg.blocks[node].instrAddrs
-                    for addr in reversed(addrs):  # 从后往前遍历
-                        if stateMap[addr] == targetState:  # 找到一个状态相同的点
-                            targetAddr = addr
-                            targetNode = node
-                    node = self.domTree[node]
-                assert targetAddr and targetNode  # 不能为none
-                assert self.cfg.blocks[targetNode].blockType != "dispatcher"  # 不应该出现在dispatcher中
-                # print(targetAddr)
-                # print(targetNode)
+            # 第一步，获取路径上所有指令位置的程序状态
+            pathNodes = self.invalidPaths[pathsOfCallChain[0]].pathNodes  # 随意取出一条路径
+            stateMap = {}  # 状态map，实际存储的是，地址处的指令在执行前的程序状态
+            for node in pathNodes:
+                executor.setBeginBlock(node)
+                while not executor.allInstrsExecuted():  # block还没有执行完
+                    offset, state = executor.getCurState()
+                    stateMap[offset] = state
+                    executor.execNextOpCode()
+            # print(statemap)
 
-                # 第三步，直接修改该地址处的字节码，将其变为unconditional jump，跳转到invalid前的jumpi的true的地方，即invalid的地址+1处
-                jumpDestAddr = hex(invNode + 1)[2:]  # 转为了十六进制，并且去除了0x
-                # jumpDestAddr = hex(0x01ffff)[2:]  # 测试用
-                if jumpDestAddr.__len__() % 2 == 1:
-                    jumpDestAddr = '0' + jumpDestAddr
-                pushOpcode = 0x60 + jumpDestAddr.__len__() // 2 - 1  # push指令的操作码
-                # print("put {}:{} in addr {}".format(pushOpcode, jumpDestAddr, targetAddr))
-                originalBytecode = self.cfg.blocks[targetNode].bytecode
-                # print(originalBytecode)
-                pushOffsetInTargetBlock = targetAddr - targetNode  # push指令的偏移量，这里的偏移量是字节偏移量
-                jumpOffsetInTargetBlock = pushOffsetInTargetBlock + jumpDestAddr.__len__() // 2 + 1  # jump指令的偏移量
-                assert jumpOffsetInTargetBlock < self.cfg.blocks[targetNode].length  # 修改的所有内容，不应当超出原的block的范围
-                newBytecode = bytearray()
+            # 第二步，在支配树中，从invalid节点出发，寻找程序状态与之相同的地址
+            # 因为在符号执行中，invalid指令没有做任何操作，因此invalid处的状态和执行完jumpi的状态是一致的
+            # 即 targetState = stateMap[invNode]
+            targetAddr = None
+            targetNode = None
+            targetState = stateMap[invNode]
+            node = self.domTree[invNode]
+            while node != 0:
+                addrs = self.cfg.blocks[node].instrAddrs
+                for addr in reversed(addrs):  # 从后往前遍历
+                    if stateMap[addr] == targetState:  # 找到一个状态相同的点
+                        targetAddr = addr
+                        targetNode = node
+                node = self.domTree[node]
+            assert targetAddr and targetNode  # 不能为none
+            assert self.cfg.blocks[targetNode].blockType != "dispatcher"  # 不应该出现在dispatcher中
+            # print(targetAddr)
+            # print(targetNode)
 
-                for i in range(self.cfg.blocks[targetNode].length):
-                    if i < pushOffsetInTargetBlock:  # 还没到push指令，直接复制
-                        newBytecode.append(originalBytecode[i])
-                    elif i == pushOffsetInTargetBlock:  # 到了push指令处
-                        newBytecode.append(pushOpcode)
-                    elif i < pushOffsetInTargetBlock + 1 + jumpDestAddr.__len__() // 2:  # 到了push指令的内容处
-                        addrIndex = 2 * (i - pushOffsetInTargetBlock - 1)
-                        newBytecode.append(int(jumpDestAddr[addrIndex:addrIndex + 2], 16))
-                    elif i == jumpOffsetInTargetBlock:  # 到了jump指令的内容处
-                        newBytecode.append(0x56)  # jump
-                    else:  # 过了jump指令，后面全部用00
-                        newBytecode.append(0x00)
+            # 第三步，直接修改该地址处的字节码，将其变为unconditional jump，跳转到invalid前的jumpi的true的地方，即invalid的地址+1处
+            jumpDestAddr = hex(invNode + 1)[2:]  # 转为了十六进制，并且去除了0x
+            # jumpDestAddr = hex(0x01ffff)[2:]  # 测试用
+            if jumpDestAddr.__len__() % 2 == 1:
+                jumpDestAddr = '0' + jumpDestAddr
+            pushOpcode = 0x60 + jumpDestAddr.__len__() // 2 - 1  # push指令的操作码
+            # print("put {}:{} in addr {}".format(pushOpcode, jumpDestAddr, targetAddr))
+            originalBytecode = self.cfg.blocks[targetNode].bytecode
+            # print(originalBytecode)
+            pushOffsetInTargetBlock = targetAddr - targetNode  # push指令的偏移量，这里的偏移量是字节偏移量
+            jumpOffsetInTargetBlock = pushOffsetInTargetBlock + jumpDestAddr.__len__() // 2 + 1  # jump指令的偏移量
+            assert jumpOffsetInTargetBlock < self.cfg.blocks[targetNode].length  # 修改的所有内容，不应当超出原的block的范围
+            newBytecode = bytearray()
+            for i in range(self.cfg.blocks[targetNode].length):
+                if i < pushOffsetInTargetBlock:  # 还没到push指令，直接复制
+                    newBytecode.append(originalBytecode[i])
+                elif i == pushOffsetInTargetBlock:  # 到了push指令处
+                    newBytecode.append(pushOpcode)
+                elif i < pushOffsetInTargetBlock + 1 + jumpDestAddr.__len__() // 2:  # 到了push指令的内容处
+                    addrIndex = 2 * (i - pushOffsetInTargetBlock - 1)
+                    newBytecode.append(int(jumpDestAddr[addrIndex:addrIndex + 2], 16))
+                elif i == jumpOffsetInTargetBlock:  # 到了jump指令的内容处
+                    newBytecode.append(0x56)  # jump
+                    # newBytecode.append(0x57)
+                else:  # 过了jump指令，后面全部用00代替
+                    newBytecode.append(0x00)
 
-                assert newBytecode.__len__() == originalBytecode.__len__()
-                self.cfg.blocks[targetNode].bytecode = newBytecode  # 改为新的字节数组
-                self.cfg.blocks[targetNode].isModified = True
-                # for i in range(18):
-                #     print(hex(originalBytecode[i]), hex(newBytecode[i]))
+            assert newBytecode.__len__() == originalBytecode.__len__()
+            self.cfg.blocks[targetNode].bytecode = newBytecode  # 改为新的字节数组
+            self.cfg.blocks[targetNode].isModified = True
+            for i in range(18):
+                print(hex(originalBytecode[i]), hex(newBytecode[i]))
 
-        # 第四步，将所有修改过的内容写回到bin文件中
-        self.__outputFile()
+            # # 第四步，将路径中targetNode之后的所有node全部置为空指令
+            # print(targetNode,pathNodes)
+            # for node in pathNodes:
+            #     if node <= targetNode:
+            #         pass
+            #     for i in range(self.cfg.blocks[node].length):
+            #         self.cfg.blocks[node].bytecode[i] = 0x00
 
     def __outputFile(self):
         '''
@@ -491,25 +502,36 @@ class AssertionOptimizer:
         :return:
         '''
         # 给定一个假设，dispatcher中的内容不能被修改
-        # 第一步，将原文件读入一个字符串，然后让0号block做匹配，找到offset为0对应的下标
+        # 第一步，将原文件读入一个字符串，然后让其和原函数体字符串做匹配，找到offset为0对应的下标
         with open(self.inputFile, "r") as f:
             originalBytecodeStr = f.read()
             f.close()
         # print(originalBytecodeStr)
-        initBlockBytecodeStr = "".join(['{:02x}'.format(num) for num in self.cfg.blocks[0].bytecode])
-        zeroOffsetBeginIndex = originalBytecodeStr.find(initBlockBytecodeStr)
-        assert originalBytecodeStr.count(initBlockBytecodeStr) == 1  # 0号block的字节码序列应当只出现一次
-        # print(zeroOffsetBeginIndex)
+        sortedKeys = list(self.cfg.blocks.keys())
+        sortedKeys.sort()
+        # print(sortedKeys)
+        funcBodyStr = "".join([self.cfg.blocks[k].bytecodeStr for k in sortedKeys])
+        # print(funcBodyStr)
+        assert originalBytecodeStr.count(funcBodyStr) == 1  # 0号block的字节码序列应当只出现一次
 
-        # 第二步，修改原文件字符串，在对应位置改为新字符串
+        # 第二步，修改原文件
+        beginIndex = originalBytecodeStr.find(funcBodyStr) >> 1 # 因为找出的是字符串的偏移量，需要除2变为字节偏移量
+        # print(beginIndex)
         newBytecode = bytearray.fromhex(originalBytecodeStr)  # 首先转换成字节数组
         for offset, block in self.cfg.blocks.items():
             if not block.isModified:
                 continue
+            # block.printBlockInfo()
             for i in range(block.bytecode.__len__()):  # 替换
-                newBytecode[zeroOffsetBeginIndex + offset + i] = block.bytecode[i]
+                newBytecode[beginIndex + offset + i] = block.bytecode[i]
+
+        # for i in range(newBytecode.__len__()):
+        #     print(i,hex(int(newBytecode[i])))
 
         # 第三步，将结果写入文件
         newBytecodeStr = "".join(['{:02x}'.format(num) for num in newBytecode])  # 再转换回字符串
+        print(originalBytecodeStr)
+        print(newBytecodeStr)
         with open(self.outputFile, "w+") as f:
             f.write(newBytecodeStr)
+
