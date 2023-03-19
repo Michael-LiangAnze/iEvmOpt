@@ -31,8 +31,8 @@ partiallyRedundant = "partiallyRedundant"
 class AssertionOptimizer:
     def __init__(self, cfg: Cfg, inputFile: str, outputFile: str):
         self.cfg = cfg
-        self.inputFile = inputFile  # 处理前的bin文件
-        self.outputPath = outputFile  # 处理后的新bin文件的地址
+        self.inputFile = inputFile  # 处理前的文件
+        self.outputFile = outputFile  # 处理后的新文件
         self.log = Logger()
 
         # 函数识别、处理时需要用到的信息
@@ -450,39 +450,37 @@ class AssertionOptimizer:
                 # print(targetNode)
 
                 # 第三步，直接修改该地址处的字节码，将其变为unconditional jump，跳转到invalid前的jumpi的true的地方，即invalid的地址+1处
-                jumpDestAddr = str(hex(invNode + 1))[2:]  # 转为了十六进制，并且去除了0x
-                # jumpDestAddr = str(hex(0xffffff))[2:] # 测试用
-                if jumpDestAddr.__len__() % 2 == 1:  # 为奇数，需要在前面补0
+                jumpDestAddr = hex(invNode + 1)[2:]  # 转为了十六进制，并且去除了0x
+                # jumpDestAddr = hex(0x01ffff)[2:]  # 测试用
+                if jumpDestAddr.__len__() % 2 == 1:
                     jumpDestAddr = '0' + jumpDestAddr
-                jumpDestAddr = [int(jumpDestAddr[i:i + 2], 16) for i in
-                                range(jumpDestAddr.__len__() // 2)]  # 转为了数字数组，每个数字代表一个字节的内容，内容是从最高字节存到最低字节
-                pushOpcode = 0x60 + jumpDestAddr.__len__() - 1  # push指令的操作码
+                pushOpcode = 0x60 + jumpDestAddr.__len__() // 2 - 1  # push指令的操作码
                 # print("put {}:{} in addr {}".format(pushOpcode, jumpDestAddr, targetAddr))
-                newBytecode = bytearray()
                 originalBytecode = self.cfg.blocks[targetNode].bytecode
-                pushOffsetInTargetBlock = targetAddr - targetNode  # push指令的偏移量
-                jumpOffsetInTargetBlock = pushOffsetInTargetBlock + jumpDestAddr.__len__() + 1  # jump指令的偏移量
-
-                assert jumpOffsetInTargetBlock < self.cfg.blocks[
-                    targetNode].length  # 这里做一个检查，即修改的所有内容，不应当超出原有的block的字节码范围
+                # print(originalBytecode)
+                pushOffsetInTargetBlock = targetAddr - targetNode  # push指令的偏移量，这里的偏移量是字节偏移量
+                jumpOffsetInTargetBlock = pushOffsetInTargetBlock + jumpDestAddr.__len__() // 2 + 1  # jump指令的偏移量
+                assert jumpOffsetInTargetBlock < self.cfg.blocks[targetNode].length  # 修改的所有内容，不应当超出原的block的范围
+                newBytecode = bytearray()
 
                 for i in range(self.cfg.blocks[targetNode].length):
                     if i < pushOffsetInTargetBlock:  # 还没到push指令，直接复制
                         newBytecode.append(originalBytecode[i])
                     elif i == pushOffsetInTargetBlock:  # 到了push指令处
                         newBytecode.append(pushOpcode)
-                    elif i < pushOffsetInTargetBlock + 1 + jumpDestAddr.__len__():  # 到了push指令的内容处
-                        addrIndex = i - pushOffsetInTargetBlock - 1  # 计算
-                        newBytecode.append(jumpDestAddr[addrIndex])
+                    elif i < pushOffsetInTargetBlock + 1 + jumpDestAddr.__len__() // 2:  # 到了push指令的内容处
+                        addrIndex = 2 * (i - pushOffsetInTargetBlock - 1)
+                        newBytecode.append(int(jumpDestAddr[addrIndex:addrIndex + 2], 16))
                     elif i == jumpOffsetInTargetBlock:  # 到了jump指令的内容处
                         newBytecode.append(0x56)  # jump
                     else:  # 过了jump指令，后面全部用00
                         newBytecode.append(0x00)
+
                 assert newBytecode.__len__() == originalBytecode.__len__()
                 self.cfg.blocks[targetNode].bytecode = newBytecode  # 改为新的字节数组
                 self.cfg.blocks[targetNode].isModified = True
                 # for i in range(18):
-                #     print(hex(originalBytecode[i]),hex(newBytecode[i]))
+                #     print(hex(originalBytecode[i]), hex(newBytecode[i]))
 
         # 第四步，将所有修改过的内容写回到bin文件中
         self.__outputFile()
@@ -492,17 +490,26 @@ class AssertionOptimizer:
         将修改后的cfg写回到文件中
         :return:
         '''
-
         # 给定一个假设，dispatcher中的内容不能被修改
         # 第一步，将原文件读入一个字符串，然后让0号block做匹配，找到offset为0对应的下标
-        with open(self.inputFile,"rb") as f:
+        with open(self.inputFile, "r") as f:
             originalBytecodeStr = f.read()
-        f.close()
-
-        print(originalBytecodeStr)
-        # initBlockBytecode = [str(hex(num))[2:4] for num in self.cfg.blocks[0].bytecode]
-        initBlockBytecode = ['{:08b}'.format(num) for num in self.cfg.blocks[0].bytecode]
-        initBlockBytecodeStr = ''.join(initBlockBytecode)
-        print(initBlockBytecodeStr)
+            f.close()
+        # print(originalBytecodeStr)
+        initBlockBytecodeStr = "".join(['{:02x}'.format(num) for num in self.cfg.blocks[0].bytecode])
         zeroOffsetBeginIndex = originalBytecodeStr.find(initBlockBytecodeStr)
-        print(zeroOffsetBeginIndex)
+        assert originalBytecodeStr.count(initBlockBytecodeStr) == 1  # 0号block的字节码序列应当只出现一次
+        # print(zeroOffsetBeginIndex)
+
+        # 第二步，修改原文件字符串，在对应位置改为新字符串
+        newBytecode = bytearray.fromhex(originalBytecodeStr)  # 首先转换成字节数组
+        for offset, block in self.cfg.blocks.items():
+            if not block.isModified:
+                continue
+            for i in range(block.bytecode.__len__()):  # 替换
+                newBytecode[zeroOffsetBeginIndex + offset + i] = block.bytecode[i]
+
+        # 第三步，将结果写入文件
+        newBytecodeStr = "".join(['{:02x}'.format(num) for num in newBytecode])  # 再转换回字符串
+        with open(self.outputFile, "w+") as f:
+            f.write(newBytecodeStr)
