@@ -101,6 +101,11 @@ class AssertionOptimizer:
                 fullyRedundantNodes.append(invNode)
             else:
                 partiallyRedundantNodes.append(invNode)
+        if fullyRedundantNodes.__len__() == 0 and partiallyRedundantNodes.__len__() == 0:
+            self.log.info("不存在可优化的Assertion，优化结束")
+            return
+        self.log.info("一共找到{}个完全冗余的invalid节点，{}个部分冗余的invalid节点".format(fullyRedundantNodes.__len__(),
+                                                                       partiallyRedundantNodes.__len__()))
         if fullyRedundantNodes.__len__() > 0:  # 存在完全冗余的节点
             self.log.info("正在对完全冗余的Assertion进行优化")
             self.__optimizeFullyRedundantAssertion(fullyRedundantNodes)
@@ -108,9 +113,6 @@ class AssertionOptimizer:
         # if partiallyRedundantNodes.__len__() > 0:
         #     self.log.info("正在对部分冗余的Assertion进行优化")
         #     self.log.info("部分冗余Assertion优化完毕")
-        if fullyRedundantNodes.__len__() == 0 and partiallyRedundantNodes.__len__() == 0:
-            self.log.info("不存在可优化的Assertion，退出优化模块")
-            return
 
         # 将优化后的字节码写入文件
         self.log.info("正在将优化后的字节码写入文件")
@@ -455,7 +457,7 @@ class AssertionOptimizer:
             # print(targetAddr)
             # print(targetNode)
 
-            # 第三步，直接修改该地址处的字节码，将其变为unconditional jump，跳转到invalid前的jumpi的true的地方，即invalid的地址+1处
+            # 第三步，直接修改该地址处的字节码，将其变为jump，跳转到invalid前的jumpi的true的地方，即invalid的地址+1处
             jumpDestAddr = hex(invNode + 1)[2:]  # 转为了十六进制，并且去除了0x
             # jumpDestAddr = hex(0x01ffff)[2:]  # 测试用
             if jumpDestAddr.__len__() % 2 == 1:
@@ -479,22 +481,24 @@ class AssertionOptimizer:
                 elif i == jumpOffsetInTargetBlock:  # 到了jump指令的内容处
                     newBytecode.append(0x56)  # jump
                     # newBytecode.append(0x57)
-                else:  # 过了jump指令，后面全部用00代替
-                    newBytecode.append(0x00)
+                else:  # 过了jump指令，后面全部用5b代替
+                    newBytecode.append(0x5b)
 
             assert newBytecode.__len__() == originalBytecode.__len__()
             self.cfg.blocks[targetNode].bytecode = newBytecode  # 改为新的字节数组
             self.cfg.blocks[targetNode].isModified = True
-            for i in range(18):
-                print(hex(originalBytecode[i]), hex(newBytecode[i]))
+            # for i in range(18):
+            #     print(hex(originalBytecode[i]), hex(newBytecode[i]))
 
-            # # 第四步，将路径中targetNode之后的所有node全部置为空指令
-            # print(targetNode,pathNodes)
-            # for node in pathNodes:
-            #     if node <= targetNode:
-            #         pass
-            #     for i in range(self.cfg.blocks[node].length):
-            #         self.cfg.blocks[node].bytecode[i] = 0x00
+            # 第四步，将该invalid的其他所有路径中targetNode之后的所有node全部置为空指令
+            for pathId in self.invalidNode2PathIds[invNode]:
+                for node in self.invalidPaths[pathId].pathNodes:
+                    if node <= targetNode:
+                        continue
+                    # 取到一个大于targetNode的节点
+                    self.cfg.blocks[node].isModified = True
+                    for i in range(self.cfg.blocks[node].length):
+                        self.cfg.blocks[node].bytecode[i] = 0x5b
 
     def __outputFile(self):
         '''
@@ -515,7 +519,7 @@ class AssertionOptimizer:
         assert originalBytecodeStr.count(funcBodyStr) == 1  # 0号block的字节码序列应当只出现一次
 
         # 第二步，修改原文件
-        beginIndex = originalBytecodeStr.find(funcBodyStr) >> 1 # 因为找出的是字符串的偏移量，需要除2变为字节偏移量
+        beginIndex = originalBytecodeStr.find(funcBodyStr) >> 1  # 因为找出的是字符串的偏移量，需要除2变为字节偏移量
         # print(beginIndex)
         newBytecode = bytearray.fromhex(originalBytecodeStr)  # 首先转换成字节数组
         for offset, block in self.cfg.blocks.items():
@@ -530,8 +534,7 @@ class AssertionOptimizer:
 
         # 第三步，将结果写入文件
         newBytecodeStr = "".join(['{:02x}'.format(num) for num in newBytecode])  # 再转换回字符串
-        print(originalBytecodeStr)
-        print(newBytecodeStr)
+        # print(originalBytecodeStr)
+        # print(newBytecodeStr)
         with open(self.outputFile, "w+") as f:
             f.write(newBytecodeStr)
-

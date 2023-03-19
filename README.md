@@ -242,7 +242,7 @@ contract test8{
 1. 生成支配树
 2. 取出一个invalid节点，取出其中一条函数调用链，随意指定其中一条路径，开始做符号执行，并记录路径上各个地址的程序状态
 3. 在支配树中，从invalid节点开始向根出发，找到程序状态相同的最远的地址，这个地址到invalid节点之间的序列便是assertion相关的序列
-4. 直接在assertion相关的序列位置插入jumpi，目的地为invalid的地址+1。注意，不能为jump，否则ethersolve可能会将其识别为dispatcher
+4. 直接在assertion相关的序列位置插入jump，目的地为invalid的地址+1。
 
 
 
