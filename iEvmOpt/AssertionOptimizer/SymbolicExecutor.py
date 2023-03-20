@@ -14,7 +14,11 @@ class SymbolicExecutor:
         self.storage = dict()  # 使用字典存储，格式为  addr:data
         self.memory = dict()  # 使用字典存储，格式为  addr:data
         self.gasOpcCnt = 0  # 统计gas指令被调用的次数
+
+        # 辅助信息
         self.lastInstrAddrOfBlock = 0  # block内最后一个指令的地址
+        self.jumpCond = None  # 如果当前的Block为无条件Jump，记录跳转的条件
+        self.tagStack = Stack()  # tag栈，记录的格式为：[push的值，push指令的地址，push指令所在的block]，一旦该元素参与了运算，则将运算结果置为none
 
     def clearExecutor(self):
         '''
@@ -27,7 +31,8 @@ class SymbolicExecutor:
         self.storage.clear()
         self.memory.clear()
         self.gasOpcCnt = 0
-        self.jumpCond = None  # 如果当前的Block为无条件Jump，记录跳转的条件
+        self.jumpCond = None  # 记录jumpi的跳转条件，详见jumpi的实现
+        self.tagStack.clear()
 
     def checkIsCertainJumpDest(self):
         '''
@@ -48,7 +53,7 @@ class SymbolicExecutor:
         '''
         获取跳转条件
         :param jumpOrNot:当前block的跳转出口为true时Jump还是false时jump
-        :return:挑战条件的z3表达式
+        :return:跳转条件的z3表达式
         '''
         if jumpOrNot:  # 走的是true的边
             if is_bool(self.jumpCond):
@@ -91,6 +96,9 @@ class SymbolicExecutor:
         state = self.stack.getStack().__str__() + "<=>" + self.memory.__str__() + "<=>" + self.storage.__str__()
         return self.PC, state
 
+    def getTagStackTop(self):
+        return self.tagStack.getTop()
+
     def printState(self, printBlock: bool = True):
         """ 输出当前程序状态
         :param printBlock:是否输出基本块信息
@@ -100,34 +108,20 @@ class SymbolicExecutor:
         print("Current PC is:{}".format(self.PC))
         # print("Current stack:{}<-top".format(list(self.stack.getStack())))
         print("Current stack:{}<-top".format(list(self.stack.getStack(isHex=True))))
+        print("Current tag stack:{}<-top".format(list(self.tagStack.getStack())))
         print("Current storage:{}".format(self.storage))
         print("Current memory:{}\n".format(self.memory))
 
     def execNextOpCode(self):
-        """ 从当前PC开始，执行下一条指令
+        ''' 从当前PC开始，执行下一条指令
         规定执行完当前指令之后，PC指向下一条指令的第一个字节
-        返回值为jumpi满足时的条件
-        """
+        :return:None
+        '''
         assert self.curBlock.offset <= self.PC <= self.curBlock.offset + self.curBlock.length
         index = self.PC - self.curBlock.offset
         assert index < len(self.curBlock.bytecode)
         opCode = self.curBlock.bytecode[index]
-        '''
-        每个函数的执行思路：需要先判断操作数是否为bool表达式，如果是的话就用If(exp,a,b)来代替
-        例子：
-            a = BitVec('a', 2)
-            b = BitVec('b', 2)
-            c = a > b
-            if is_bool(c):
-                print('c is bool')
-                c = If(c, BitVecVal(1,2), BitVecVal(0,2))
-            d = BitVec('d', 2)
-            mod = c * d == 2
-            s = Solver()
-            s.add(mod)
-            print(s.check())
-            solve(mod)
-        '''
+
         match opCode:
             case 0x00:  # stop
                 pass
@@ -222,12 +216,17 @@ class SymbolicExecutor:
             case _:  # Pattern not attempted
                 err = 'Opcode {} is not found!'.format(hex(opCode))
                 assert 0, err
+        assert self.stack.size() == self.tagStack.size()
         self.PC += 1
 
     def __execAdd(self):  # 0x01
         a, b = self.stack.pop(), self.stack.pop()
         assert not is_bool(a) and not is_bool(b)
         self.stack.push(simplify(a + b))
+
+        self.tagStack.pop()
+        self.tagStack.pop()
+        self.tagStack.push(None)
 
     def __execMul(self):  # 0x02
         a, b = self.stack.pop(), self.stack.pop()
@@ -237,15 +236,27 @@ class SymbolicExecutor:
             b = If(b, BitVecVal(1, 256), BitVecVal(0, 256))
         self.stack.push(simplify(a * b))
 
+        self.tagStack.pop()
+        self.tagStack.pop()
+        self.tagStack.push(None)
+
     def __execSub(self):  # 0x03
         a, b = self.stack.pop(), self.stack.pop()
         assert not is_bool(a) and not is_bool(b)
         self.stack.push(simplify(a - b))
 
+        self.tagStack.pop()
+        self.tagStack.pop()
+        self.tagStack.push(None)
+
     def __execDiv(self):  # 0x04
         a, b = self.stack.pop(), self.stack.pop()
         assert not is_bool(a) and not is_bool(b)
         self.stack.push(simplify(UDiv(a, b)))
+
+        self.tagStack.pop()
+        self.tagStack.pop()
+        self.tagStack.push(None)
 
     def __execSDiv(self):  # 0x05
         # 两个例子
@@ -261,15 +272,27 @@ class SymbolicExecutor:
         assert not is_bool(a) and not is_bool(b)
         self.stack.push(simplify(a / b))
 
+        self.tagStack.pop()
+        self.tagStack.pop()
+        self.tagStack.push(None)
+
     def __execMod(self):  # 0x06
         a, b = self.stack.pop(), self.stack.pop()
         assert not is_bool(a) and not is_bool(b)
         self.stack.push(simplify(If(b == 0, BitVecVal(0, 256), URem(a, b))))
 
+        self.tagStack.pop()
+        self.tagStack.pop()
+        self.tagStack.push(None)
+
     def __execSMod(self):  # 0x07
         a, b = self.stack.pop(), self.stack.pop()
         assert not is_bool(a) and not is_bool(b)
         self.stack.push(simplify(If(b == 0, BitVecVal(0, 256), SRem(a, b))))
+
+        self.tagStack.pop()
+        self.tagStack.pop()
+        self.tagStack.push(None)
 
     def __execAddMod(self):  # 0x08
         a, b, c = self.stack.pop(), self.stack.pop(), self.stack.pop()
@@ -282,6 +305,11 @@ class SymbolicExecutor:
         res = simplify(If(c == 0, BitVecVal(0, 257), URem(res, c)))  # 再计算(a+b) % c
         self.stack.push(simplify(Extract(255, 0, res)))  # 先做截断再push
 
+        self.tagStack.pop()
+        self.tagStack.pop()
+        self.tagStack.pop()
+        self.tagStack.push(None)
+
     def __execMulMod(self):  # 0x09
         a, b, c = self.stack.pop(), self.stack.pop(), self.stack.pop()
         assert not is_bool(a) and not is_bool(b) and not is_bool(c)  # abc都不能是条件表达式
@@ -292,6 +320,11 @@ class SymbolicExecutor:
         res = simplify(a * b)  # 先计算出a*b
         res = simplify(If(c == 0, BitVecVal(0, 512), URem(res, c)))  # 再计算(a*b) % c
         self.stack.push(simplify(Extract(255, 0, res)))  # 先做截断再push
+
+        self.tagStack.pop()
+        self.tagStack.pop()
+        self.tagStack.pop()
+        self.tagStack.push(None)
 
     def __execExp(self):  # 0x0a
         assert 0
@@ -304,17 +337,33 @@ class SymbolicExecutor:
         # 就算a,b是具体的数值，存储的也是一个bool表达式(z3.z3.BoolRef)，而不是基本变量True
         self.stack.push(simplify(ULT(a, b)))
 
+        self.tagStack.pop()
+        self.tagStack.pop()
+        self.tagStack.push(None)
+
     def __execGt(self):  # 0x11
         a, b = self.stack.pop(), self.stack.pop()
         self.stack.push(simplify(UGT(a, b)))
+
+        self.tagStack.pop()
+        self.tagStack.pop()
+        self.tagStack.push(None)
 
     def __execSlt(self):  # 0x12
         a, b = self.stack.pop(), self.stack.pop()
         self.stack.push(simplify(a < b))
 
+        self.tagStack.pop()
+        self.tagStack.pop()
+        self.tagStack.push(None)
+
     def __execSgt(self):  # 0x13
         a, b = self.stack.pop(), self.stack.pop()
         self.stack.push(simplify(a > b))
+
+        self.tagStack.pop()
+        self.tagStack.pop()
+        self.tagStack.push(None)
 
     def __execEq(self):  # 0x14
         a, b = self.stack.pop(), self.stack.pop()
@@ -329,6 +378,10 @@ class SymbolicExecutor:
                 assert 0
             self.stack.push(simplify(a == b))
 
+        self.tagStack.pop()
+        self.tagStack.pop()
+        self.tagStack.push(None)
+
     def __execIsZero(self):  # 0x15
         a = self.stack.pop()
         if is_bool(a):
@@ -338,6 +391,9 @@ class SymbolicExecutor:
         else:
             assert 0
 
+        self.tagStack.pop()
+        self.tagStack.push(None)
+
     def __execAnd(self):  # 0x16
         a, b = self.stack.pop(), self.stack.pop()
         assert (is_bv(a) and is_bv(b)) or (is_bool(a) and is_bool(b))
@@ -346,10 +402,9 @@ class SymbolicExecutor:
         else:  # bool
             self.stack.push(simplify(And(a, b)))
 
-        def __execCalldataLoad(self):  # 0x35
-            addr = self.stack.pop()
-            tmp = BitVec("CALLDATALOAD_" + addr.__str__(), 256)
-            self.stack.push(tmp)
+        self.tagStack.pop()
+        self.tagStack.pop()
+        self.tagStack.push(None)
 
     def __execOr(self):  # 0x17
         a, b = self.stack.pop(), self.stack.pop()
@@ -366,14 +421,25 @@ class SymbolicExecutor:
         else:
             assert 0
 
+        self.tagStack.pop()
+        self.tagStack.pop()
+        self.tagStack.push(None)
+
     def __execXor(self):  # 0x18
         a, b = self.stack.pop(), self.stack.pop()
         assert is_bv(a) and is_bv(b)
         self.stack.push(simplify(a ^ b))
 
+        self.tagStack.pop()
+        self.tagStack.pop()
+        self.tagStack.push(None)
+
     def __execNot(self):  # 0x19
         a = self.stack.pop()
         self.stack.push(simplify(~a))
+
+        self.tagStack.pop()
+        self.tagStack.push(None)
 
     def __execByte(self):  # 0x1a
         assert 0
@@ -382,13 +448,25 @@ class SymbolicExecutor:
         a, b = self.stack.pop(), self.stack.pop()
         self.stack.push(simplify(b << a))
 
+        self.tagStack.pop()
+        self.tagStack.pop()
+        self.tagStack.push(None)
+
     def __execShr(self):  # 0x1c
         a, b = self.stack.pop(), self.stack.pop()
         self.stack.push(simplify(LShR(b, a)))
 
+        self.tagStack.pop()
+        self.tagStack.pop()
+        self.tagStack.push(None)
+
     def __execSar(self):  # 0x1d
         a, b = self.stack.pop(), self.stack.pop()
         self.stack.push(simplify(b >> a))
+
+        self.tagStack.pop()
+        self.tagStack.pop()
+        self.tagStack.push(None)
 
     def __execSha3(self):  # 0x20
         assert 0
@@ -409,18 +487,26 @@ class SymbolicExecutor:
         tmp = BitVec("CALLVALUE", 256)
         self.stack.push(tmp)
 
+        self.tagStack.push(None)
+
     def __execCallDataLoad(self):  # 0x35
         a = self.stack.pop()
         tmp = BitVec("CALLDATALOAD_" + a.__str__(), 256)
         self.stack.push(tmp)
 
+        self.tagStack.pop()
+        self.tagStack.push(None)
+
     def __execCallDataSize(self):  # 0x36
         tmp = BitVec("CALLDATASIZE", 256)
         self.stack.push(tmp)
 
+        self.tagStack.push(None)
+
     def __execCallDataCopy(self):  # 0x37
         for i in range(3):
             self.stack.pop()
+            self.tagStack.pop()
 
     def __execCodesize(self):  # 0x38
         assert 0
@@ -475,6 +561,7 @@ class SymbolicExecutor:
 
     def __execPop(self):  # 0x50
         self.stack.pop()
+        self.tagStack.pop()
 
     def __execMLoad(self):  # 0x51
         startAddr = self.stack.pop()
@@ -484,6 +571,9 @@ class SymbolicExecutor:
             self.stack.push(self.memory[addr])
         else:
             self.stack.push(BitVec("MLOAD_" + addr, 256))
+
+        self.tagStack.pop()
+        self.tagStack.push(None)
 
     def __execMStore(self):  # 0x52
         # 将存储地址写为 起始地址$终止地址
@@ -495,6 +585,9 @@ class SymbolicExecutor:
             data = If(data, BitVecVal(1, 256), BitVecVal(0, 256))
         self.memory[addr] = data
 
+        self.tagStack.pop()
+        self.tagStack.pop()
+
     def __execMStore8(self):  # 0x53
         # 将存储地址写为 起始地址$终止地址
         startAddr = self.stack.pop()
@@ -505,6 +598,9 @@ class SymbolicExecutor:
         temp = BitVecVal(0xff, 256)
         self.memory[addr] = simplify(data & temp)
 
+        self.tagStack.pop()
+        self.tagStack.pop()
+
     def __execSLoad(self):  # 0x54
         addr = self.stack.pop()
         addr = addr.__str__()
@@ -514,14 +610,21 @@ class SymbolicExecutor:
             tmp = BitVec("SLOAD_" + addr, 256)
             self.stack.push(tmp)
 
+        self.tagStack.pop()
+        self.tagStack.push(None)
+
     def __execSStore(self):  # 0x55
         addr = self.stack.pop()
         addr = addr.__str__()
         data = self.stack.pop()
         self.storage[addr] = data
 
+        self.tagStack.pop()
+        self.tagStack.pop()
+
     def __execJump(self):  # 0x56
         self.stack.pop()
+        self.tagStack.pop()
 
     def __execJumpi(self):  # 0x57
         self.stack.pop()
@@ -532,8 +635,12 @@ class SymbolicExecutor:
             assert is_bool(cond)
             self.jumpCond = cond
 
+        self.tagStack.pop()
+        self.tagStack.pop()
+
     def __execPc(self):  # 0x58
         self.stack.push(BitVecVal(self.PC, 256))
+        self.tagStack.push(None)
 
     def __execMSize(self):  # 0x59
         assert 0
@@ -541,11 +648,13 @@ class SymbolicExecutor:
     def __execGas(self):  # 0x5a
         self.gasOpcCnt += 1
         self.stack.push(BitVec("GAS_" + str(self.gasOpcCnt), 256))
+        self.tagStack.push(None)
 
     def __execJumpDest(self):  # 0x5b
         pass
 
     def __execPush(self, opCode):  # 0x60 <= opCode <= 0x7f
+        jumpOpcodeAddr = self.PC  # 先记录下这一地址
         byteNum = opCode - 0x5f  # push的字节数
         num = 0
         for i in range(byteNum):
@@ -556,16 +665,20 @@ class SymbolicExecutor:
         num = BitVecVal(num, 256)
         self.stack.push(num)
 
+        self.tagStack.push([num, jumpOpcodeAddr,self.curBlock.offset])
+
     def __execDup(self, opCode):  # 0x80
         pos = opCode - 0x80
         # print(pos)
         self.stack.push(self.stack.getItem(self.stack.size() - 1 - pos))
+        self.tagStack.push(self.stack.getItem(self.stack.size() - 1 - pos))
 
     def __execSwap(self, opCode):  # 0x90 <= opCode <= 0x9f
         depth = opCode - 0x90 + 1
         stackSize = self.stack.size()
         pos = stackSize - 1 - depth
         self.stack.swap(stackSize - 1, pos)
+        self.tagStack.swap(stackSize - 1, pos)
 
     def __execLog(self, opCode):  # 0xa0 <= opCode <= 0xa4
         assert 0
@@ -584,6 +697,9 @@ class SymbolicExecutor:
         self.stack.pop()
         self.stack.pop()
 
+        self.tagStack.pop()
+        self.tagStack.pop()
+
     def __execDelegateCall(self):  # 0xf4
         assert 0
 
@@ -596,6 +712,9 @@ class SymbolicExecutor:
     def __execRevert(self):  # 0xfd
         self.stack.pop()
         self.stack.pop()
+
+        self.tagStack.pop()
+        self.tagStack.pop()
 
     def __execInvalid(self):  # 0xfe
         pass
