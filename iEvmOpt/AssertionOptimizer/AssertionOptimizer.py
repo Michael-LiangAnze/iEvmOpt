@@ -29,15 +29,16 @@ partiallyRedundant = "partiallyRedundant"
 class AssertionOptimizer:
     def __init__(self, cfg: Cfg, inputFile: str, outputFile: str):
         self.cfg = cfg
+        self.blocks = self.cfg.blocks  # 存储基本块，格式为 起始offset:BasicBlock。后续可能会修改了cfg的block
         self.inputFile = inputFile  # 处理前的文件
         self.outputFile = outputFile  # 处理后的新文件
         self.log = Logger()
 
         # 函数识别、处理时需要用到的信息
         self.uncondJumpEdge = []  # 存储所有的unconditional jump的边，类型为JumpEdge
-        self.nodes = list(self.cfg.blocks.keys())  # 存储点，格式为 [n1,n2,n3...]
-        self.edges = dict(self.cfg.edges)  # 存储出边表，格式为 from:[to1,to2...]
-        self.inEdges = dict(self.cfg.inEdges)  # 存储入边表，格式为 to:[from1,from2...]
+        self.nodes = self.cfg.blocks.keys()  # 存储点，格式为 [n1,n2,n3...]
+        self.edges = self.cfg.edges  # 存储出边表，格式为 from:[to1,to2...]
+        self.inEdges = self.cfg.inEdges  # 存储入边表，格式为 to:[from1,from2...]
         self.funcCnt = 0  # 函数计数
         self.funcBodyDict = {}  # 记录找到的所有函数，格式为：  funcId:function
         self.node2FuncId = dict(
@@ -46,7 +47,6 @@ class AssertionOptimizer:
             zip(self.nodes, [False for i in range(0, len(self.nodes))]))  # 函数体头结点信息，用于后续做函数内环压缩时，判断某个函数是否存在递归的情况
         self.isLoopRelated = dict(zip(self.nodes, [False for i in range(0, len(self.nodes))]))  # 标记各个节点是否为loop-related
         self.isFuncCallLoopRelated = None  # 记录节点是否在函数调用环之内，该信息只能由路径搜索得到
-        self.newNodeId = max(self.nodes) + 1  # 找到函数内的环之后，需要添加的新节点的id(一个不存在的offset)
         self.recursionExist = False  # 是否存在递归调用的情况，用于log输出
 
         # 路径搜索需要用到的信息
@@ -63,13 +63,18 @@ class AssertionOptimizer:
         self.redundantType = {}  # 每个invalid节点的冗余类型，类型包括fullyredundant和partiallyredundant，格式为： invNode: type
 
         # 冗余assertion优化需要用到的信息
+        self.initBlockId = self.cfg.initBlockId
+        self.exitBlockId = self.cfg.exitBlockId
         self.domTree = {}  # 支配树。注意，为了方便从invalid节点往前做遍历，该支配树存储的是入边，格式为   to:from
+        self.removedOriginalNode = dict(zip(self.nodes, [False for i in range(0, len(self.nodes))]))  # 记录一个节点是否被删除
+        self.newBlocks = {}  # 新节点，因为完全冗余需要删除节点，因此将相关节点变为一个新节点之后，需要记录这些新节点
+        self.originalToNewNodes = dict(zip(self.nodes, self.nodes))  # 一个映射，记录原节点到新节点的映射
 
     def optimize(self):
         self.log.info("开始进行字节码分析")
 
-        # 首先识别出所有的函数体，将每个函数体内的强连通分量的所有点压缩为一个点，同时标记为loop-related
-        self.__identifyFunctions()
+        # 首先识别出所有的函数体，将每个函数体内的强连通分量的所有点标记为loop-related
+        self.__identifyAndCheckFunctions()
         self.log.info("函数体识别完毕，一共识别到:{}个函数体".format(self.funcCnt))
         if self.recursionExist:  # 存在递归调用的情况
             self.log.warning("因为存在递归调用的情况，因此函数体识别的数量可能有误")
@@ -108,17 +113,17 @@ class AssertionOptimizer:
             self.log.info("正在对完全冗余的Assertion进行优化")
             self.__optimizeFullyRedundantAssertion(fullyRedundantNodes)
             self.log.info("完全冗余Assertion优化完毕")
-        if partiallyRedundantNodes.__len__() > 0:
-            self.log.info("正在对部分冗余的Assertion进行优化")
-            self.__optimizePartiallyRedundantAssertion(partiallyRedundantNodes)
-            self.log.info("部分冗余Assertion优化完毕")
+        # if partiallyRedundantNodes.__len__() > 0:
+        #     self.log.info("正在对部分冗余的Assertion进行优化")
+        #     self.__optimizePartiallyRedundantAssertion(partiallyRedundantNodes)
+        #     self.log.info("部分冗余Assertion优化完毕")
 
         # 将优化后的字节码写入文件
         self.log.info("正在将优化后的字节码写入文件")
         self.__outputFile()
         self.log.info("写入完毕")
 
-    def __identifyFunctions(self):
+    def __identifyAndCheckFunctions(self):
         '''
         识别所有的函数
         给出三个基本假设：
@@ -128,7 +133,15 @@ class AssertionOptimizer:
         给出一个求解前提：
            我们不关心函数调用关系产生的“错误的环”，因为这种错误的环我们可以在搜索路径时，可以通过符号执行或者返回地址栈解决掉
         '''
-        # 第一步，找出所有unconditional jump的边
+
+        # 第一步，检查是否除了0号offset节点之外，是否还有节点没有入边,若有，则存在返回边错误，一般为递归情况
+        for _from, _to in self.inEdges.items():
+            if _from == self.cfg.initBlockId:
+                continue
+            if _to.__len__() == 0:
+                self.log.error("发现递归函数，该字节码无法被优化!")
+
+        # 第二步，找出所有unconditional jump的边
         for n in self.cfg.blocks.values():
             if n.jumpType == "unconditional":
                 _from = n.offset
@@ -140,9 +153,9 @@ class AssertionOptimizer:
         # for e in self.uncondJumpEdge:
         #     print(e.tetrad)
 
-        # 第二步，两两之间进行匹配
+        # 第三步，两两之间进行匹配
         funcRange2Calls = {}  # 一个映射，格式为:
-        # 一个函数的区间(一个字符串，内容为"[第一条指令所在的block的offset,最后一条指令所在的block的offset]"):[[funcbody调用者的起始node,funcbody返回边的目的node]]
+        # (一个字符串，内容为"[第一条指令所在的block的offset,最后一条指令所在的block的offset]"):[[funcbody调用者的起始node,funcbody返回边的目的node]]
         # 解释一下value为什么要存这个：如果发现出现了函数调用，那么就在其调用者调用前的节点和调用后的返回节点之间加一条边
         # 这样在使用dfs遍历一个函数内的所有节点时，就可以只看地址范围位于key内的节点，如果当前遍历的函数出现了函数调用，那么不需要进入调用的函数体，
         # 也能成功找到它的所有节点
@@ -165,13 +178,13 @@ class AssertionOptimizer:
         # for i in funcRange2Calls.items():
         #     print(i)
 
-        # 第三步，在caller的jump和返回的jumpdest节点之间加边
+        # 第四步，在caller的jump和返回的jumpdest节点之间加边
         for pairs in funcRange2Calls.values():
             for pair in pairs:
                 self.edges[pair[0]].append(pair[1])
                 self.inEdges[pair[1]].append(pair[0])
 
-        # 第四步，从一个函数的funcbody的起始block开始dfs遍历，只走offset范围在 [第一条指令所在的block的offset,最后一条指令所在的block的offset]之间的节点，尝试寻找出所有的函数节点
+        # 第五步，从一个函数的funcbody的起始block开始dfs遍历，只走offset范围在 [第一条指令所在的block的offset,最后一条指令所在的block的offset]之间的节点，尝试寻找出所有的函数节点
         for rangeInfo in funcRange2Calls.keys():  # 找到一个函数
             offsetRange = json.loads(rangeInfo)  # 还原之前的list
             offsetRange[1] += 1  # 不用每次调用range函数的时候都加
@@ -180,13 +193,14 @@ class AssertionOptimizer:
             visited = {}
             visited[offsetRange[0]] = True
             stack.push(offsetRange[0])  # 既是范围一端，也是起始节点的offset
-            while not stack.empty():
+            while not stack.empty():  # dfs找出所有节点
                 top = stack.pop()
                 funcBody.append(top)
                 for out in self.edges[top]:
                     if out not in visited.keys() and out in range(offsetRange[0], offsetRange[1]):
                         stack.push(out)
                         visited[out] = True
+            # 存储函数信息
             self.funcCnt += 1
             offsetRange[1] -= 1
             f = Function(self.funcCnt, offsetRange[0], offsetRange[1], funcBody, self.edges)
@@ -199,46 +213,34 @@ class AssertionOptimizer:
             for n in funcBody:
                 tempLen += self.cfg.blocks[n].length
             assert funcLen == tempLen
-            # f.printFunc()
+            f.printFunc()
         # 这里再做一个检查，看是否所有的common节点都被标记为了函数相关的节点
+        for node in self.nodes:
+            if self.cfg.blocks[node].blockType == "common":
+                if self.node2FuncId[node] == None:  # 没有标记
+                    self.log.error("未能找全所有的函数节点，放弃优化")
+                else:
+                    continue
 
-        # 第五步，检查一个函数内的所有节点是否存在环，是则将其压缩为一个点
-        compressor = SccCompressor()
+        # 第六步，检查一个函数内的节点是否存在环，存在则将其标记出来
         for func in self.funcBodyDict.values():  # 取出一个函数
             tarjan = TarjanAlgorithm(func.funcBodyNodes, func.funcSubGraphEdges)
             tarjan.tarjan(func.firstBodyBlockOffset)
             sccList = tarjan.getSccList()
             for scc in sccList:
-                if len(scc) > 1:  # 找到loop-related节点
-                    # 标记
-                    self.isLoopRelated[self.newNodeId] = True
-                    self.isFuncBodyHeadNode[self.newNodeId] = False  # 这个点默认不是函数头，但是可能会是
-                    for node in scc:
+                if len(scc) > 1:  # 找到函数内的一个强连通分量
+                    for node in scc:  # 将这些点标记为loop-related
                         self.isLoopRelated[node] = True
-                        # assert not self.isFuncBodyHeadNode[node]  # 函数头不应该出现在函数内的scc，否则可能会引起错误
                         if self.isFuncBodyHeadNode[node]:  # 函数头存在于scc，出现了递归的情况
                             self.isFuncBodyHeadNode[self.newNodeId] = True
                             self.recursionExist = True
-                            self.log.warning("检测到函数递归调用的情况，该函数将不会被优化")
-                    # 压缩为一个点，这个点也需要标记为loop-related，并标记为funcid
-                    self.node2FuncId[self.newNodeId] = func.funcId
-                    compressor.setInfo(self.nodes, scc, self.edges, self.inEdges, self.newNodeId)
-                    compressor.compress()
-                    self.nodes, self.edges, self.inEdges = compressor.getNodes(), compressor.getEdges(), compressor.getInEdges()
-                    self.newNodeId += 1
-        # g = DotGraphGenerator(self.edges, self.nodes)
-        # g.genDotGraph(sys.argv[0], "_removed_scc")
+                            self.log.error("检测到函数递归调用的情况，该字节码无法被优化!")
 
-        # 第六步，去除之前添加的边，因为下面要开始做路径搜索了，新加入的边并不是原来cfg中应该出现的边
-        # 需要注意，因为前面已经做了scc压缩，要移除的边可能已经不存在了
+        # 第七步，去除之前添加的边，因为下面要做路径搜索，新加入的边并不是原来cfg中应该出现的边
         for pairs in funcRange2Calls.values():
             for pair in pairs:
-                if pair[0] in self.edges.keys():
-                    if pair[1] in self.edges[pair[0]]:  # 边还存在
-                        self.edges[pair[0]].remove(pair[1])
-                        self.inEdges[pair[1]].remove(pair[0])
-        # g = DotGraphGenerator(self.edges, self.nodes)
-        # g.genDotGraph(sys.argv[0], "_removed_edge")
+                self.edges[pair[0]].remove(pair[1])
+                self.inEdges[pair[1]].remove(pair[0])
 
     def __searchPaths(self):
         '''
@@ -321,11 +323,11 @@ class AssertionOptimizer:
             for callChain, pathIds in callChain2PathIds.items():
                 self.invalidNode2CallChain[invNode].append(pathIds)
 
-        for k, v in self.invalidNode2PathIds.items():
-            print("invalid node is:{}".format(k))
-            for pathId in v:
-                self.invalidPaths[pathId].printPath()
-        print(self.invalidNode2CallChain)
+        # for k, v in self.invalidNode2PathIds.items():
+        #     print("invalid node is:{}".format(k))
+        #     for pathId in v:
+        #         self.invalidPaths[pathId].printPath()
+        # print(self.invalidNode2CallChain)
 
     def __reachabilityAnalysis(self):
         '''
@@ -423,8 +425,8 @@ class AssertionOptimizer:
         executor = SymbolicExecutor(self.cfg)
         for invNode in fullyRedundantNodes:
             # 首先做一个检查，检查是否为jumpi的失败边走向Invalid，且该invalid节点只有一个入边
-            assert self.cfg.inEdges[invNode].__len__() == 1
-            assert invNode == self.cfg.blocks[self.cfg.inEdges[invNode][0]].jumpiDest[False]
+            assert self.inEdges[invNode].__len__() == 1
+            assert invNode == self.blocks[self.inEdges[invNode][0]].jumpiDest[False]
             executor.clearExecutor()
             # for pathsOfCallChain in self.invalidNode2CallChain[invNode]:  # 取出一条调用链
             pathsOfCallChain = self.invalidNode2CallChain[invNode][0]  # 随意取出一条调用链，格式为[pathId1,pathId2]
@@ -448,59 +450,55 @@ class AssertionOptimizer:
             targetState = stateMap[invNode]
             node = self.domTree[invNode]
             while node != 0:
-                addrs = self.cfg.blocks[node].instrAddrs
+                addrs = self.blocks[node].instrAddrs
                 for addr in reversed(addrs):  # 从后往前遍历
                     if stateMap[addr] == targetState:  # 找到一个状态相同的点
                         targetAddr = addr
                         targetNode = node
                 node = self.domTree[node]
             assert targetAddr and targetNode  # 不能为none
-            assert self.cfg.blocks[targetNode].blockType != "dispatcher"  # 不应该出现在dispatcher中
+            assert self.blocks[targetNode].blockType != "dispatcher"  # 不应该出现在dispatcher中
             # print(targetAddr)
             # print(targetNode)
 
-            # 第三步，直接修改该地址处的字节码，将其变为jump，跳转到invalid前的jumpi的true的地方，即invalid的地址+1处
-            jumpDestAddr = hex(invNode + 1)[2:]  # 转为了十六进制，并且去除了0x
-            # jumpDestAddr = hex(0x01ffff)[2:]  # 测试用
-            if jumpDestAddr.__len__() % 2 == 1:
-                jumpDestAddr = '0' + jumpDestAddr
-            pushOpcode = 0x60 + jumpDestAddr.__len__() // 2 - 1  # push指令的操作码
-            # print("put {}:{} in addr {}".format(pushOpcode, jumpDestAddr, targetAddr))
-            originalBytecode = self.cfg.blocks[targetNode].bytecode
-            # print(originalBytecode)
-            pushOffsetInTargetBlock = targetAddr - targetNode  # push指令的偏移量，这里的偏移量是字节偏移量
-            jumpOffsetInTargetBlock = pushOffsetInTargetBlock + jumpDestAddr.__len__() // 2 + 1  # jump指令的偏移量
-            assert jumpOffsetInTargetBlock < self.cfg.blocks[targetNode].length  # 修改的所有内容，不应当超出原的block的范围
-            newBytecode = bytearray()
-            for i in range(self.cfg.blocks[targetNode].length):
-                if i < pushOffsetInTargetBlock:  # 还没到push指令，直接复制
-                    newBytecode.append(originalBytecode[i])
-                elif i == pushOffsetInTargetBlock:  # 到了push指令处
-                    newBytecode.append(pushOpcode)
-                elif i < pushOffsetInTargetBlock + 1 + jumpDestAddr.__len__() // 2:  # 到了push指令的内容处
-                    addrIndex = 2 * (i - pushOffsetInTargetBlock - 1)
-                    newBytecode.append(int(jumpDestAddr[addrIndex:addrIndex + 2], 16))
-                elif i == jumpOffsetInTargetBlock:  # 到了jump指令的内容处
-                    newBytecode.append(0x56)  # jump
-                    # newBytecode.append(0x57)
-                else:  # 过了jump指令，后面全部用5b代替
-                    newBytecode.append(0x5b)
+            # 第三步，直接删除这一段序列，将targetNone和jumpdest所在节点缝合为一个新节点
+            blockInfo = {}
+            secondNode = invNode + 1
+            blockInfo["offset"] = targetNode  # 设置为第一个节点的偏移量
+            blockInfo["length"] = (targetAddr - targetNode) + (self.blocks[secondNode].length - 1)
+            blockInfo["type"] = self.blocks[targetNode].blockType
+            blockInfo["stackBalance"] = 0  # 暂时不处理
+            bytecode = bytearray()
+            bytecode.extend(self.blocks[targetNode].bytecode[:targetAddr - targetNode])
+            bytecode.extend(self.blocks[secondNode].bytecode[1:self.blocks[secondNode].length])
+            # for i in range(targetAddr - targetNode):  # 第一个block的字节码
+            #     bytecode.append(self.blocks[targetNode].bytecode(i))
+            # for i in range(1, self.blocks[secondNode].length):  # 第二个block的字节码，不要jumpdest
+            #     bytecode.append(self.blocks[secondNode].bytecode(i))
+            bytecodeStr = "".join(['{:02x}'.format(code) for code in bytecode])
+            blockInfo["bytecodeHex"] = bytecodeStr
 
-            assert newBytecode.__len__() == originalBytecode.__len__()
-            self.cfg.blocks[targetNode].bytecode = newBytecode  # 改为新的字节数组
-            self.cfg.blocks[targetNode].isModified = True
-            # for i in range(18):
-            #     print(hex(originalBytecode[i]), hex(newBytecode[i]))
+            instrNumInBlock1 = 0  # 第一个block中包含的地址数量
+            for i in self.blocks[targetNode].instrAddrs:
+                if i >= targetAddr:
+                    break
+                instrNumInBlock1 += 1
+            parsedOpcodes = self.blocks[targetNode].instrs[:instrNumInBlock1]
+            parsedOpcodes.extend(self.blocks[secondNode].instrs[1:])
+            blockInfo["parsedOpcodes"] = "\n".join(parsedOpcodes)
 
-            # 第四步，将该invalid的其他所有路径中targetNode之后的所有node全部置为空指令
-            for pathId in self.invalidNode2PathIds[invNode]:
-                for node in self.invalidPaths[pathId].pathNodes:
-                    if node <= targetNode:
-                        continue
-                    # 取到一个大于targetNode的节点
-                    self.cfg.blocks[node].isModified = True
-                    for i in range(self.cfg.blocks[node].length):
-                        self.cfg.blocks[node].bytecode[i] = 0x5b
+            newBlock = BasicBlock(blockInfo)
+            # newBlock.printBlockInfo()
+
+            # 第四步，记录这个新节点，在做完所有invalid的优化之后，再去修改图结构
+            self.newBlocks[targetNode] = newBlock
+            # 先做一个检查，要删掉的节点，不能与其他的删除节点重合
+            for node in self.nodes:
+                assert not self.removedOriginalNode[node]
+            for node in self.nodes:
+                if targetNode <= node <= invNode + 1:  # 这些都是要删除的节点
+                    self.removedOriginalNode[node] = True
+                    self.originalToNewNodes[node] = targetNode  # 删除后，用targetNode代替
 
     def __optimizePartiallyRedundantAssertion(self, partiallyRedundantNodes: list):
         '''
@@ -592,7 +590,7 @@ class AssertionOptimizer:
                 # print(originalFuncBytecodeStr)
                 # print(newFuncBytecodeStr)
 
-                    # # 第三步，直接修改该地址处的字节码，将其变为jump，跳转到invalid前的jumpi的true的地方，即invalid的地址+1处
+                # # 第三步，直接修改该地址处的字节码，将其变为jump，跳转到invalid前的jumpi的true的地方，即invalid的地址+1处
             # jumpDestAddr = hex(invNode + 1)[2:]  # 转为了十六进制，并且去除了0x
             # # jumpDestAddr = hex(0x01ffff)[2:]  # 测试用
             # if jumpDestAddr.__len__() % 2 == 1:
