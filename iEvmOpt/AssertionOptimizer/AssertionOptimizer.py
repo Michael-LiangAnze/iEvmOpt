@@ -1,3 +1,5 @@
+from collections import deque
+
 from z3 import *
 
 from AssertionOptimizer.Function import Function
@@ -26,14 +28,14 @@ partiallyRedundant = "partiallyRedundant"
 class AssertionOptimizer:
     def __init__(self, cfg: Cfg, inputFile: str, outputFile: str):
         self.cfg = cfg
-        self.blocks = self.cfg.blocks  # 存储基本块，格式为 起始offset:BasicBlock。后续可能会修改了cfg的block
+        self.blocks = self.cfg.blocks  # 存储基本块，格式为 起始offset:BasicBlock
         self.inputFile = inputFile  # 处理前的文件
         self.outputFile = outputFile  # 处理后的新文件
         self.log = Logger()
 
         # 函数识别、处理时需要用到的信息
         self.uncondJumpEdge = []  # 存储所有的unconditional jump的边，类型为JumpEdge
-        self.nodes = self.cfg.blocks.keys()  # 存储点，格式为 [n1,n2,n3...]
+        self.nodes = list(self.cfg.blocks.keys())  # 存储点，格式为 [n1,n2,n3...]
         self.edges = self.cfg.edges  # 存储出边表，格式为 from:[to1,to2...]
         self.inEdges = self.cfg.inEdges  # 存储入边表，格式为 to:[from1,from2...]
         self.funcCnt = 0  # 函数计数
@@ -62,8 +64,8 @@ class AssertionOptimizer:
             zip(self.nodes, [[] for i in range(0, len(self.nodes))]))  # 记录每个block中被移除的区间，每个区间的格式为:[from,to)
 
         # 重定位需要用到的信息
-        self.jumpEdgeInfo = None # 跳转边信息，格式为:[[push的值，push指令的地址，push指令所在的block]]
-        self.newBytecode = bytearray() # 重新生成的字节码
+        self.jumpEdgeInfo = None  # 跳转边信息，格式为:[[push的值，push指令的地址，push指令所在的block,jump所在的block]]
+        self.newBytecode = None  # 重新生成的字节码，用deque效率更高
 
     def optimize(self):
         self.log.info("开始进行字节码分析")
@@ -456,8 +458,8 @@ class AssertionOptimizer:
                 node = self.domTree[node]
             assert targetAddr and targetNode  # 不能为none
             assert self.blocks[targetNode].blockType != "dispatcher"  # 不应该出现在dispatcher中
-            print(targetNode)
-            print(targetAddr)
+            # print(targetNode)
+            # print(targetAddr)
 
             # 第三步，将这一段序列置为空指令
             for node in self.nodes:
@@ -470,7 +472,8 @@ class AssertionOptimizer:
             if self.inEdges[invNode + 1].__len__() == 1:
                 # invalid的下一个block，只有一条入边，说明这个jumpdest也可以删除
                 self.removedRange[invNode + 1].append([invNode + 1, invNode + 2])
-            print(self.removedRange)
+                self.blocks[invNode + 1].bytecode[0] = 0x1f
+            # print(self.removedRange)
 
     def __optimizePartiallyRedundantAssertion(self, partiallyRedundantNodes: list):
         '''
@@ -610,8 +613,60 @@ class AssertionOptimizer:
         重新生成字节码，同时完成重定位
         :return:
         '''
-        
 
+        # 第一步，将出现在已被删除字节码序列中的跳转信息删除
+        removedInfo = []
+        for i in range(self.jumpEdgeInfo.__len__()):
+            info = self.jumpEdgeInfo[i]
+            # 首先做一个检查
+            delPush = False
+            delJump = False
+            pusbBlock = info[2]
+            jumpDestBlock = info[0]
+            jumpAddr = jumpDestBlock + self.blocks[jumpDestBlock].length - 1
+            for _range in self.removedRange[pusbBlock]:
+                if info[1] in _range:  # push语句位于删除序列内
+                    delPush = True
+                    break
+            for _range in self.removedRange[jumpDestBlock]:
+                if jumpAddr in _range:  # jump/jumpi语句位于删除序列内
+                    delJump = True
+                    break
+            # 解释一下为什么要做这个assert:因为这一个跳转信息是根据返回地址栈得出的
+            # 也就是说，如果要删除push，则jump必须也要被删除，否则当出现这个函数调用关系时，
+            # 在jump的时候会找不到返回地址
+            assert delPush == delJump
+            if delPush:  # 确定要删除
+                removedInfo.append(i)
+        for i in removedInfo:
+            self.jumpEdgeInfo.pop(i)  # 删除对应的信息
+
+        # 第二步，将字节码拼在一起，同时还要记录旧地址到新地址的映射
+        self.newBytecode = deque()  # deque效率更高
+        originalOffsetToNew = {}  # 一个映射，从旧block offset到新block offset
+        self.nodes.sort()  # 确保是从小到大排序的
+
+        for node in self.nodes:
+            # 首先记录当前block的新旧offset映射
+            originalOffsetToNew[node] = self.newBytecode.__len__()
+            # 然后用一个映射，记录哪些字节是要删除，哪些要保留
+            blockLen = self.blocks[node].length
+            newBlockLen = blockLen
+            isDelete = [False for i in range(blockLen)]
+            for _range in self.removedRange[node]:  # 查看这一个block的删除区间
+                for i in range(_range[0]-node, _range[1]-node):
+                    isDelete[i] = True
+                newBlockLen -= _range[1] - _range[0]
+            blockBytecode = self.blocks[node].bytecode
+            for i in range(blockLen):
+                if isDelete[i]: # 这一个字节是需要被删除的
+                    continue
+                self.newBytecode.append(blockBytecode[i])
+        print(self.removedRange)
+        print(originalOffsetToNew)
+
+
+    # 每一次都是做试填入，不能保证一定可以填入成功
 
     def __outputFile(self):
         '''

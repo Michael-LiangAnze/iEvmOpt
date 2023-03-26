@@ -418,7 +418,9 @@ class TagStack:
             self.PC += 1  # 指向最高位的字节
             num |= self.curBlock.bytecode[self.PC - self.curBlock.offset]  # 低位加上相应的字节
         # print("push num:{},byte num:{}".format(hex(num), byteNum))
-        num = BitVecVal(num, 256)
+
+        # 注意这里不能push一个比特向量，而是一个具体的数
+        # num = BitVecVal(num, 256)
 
         self.tagStack.push([num, jumpOpcodeAddr, self.curBlock.offset])
 

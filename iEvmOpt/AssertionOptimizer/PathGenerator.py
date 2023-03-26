@@ -106,6 +106,7 @@ class PathGenerator:
             if self.blocks[curNode].jumpType in ["unconditional", "conditional"]:  # 是一条跳转边
                 assert pushInfo is not None  # 不应该经过计算
                 assert pushInfo[0] in self.nodes  # 必须是一个block的offset
+                pushInfo.append(curNode)  # 添加一条信息，就是jump所在的block
                 self.jumpEdgeInfo.append(pushInfo)
 
             # 第三步，查看每一条出边
