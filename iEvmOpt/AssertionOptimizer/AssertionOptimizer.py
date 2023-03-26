@@ -1,5 +1,3 @@
-import sys
-
 from z3 import *
 
 from AssertionOptimizer.Function import Function
@@ -11,9 +9,8 @@ from AssertionOptimizer.JumpEdge import JumpEdge
 from GraphTools import DominatorTreeBuilder
 from GraphTools.GraphMapper import GraphMapper
 from GraphTools.TarjanAlgorithm import TarjanAlgorithm
-from GraphTools.PathGenerator import PathGenerator
-from GraphTools.SccCompressor import SccCompressor
-from Utils import DotGraphGenerator, Stack
+from AssertionOptimizer.PathGenerator import PathGenerator
+from Utils import Stack
 import json
 from Utils.Logger import Logger
 
@@ -47,11 +44,10 @@ class AssertionOptimizer:
             zip(self.nodes, [False for i in range(0, len(self.nodes))]))  # 函数体头结点信息，用于后续做函数内环压缩时，判断某个函数是否存在递归的情况
         self.isLoopRelated = dict(zip(self.nodes, [False for i in range(0, len(self.nodes))]))  # 标记各个节点是否为loop-related
         self.isFuncCallLoopRelated = None  # 记录节点是否在函数调用环之内，该信息只能由路径搜索得到
-        self.recursionExist = False  # 是否存在递归调用的情况，用于log输出
 
         # 路径搜索需要用到的信息
         self.invalidNodeList = []  # 记录所有invalid节点的offset
-        self.invalidPathId = 0  # 路径id
+        self.invalidPathId = 0
         self.invalidPaths = {}  # 用于记录不同invalid对应的路径集合，格式为：  invalidPathId:Path
         self.invalidNode2PathIds = {}  # 记录每个invalid节点包含的路径，格式为：  invalidNodeOffset:[pathId1,pathId2]
         self.invalidNode2CallChain = {}  # 记录每个invalid节点包含的调用链，格式为： invalidNodeOffset:[[callchain1中的pathid],[callchain2中的pathid]]
@@ -76,11 +72,10 @@ class AssertionOptimizer:
         # 首先识别出所有的函数体，将每个函数体内的强连通分量的所有点标记为loop-related
         self.__identifyAndCheckFunctions()
         self.log.info("函数体识别完毕，一共识别到:{}个函数体".format(self.funcCnt))
-        if self.recursionExist:  # 存在递归调用的情况
-            self.log.warning("因为存在递归调用的情况，因此函数体识别的数量可能有误")
 
         # 然后找到所有invalid节点，找出他们到起始节点之间所有的边
         self.__searchPaths()
+        return
         callChainNum = 0
         for invNode in self.invalidNodeList:
             callChainNum += self.invalidNode2CallChain[invNode].__len__()
@@ -135,17 +130,17 @@ class AssertionOptimizer:
         '''
 
         # 第一步，检查是否除了0号offset节点之外，是否还有节点没有入边,若有，则存在返回边错误，一般为递归情况
-        for _from, _to in self.inEdges.items():
-            if _from == self.cfg.initBlockId:
+        for _to, _from in self.inEdges.items():
+            if _to == self.cfg.initBlockId:
                 continue
-            if _to.__len__() == 0:
-                self.log.error("发现递归函数，该字节码无法被优化!")
+            if _from.__len__() == 0:
+                self.log.warning("发现一个不是初始节点，但没有入边的Block: {}".format(_to))
 
         # 第二步，找出所有unconditional jump的边
         for n in self.cfg.blocks.values():
             if n.jumpType == "unconditional":
                 _from = n.offset
-                for _to in self.edges[_from]:
+                for _to in self.edges[_from]: # 可能有几个出边
                     # 这里做一个assert，防止出现匹配到两个节点都在dispatcher里面的情况，但是真的有吗？先不处理
                     assert not (n.blockType == "dispatcher" and self.cfg.blocks[_to].blockType == "dispatcher")
                     e = JumpEdge(n, self.cfg.blocks[_to])
@@ -214,13 +209,6 @@ class AssertionOptimizer:
                 tempLen += self.cfg.blocks[n].length
             assert funcLen == tempLen
             f.printFunc()
-        # 这里再做一个检查，看是否所有的common节点都被标记为了函数相关的节点
-        for node in self.nodes:
-            if self.cfg.blocks[node].blockType == "common":
-                if self.node2FuncId[node] == None:  # 没有标记
-                    self.log.error("未能找全所有的函数节点，放弃优化")
-                else:
-                    continue
 
         # 第六步，检查一个函数内的节点是否存在环，存在则将其标记出来
         for func in self.funcBodyDict.values():  # 取出一个函数
@@ -232,9 +220,14 @@ class AssertionOptimizer:
                     for node in scc:  # 将这些点标记为loop-related
                         self.isLoopRelated[node] = True
                         if self.isFuncBodyHeadNode[node]:  # 函数头存在于scc，出现了递归的情况
-                            self.isFuncBodyHeadNode[self.newNodeId] = True
-                            self.recursionExist = True
-                            self.log.error("检测到函数递归调用的情况，该字节码无法被优化!")
+                            self.log.fail("检测到函数递归调用的情况，该字节码无法被优化!")
+        # 这里再做一个检查，看是否所有的common节点都被标记为了函数相关的节点
+        for node in self.nodes:
+            if self.cfg.blocks[node].blockType == "common":
+                if self.node2FuncId[node] == None:  # 没有标记
+                    self.log.fail("未能找全所有的函数节点，放弃优化")
+                else:
+                    continue
 
         # 第七步，去除之前添加的边，因为下面要做路径搜索，新加入的边并不是原来cfg中应该出现的边
         for pairs in funcRange2Calls.values():
@@ -244,19 +237,24 @@ class AssertionOptimizer:
 
     def __searchPaths(self):
         '''
-        找到所有的Invalid节点，并搜索从起点到他们的所有路径
+        从cfg的起始节点开始做dfs，完成以下几项任务（注意，这个dfs是经过修改的）：
+        1.找出所有从init节点到所有invalid节点的路径
+        2.寻路过程中，同时进行tagStack的记录，从而找到所有jump/jumpi的边的地址是何处被push的
+        3.在寻路过程中，找出是否存在环形函数调用链的情况。路径中包含相关节点的assertion同样不会被优化
         '''
         # 第一步，找出所有的invalid节点
-        for node in self.cfg.blocks.values():
+        for node in self.blocks.values():
             if node.isInvalid:
                 self.invalidNodeList.append(node.offset)
         # print(self.invalidList)
 
         # 第二步，搜索从起点到invalid节点的所有路径
-        generator = PathGenerator(self.nodes, self.edges, self.uncondJumpEdge, self.isLoopRelated, self.node2FuncId,
+        generator = PathGenerator(self.cfg,self.invalidNodeList, self.uncondJumpEdge, self.isLoopRelated, self.node2FuncId,
                                   self.funcBodyDict)
+        generator.genPath()
+        return
         for invNode in self.invalidNodeList:
-            generator.genPath(self.cfg.initBlockId, invNode)
+            (self.cfg.initBlockId, invNode)
             paths = generator.getPath()
             self.invalidNode2PathIds[invNode] = []
             for pathNodeList in paths:

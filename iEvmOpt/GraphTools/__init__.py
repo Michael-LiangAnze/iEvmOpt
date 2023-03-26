@@ -1,3 +1,2 @@
 from GraphTools.DominatiorTree import DominatorTreeBuilder
 from GraphTools.TarjanAlgorithm import TarjanAlgorithm
-from GraphTools.PathGenerator import PathGenerator

@@ -29,12 +29,14 @@ class TagStack:
     def allInstrsExecuted(self):
         return self.PC > self.lastInstrAddrOfBlock
 
-    def getBlockJumpType(self):
-        '''
-        返回当前节点的跳转类型
-        :return:跳转类型，包括：unconditional、conditional、terminal、fall
-        '''
-        return self.curBlock.jumpType
+    def isLastInstr(self):
+        return self.PC == self.lastInstrAddrOfBlock
+
+    def getTagStack(self):
+        return self.tagStack.getStack()
+
+    def setTagStack(self, stackInfo: list):
+        self.tagStack.setStack(stackInfo)
 
     def setBeginBlock(self, curBlockId: int):
         """ 设置执行块，同时设置PC为块的偏移量
@@ -43,14 +45,6 @@ class TagStack:
         self.curBlock = self.cfg.blocks[curBlockId]
         self.PC = self.curBlock.offset
         self.lastInstrAddrOfBlock = self.curBlock.offset + self.curBlock.length - 1  # 最后一条指令是一个字节的
-
-    def getCurState(self):
-        '''
-        获取程序当前的执行状态
-        :return:一个PC；一个字符串，分别包含了栈、memory、storage的状态
-        '''
-        state = self.stack.getStack().__str__() + "<=>" + self.memory.__str__() + "<=>" + self.storage.__str__()
-        return self.PC, state
 
     def getTagStackTop(self):
         return self.tagStack.getTop()
@@ -167,7 +161,6 @@ class TagStack:
             case _:  # Pattern not attempted
                 err = 'Opcode {} is not found!'.format(hex(opCode))
                 assert 0, err
-        assert self.stack.size() == self.tagStack.size()
         self.PC += 1
 
     def __execAdd(self):  # 0x01
@@ -421,20 +414,17 @@ class TagStack:
             num |= self.curBlock.bytecode[self.PC - self.curBlock.offset]  # 低位加上相应的字节
         # print("push num:{},byte num:{}".format(hex(num), byteNum))
         num = BitVecVal(num, 256)
-        self.stack.push(num)
 
         self.tagStack.push([num, jumpOpcodeAddr, self.curBlock.offset])
 
     def __execDup(self, opCode):  # 0x80
         pos = opCode - 0x80
-        self.stack.push(self.stack.getItem(self.stack.size() - 1 - pos))
-        self.tagStack.push(self.stack.getItem(self.stack.size() - 1 - pos))
+        self.tagStack.push(self.tagStack.getItem(self.tagStack.size() - 1 - pos))
 
     def __execSwap(self, opCode):  # 0x90 <= opCode <= 0x9f
         depth = opCode - 0x90 + 1
-        stackSize = self.stack.size()
+        stackSize = self.tagStack.size()
         pos = stackSize - 1 - depth
-        self.stack.swap(stackSize - 1, pos)
         self.tagStack.swap(stackSize - 1, pos)
 
     def __execLog(self, opCode):  # 0xa0 <= opCode <= 0xa4

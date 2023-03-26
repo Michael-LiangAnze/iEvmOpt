@@ -30,4 +30,6 @@ class JumpEdge:
         print("Edge'beginAddr:{}".format(self.beginAddr))
         print("Edge'targetAddr:{}".format(self.targetAddr))
         print("Edge'tetrad:{}".format(self.tetrad))
+        print("Edge'isCallerEdge:{}".format(self.isCallerEdge))
+        print("Edge'isReturnEdge:{}".format(self.isReturnEdge))
         print("Edge'couldBeCallEdge:{}\n".format(self.couldBeCallEdge))
