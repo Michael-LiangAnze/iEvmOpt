@@ -118,6 +118,8 @@ class TagStack:
                 self.__execShr()
             case 0x1d:
                 self.__execSar()
+            case 0x1f:
+                self.__execNonOp()
             case 0x34:
                 self.__execCallValue()
             case 0x35:
@@ -281,6 +283,9 @@ class TagStack:
         self.tagStack.pop()
         self.tagStack.pop()
         self.tagStack.push(None)
+
+    def __execNonOp(self):  # 0x1f 空指令
+        pass
 
     def __execSha3(self):  # 0x20
         assert 0

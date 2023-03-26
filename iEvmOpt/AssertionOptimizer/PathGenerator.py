@@ -75,7 +75,6 @@ class PathGenerator:
         # for path in self.paths:
         #     path.printPath()
         # self.uncondJumpEdges[[142,198].__str__()].output()
-        # print(self.isFuncCallLoopRelated)
         assert infoNum == self.jumpEdgeInfo.__len__()
 
     def __dfs(self, curNode: int, parentTagStack: TagStack):
@@ -159,7 +158,7 @@ class PathGenerator:
         self.sccVisiting[curNode] = False
 
     def getPath(self):
-        return list(self.paths)
+        return self.paths
 
-    def getFuncCallLoopRelated(self):
-        return self.isFuncCallLoopRelated
+    def getJumpEdgeInfo(self):
+        return self.jumpEdgeInfo

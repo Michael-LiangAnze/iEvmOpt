@@ -47,24 +47,23 @@ class AssertionOptimizer:
 
         # 路径搜索需要用到的信息
         self.invalidNodeList = []  # 记录所有invalid节点的offset
-        self.invalidPathId = 0
         self.invalidPaths = {}  # 用于记录不同invalid对应的路径集合，格式为：  invalidPathId:Path
         self.invalidNode2PathIds = {}  # 记录每个invalid节点包含的路径，格式为：  invalidNodeOffset:[pathId1,pathId2]
         self.invalidNode2CallChain = {}  # 记录每个invalid节点包含的调用链，格式为： invalidNodeOffset:[[callchain1中的pathid],[callchain2中的pathid]]
 
         # 可达性分析需要用到的信息
-        self.constrains = {}  # 每条路径包含的约束
         self.pathReachable = {}  # 某条路径是否可达
         self.invNodeReachable = None  # 某个Invalid节点是否可达，格式为： invNode:True/Flase
         self.redundantType = {}  # 每个invalid节点的冗余类型，类型包括fullyredundant和partiallyredundant，格式为： invNode: type
 
         # 冗余assertion优化需要用到的信息
-        self.initBlockId = self.cfg.initBlockId
-        self.exitBlockId = self.cfg.exitBlockId
         self.domTree = {}  # 支配树。注意，为了方便从invalid节点往前做遍历，该支配树存储的是入边，格式为   to:from
-        self.removedOriginalNode = dict(zip(self.nodes, [False for i in range(0, len(self.nodes))]))  # 记录一个节点是否被删除
-        self.newBlocks = {}  # 新节点，因为完全冗余需要删除节点，因此将相关节点变为一个新节点之后，需要记录这些新节点
-        self.originalToNewNodes = dict(zip(self.nodes, self.nodes))  # 一个映射，记录原节点到新节点的映射
+        self.removedRange = dict(
+            zip(self.nodes, [[] for i in range(0, len(self.nodes))]))  # 记录每个block中被移除的区间，每个区间的格式为:[from,to)
+
+        # 重定位需要用到的信息
+        self.jumpEdgeInfo = None # 跳转边信息，格式为:[[push的值，push指令的地址，push指令所在的block]]
+        self.newBytecode = bytearray() # 重新生成的字节码
 
     def optimize(self):
         self.log.info("开始进行字节码分析")
@@ -75,7 +74,7 @@ class AssertionOptimizer:
 
         # 然后找到所有invalid节点，找出他们到起始节点之间所有的边
         self.__searchPaths()
-        return
+
         callChainNum = 0
         for invNode in self.invalidNodeList:
             callChainNum += self.invalidNode2CallChain[invNode].__len__()
@@ -101,7 +100,7 @@ class AssertionOptimizer:
                 partiallyRedundantNodes.append(invNode)
         if fullyRedundantNodes.__len__() == 0 and partiallyRedundantNodes.__len__() == 0:
             self.log.info("不存在可优化的Assertion，优化结束")
-            return
+
         self.log.info("一共找到{}个完全冗余的invalid节点，{}个部分冗余的invalid节点".format(fullyRedundantNodes.__len__(),
                                                                        partiallyRedundantNodes.__len__()))
         if fullyRedundantNodes.__len__() > 0:  # 存在完全冗余的节点
@@ -112,6 +111,11 @@ class AssertionOptimizer:
         #     self.log.info("正在对部分冗余的Assertion进行优化")
         #     self.__optimizePartiallyRedundantAssertion(partiallyRedundantNodes)
         #     self.log.info("部分冗余Assertion优化完毕")
+
+        # 重新生成字节码序列
+        self.log.info("正在重新生成字节码序列")
+        self.__regenerateBytecode()
+        self.log.info("字节码序列生成完毕")
 
         # 将优化后的字节码写入文件
         self.log.info("正在将优化后的字节码写入文件")
@@ -140,7 +144,7 @@ class AssertionOptimizer:
         for n in self.cfg.blocks.values():
             if n.jumpType == "unconditional":
                 _from = n.offset
-                for _to in self.edges[_from]: # 可能有几个出边
+                for _to in self.edges[_from]:  # 可能有几个出边
                     # 这里做一个assert，防止出现匹配到两个节点都在dispatcher里面的情况，但是真的有吗？先不处理
                     assert not (n.blockType == "dispatcher" and self.cfg.blocks[_to].blockType == "dispatcher")
                     e = JumpEdge(n, self.cfg.blocks[_to])
@@ -248,36 +252,35 @@ class AssertionOptimizer:
                 self.invalidNodeList.append(node.offset)
         # print(self.invalidList)
 
-        # 第二步，搜索从起点到invalid节点的所有路径
-        generator = PathGenerator(self.cfg,self.invalidNodeList, self.uncondJumpEdge, self.isLoopRelated, self.node2FuncId,
-                                  self.funcBodyDict)
+        # 第二步，从起点开始做dfs遍历，完成提到的三个任务
+        generator = PathGenerator(self.cfg, self.invalidNodeList, self.uncondJumpEdge, self.isLoopRelated,
+                                  self.node2FuncId, self.funcBodyDict)
         generator.genPath()
-        return
+        paths = generator.getPath()
+        self.jumpEdgeInfo = generator.getJumpEdgeInfo()
+
+        # 第三步，将这些路径根据invalid节点进行归类
         for invNode in self.invalidNodeList:
-            (self.cfg.initBlockId, invNode)
-            paths = generator.getPath()
             self.invalidNode2PathIds[invNode] = []
-            for pathNodeList in paths:
-                path = Path(self.invalidPathId, pathNodeList)
-                self.invalidPaths[self.invalidPathId] = path
-                self.invalidNode2PathIds[invNode].append(self.invalidPathId)
-                self.invalidPathId += 1
+        for path in paths:
+            pathId = path.getId()
+            self.invalidPaths[pathId] = path
+            invNode = path.getLastNode()
+            self.invalidNode2PathIds[invNode].append(pathId)
         # for k, v in self.invalidNode2PathIds.items():
         #     print("invalid node is:{}".format(k))
         #     for pathId in v:
         #         self.invalidPaths[pathId].printPath()
 
-        # 第三步，对于一个Invalid节点，检查它的所有路径中，是否存在
-        # scc或者函数调用环相关的节点或者未被识别为函数的节点
-        self.isFuncCallLoopRelated = generator.getFuncCallLoopRelated()
+        # 第四步，对于一个Invalid节点，检查它的所有路径中，是否存在scc相关的节点
+        # 若有，则这些路径对应的invalid将不会被分析
         removedInvPaths = []
         removedInvNodes = []
         for invNode in self.invalidNodeList:
             isProcess = True
             for pathId in self.invalidNode2PathIds[invNode]:
                 for node in self.invalidPaths[pathId].pathNodes:
-                    if self.isLoopRelated[node] or self.isFuncCallLoopRelated[
-                        node] or node not in self.node2FuncId.keys():  # 存在
+                    if self.isLoopRelated[node]:  # 存在
                         isProcess = False
                         break
                 if not isProcess:
@@ -298,7 +301,7 @@ class AssertionOptimizer:
         #         self.invalidPaths[pathId].printPath()
         # print(self.isFuncCallLoopRelated)
 
-        # 第四步，对于每个可优化的invalid节点，将其所有路径根据函数调用链进行划分
+        # 第五步，对于每个可优化的invalid节点，将其所有路径根据函数调用链进行划分
         for invNode in self.invalidNodeList:  # 取出一个invalid节点
             callChain2PathIds = {}  # 记录调用链内所有的点,格式： 调用链 : [pathId1,pathId2]
             for pathId in self.invalidNode2PathIds[invNode]:  # 取出他所有路径的id
@@ -309,7 +312,6 @@ class AssertionOptimizer:
                     if self.node2FuncId[node] != preFuncId:  # 进入了一个新函数
                         callChain.append(self.node2FuncId[node])
                         preFuncId = self.node2FuncId[node]
-
                 # 得到一条函数调用链
                 self.invalidPaths[pathId].setFuncCallChain(callChain)
                 key = callChain.__str__()
@@ -321,28 +323,27 @@ class AssertionOptimizer:
             for callChain, pathIds in callChain2PathIds.items():
                 self.invalidNode2CallChain[invNode].append(pathIds)
 
-        # for k, v in self.invalidNode2PathIds.items():
-        #     print("invalid node is:{}".format(k))
-        #     for pathId in v:
-        #         self.invalidPaths[pathId].printPath()
-        # print(self.invalidNode2CallChain)
+        for k, v in self.invalidNode2PathIds.items():
+            print("invalid node is:{}".format(k))
+            for pathId in v:
+                self.invalidPaths[pathId].printPath()
+        print(self.invalidNode2CallChain)
 
     def __reachabilityAnalysis(self):
         '''
         可达性分析：对于一个invalid节点，检查它的所有路径是否可达，并根据这些可达性信息判断冗余类型
         :return:None
         '''
-
         # 第一步，使用求解器判断各条路径是否是可达的
         self.invNodeReachable = dict(zip(self.invalidNodeList, [False for i in range(self.invalidNodeList.__len__())]))
         executor = SymbolicExecutor(self.cfg)
-        for invNode in self.invalidNodeList:
+        for invNode in self.invalidNodeList:  # 对一个invalid节点
             for pathId in self.invalidNode2PathIds[invNode]:  # 取出一条路径
                 self.pathReachable[pathId] = False
                 executor.clearExecutor()
-                self.constrains[pathId] = []
                 nodeList = self.invalidPaths[pathId].pathNodes
                 isSolve = True  # 默认是做约束检查的。如果发现路径走到了一个不应该到达的节点，则不做check，相当于是优化了过程
+                constrains = []  # 路径上的约束
                 for nodeIndex in range(0, nodeList.__len__() - 1):  # invalid节点不计入计算
                     node = nodeList[nodeIndex]  # 取出一个节点
                     executor.setBeginBlock(node)
@@ -359,21 +360,21 @@ class AssertionOptimizer:
                             expectedTarget = self.cfg.blocks[curNode].jumpiDest[jumpCond]
                             if nextNode != expectedTarget:  # 不匹配，直接置为不可达，后续不做check
                                 self.pathReachable[pathId] = False
-                                isSolve = False  # 不处理这一条路径了
+                                isSolve = False  # 不对这一条路径使用约束求解了
                                 self.log.processing(
                                     "路径{}在实际运行中不可能出现：在节点{}处本应跳转到{}，却跳转到了{}".format(pathId, curNode, expectedTarget,
                                                                                    nextNode))
                                 break
-                        else:  # 不是固定的跳转地址
+                        else:  # 不是确定的跳转地址
                             if nextNode == self.cfg.blocks[curNode].jumpiDest[True]:
-                                self.constrains[pathId].append(executor.getJumpCond(True))
+                                constrains.append(executor.getJumpCond(True))
                             elif nextNode == self.cfg.blocks[curNode].jumpiDest[False]:
-                                self.constrains[pathId].append(executor.getJumpCond(False))
+                                constrains.append(executor.getJumpCond(False))
                             else:
                                 assert 0
                 if isSolve:
                     s = Solver()
-                    self.pathReachable[pathId] = s.check(self.constrains[pathId]) == sat
+                    self.pathReachable[pathId] = s.check(constrains) == sat
         # for pid, r in self.pathReachable.items():
         #     print(pid, r)
 
@@ -387,9 +388,8 @@ class AssertionOptimizer:
                 self.redundantType[invNode] = fullyRedundant
             else:  # 既有可达的也有不可达的，是部分冗余
                 self.redundantType[invNode] = partiallyRedundant
-
-        for pid, t in self.redundantType.items():
-            print(pid, t)
+        for node, t in self.redundantType.items():
+            print(node, t)
 
     def __buildDominatorTree(self):
         # 因为支配树算法中，节点是按1~N进行标号的，因此需要先做一个标号映射，并处理映射后的边，才能进行支配树的生成
@@ -421,13 +421,13 @@ class AssertionOptimizer:
         # for pid, t in self.redundantType.items():
         #     print(pid, t)
         executor = SymbolicExecutor(self.cfg)
-        for invNode in fullyRedundantNodes:
+        for invNode in fullyRedundantNodes:  # 取出一个invalid节点
             # 首先做一个检查，检查是否为jumpi的失败边走向Invalid，且该invalid节点只有一个入边
             assert self.inEdges[invNode].__len__() == 1
             assert invNode == self.blocks[self.inEdges[invNode][0]].jumpiDest[False]
             executor.clearExecutor()
             # for pathsOfCallChain in self.invalidNode2CallChain[invNode]:  # 取出一条调用链
-            pathsOfCallChain = self.invalidNode2CallChain[invNode][0]  # 随意取出一条调用链，格式为[pathId1,pathId2]
+            pathsOfCallChain = self.invalidNode2CallChain[invNode][0]  # 随意取出一条调用链，格式为[pathId1,pathId2...]
 
             # 第一步，获取路径上所有指令位置的程序状态
             pathNodes = self.invalidPaths[pathsOfCallChain[0]].pathNodes  # 随意取出一条路径
@@ -456,47 +456,21 @@ class AssertionOptimizer:
                 node = self.domTree[node]
             assert targetAddr and targetNode  # 不能为none
             assert self.blocks[targetNode].blockType != "dispatcher"  # 不应该出现在dispatcher中
-            # print(targetAddr)
-            # print(targetNode)
+            print(targetNode)
+            print(targetAddr)
 
-            # 第三步，直接删除这一段序列，将targetNone和jumpdest所在节点缝合为一个新节点
-            blockInfo = {}
-            secondNode = invNode + 1
-            blockInfo["offset"] = targetNode  # 设置为第一个节点的偏移量
-            blockInfo["length"] = (targetAddr - targetNode) + (self.blocks[secondNode].length - 1)
-            blockInfo["type"] = self.blocks[targetNode].blockType
-            blockInfo["stackBalance"] = 0  # 暂时不处理
-            bytecode = bytearray()
-            bytecode.extend(self.blocks[targetNode].bytecode[:targetAddr - targetNode])
-            bytecode.extend(self.blocks[secondNode].bytecode[1:self.blocks[secondNode].length])
-            # for i in range(targetAddr - targetNode):  # 第一个block的字节码
-            #     bytecode.append(self.blocks[targetNode].bytecode(i))
-            # for i in range(1, self.blocks[secondNode].length):  # 第二个block的字节码，不要jumpdest
-            #     bytecode.append(self.blocks[secondNode].bytecode(i))
-            bytecodeStr = "".join(['{:02x}'.format(code) for code in bytecode])
-            blockInfo["bytecodeHex"] = bytecodeStr
-
-            instrNumInBlock1 = 0  # 第一个block中包含的地址数量
-            for i in self.blocks[targetNode].instrAddrs:
-                if i >= targetAddr:
-                    break
-                instrNumInBlock1 += 1
-            parsedOpcodes = self.blocks[targetNode].instrs[:instrNumInBlock1]
-            parsedOpcodes.extend(self.blocks[secondNode].instrs[1:])
-            blockInfo["parsedOpcodes"] = "\n".join(parsedOpcodes)
-
-            newBlock = BasicBlock(blockInfo)
-            # newBlock.printBlockInfo()
-
-            # 第四步，记录这个新节点，在做完所有invalid的优化之后，再去修改图结构
-            self.newBlocks[targetNode] = newBlock
-            # 先做一个检查，要删掉的节点，不能与其他的删除节点重合
+            # 第三步，将这一段序列置为空指令
             for node in self.nodes:
-                assert not self.removedOriginalNode[node]
-            for node in self.nodes:
-                if targetNode <= node <= invNode + 1:  # 这些都是要删除的节点
-                    self.removedOriginalNode[node] = True
-                    self.originalToNewNodes[node] = targetNode  # 删除后，用targetNode代替
+                if targetNode <= node <= invNode:  # invNode后的block暂时不处理
+                    beginAddr = max(targetAddr, node)
+                    endAddr = node + self.blocks[node].length
+                    for i in range(beginAddr - node, endAddr - node):
+                        self.blocks[node].bytecode[i] = 0x1f  # 置为空指令
+                    self.removedRange[node].append([beginAddr, endAddr])
+            if self.inEdges[invNode + 1].__len__() == 1:
+                # invalid的下一个block，只有一条入边，说明这个jumpdest也可以删除
+                self.removedRange[invNode + 1].append([invNode + 1, invNode + 2])
+            print(self.removedRange)
 
     def __optimizePartiallyRedundantAssertion(self, partiallyRedundantNodes: list):
         '''
@@ -630,6 +604,14 @@ class AssertionOptimizer:
             #         self.cfg.blocks[node].isModified = True
             #         for i in range(self.cfg.blocks[node].length):
             #             self.cfg.blocks[node].bytecode[i] = 0x5b
+
+    def __regenerateBytecode(self):
+        '''
+        重新生成字节码，同时完成重定位
+        :return:
+        '''
+        
+
 
     def __outputFile(self):
         '''
