@@ -26,7 +26,7 @@ class CfgBuilder:
             self.__etherSolve()
         self.__buildCfg()
         if not isParseBefore:
-            dg = DotGraphGenerator(self.cfg.edges, self.cfg.blocks.keys())
+            dg = DotGraphGenerator(self.cfg.blocks.keys(),self.cfg.edges)
             dg.genDotGraph(self.outputPath, self.srcName)
 
 

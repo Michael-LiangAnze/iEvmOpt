@@ -1,0 +1,938 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Analysis_2023-03-27_15-28-38</title>
+
+    <script src="https://kit.fontawesome.com/24e2a9042b.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/svg-pan-zoom@3.5.0/dist/svg-pan-zoom.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Source+Sans+Pro&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=B612+Mono&display=swap');
+
+        body {
+            margin: 0;
+            overflow-x: hidden;
+            width: 100%;
+            background: #fefefe;
+        }
+
+        :root {
+            font-size: 16px;
+            font-family: 'Source Sans Pro', sans-serif;
+            font-weight: 500;
+            --text-accent: #f0f0f0;
+            --text-main: black;
+            --bg-main: #e0e0e0;
+            --bg-accent: #222222;
+            --bg-accent-hover: #101010;
+            --sidebar-width: 15rem;
+            --sidebar-position: 0;
+            --transition-speed: .5s;
+        }
+        .card {
+            box-shadow: 0 4px 8px 0 rgba(0,0,0,0.2);
+        }
+
+        .contractName {
+            margin: 1rem;
+            display: inline-block;
+            font-size: 2.5em;
+        }
+        .gridLayout {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr 1fr;
+            grid-template-rows: auto;
+            grid-template-areas:
+                "cfg cfg cfg inf"
+                "err err rdt rdt"
+                "src src dcd dcd";
+        }
+        .cfg {
+            grid-area: cfg;
+            display: flex;
+            align-items: center;
+            flex-direction: column;
+        }
+        .cfgContent {
+            background-color: #ececec;
+            width: 100%;
+            height: 70vh;
+            border: thin solid #ccc;
+            flex-grow: 1;
+        }
+        .info {
+            grid-area: inf;
+        }
+        .remainingData {
+            grid-area: rdt;
+        }
+        .decodedData {
+            grid-area: dcd;
+        }
+        .errorLog {
+            grid-area: err;
+        }
+        .sourceCode {
+            grid-area: src;
+        }
+        .gridElement{
+            width: auto;
+            position: relative;
+            margin: .5em;
+        }
+
+        /*******************************************************************************************************************************/
+        .content{
+            width: auto;
+        }
+        ul {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+        li {
+            padding: 0;
+            margin: 0;
+        }
+        .titleInfo {
+            margin: .3em 0 .5em 0;
+            text-align: center;
+            width: 100%;
+            font-size: 1.5em;
+            font-weight: bold;
+            opacity: .5;
+        }
+        .otherInfo{
+            background-color: #2196F3;
+            color: #fff;
+            border-radius: 5px;
+            padding: .5em;
+        }
+        .otherInfo li{
+            opacity: .7;
+            margin: 8px 0;
+        }
+        .otherInfo i {
+            margin: 2px 5px;
+        }
+        .infoList li {
+            margin: 0 .5em .5em .5em;
+        }
+
+        .messageCard{
+            width: auto;
+            border-radius: 5px;
+            color: #fff;
+            position: relative;
+        }
+        .messageCard i {
+            font-size: 4em;
+            opacity: .2;
+            padding: 1% 1% 1% 4%;
+        }
+        .number {
+            display: block;
+            position: absolute;
+            top: 0;
+            right: 10%;
+            font-size: 2em;
+        }
+        .message {
+            display: block;
+            opacity: .7;
+            position: absolute;
+            bottom: 5px;
+            right: 10%;
+            text-align: right;
+            max-width: 60%;
+        }
+        .error {
+            background-color: #f44336;
+        }
+        .warning {
+            background-color: #ff9800;
+        }
+        .success {
+            background-color: #4CAF50;
+        }
+
+        /*******************************************************************************************************************************/
+
+        .collapsibleHeader {
+            width: auto;
+            font-size: 1.5em;
+            font-weight: bold;
+            border: none;
+            text-align: left;
+            padding: .5rem;
+            background: #ccc;
+            margin: 0;
+            display: flex;
+            flex-direction: row;
+            align-items: center;
+        }
+        .icon {
+            position: absolute;
+            right: 2%;
+            opacity: .5;
+            font-size: .8em;
+        }
+        .iconCopy {
+            cursor: pointer;
+        }
+        .collapsible {
+            border: 1px solid #ccc;
+            background: #ddd;
+            display: flex;
+            flex-direction: column;
+            align-items: start;
+            max-height: 20em;
+            overflow: hidden;
+            overflow-y: scroll;
+        }
+        .collapsibleContent {
+            padding: .5rem;
+            display: block;
+            white-space: pre-wrap;
+        }
+        .collapsibleFill{
+            flex-grow: 1;
+        }
+        .errorContent {
+            color: #f44336;
+        }
+        .alertBox {
+            position: fixed;
+            width: fit-content;
+            bottom: 20px;
+            left: 50vw;
+            right: 50vw;
+            transform: translateX(-50%);
+            transition: all 1s ease-in-out;
+            background-color: #2196F3;
+            color: #fff;
+            font-weight: bold;
+            margin: 10px;
+            padding: 1%;
+            border-radius: 10px;
+        }
+        .alertBox p {
+            opacity: .7;
+            padding: 0;
+            margin: 0;
+        }
+        .alertActive{
+            bottom: 3%;
+            z-index: 100;
+        }
+        .alertHidden{
+            bottom: -100px;
+            z-index: 100;
+        }
+
+        .remainingData {
+            display: flex;
+            flex-flow: column;
+            height: calc(100% - 1em);
+        }
+        .remainingData p, .decodedData p {
+            font-family: "B612 Mono", monospace, sans-serif;
+            margin: .5rem;
+            word-wrap: break-word;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+
+        #sourceCodeText {
+            word-break: break-all;
+        }
+
+        /*******************************************************************************************************************************/
+
+        #logo {
+            position: relative;
+            right: 2rem;
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            margin-left: auto;
+        }
+
+        #logoSvg {
+            height: 5rem;
+            width: 5rem;
+        }
+
+        .logoTitle {
+            display: block;
+        }
+
+        .header {
+            width: 100%;
+            display: flex;
+            align-items: center;
+        }
+
+        /*******************************************************************************************************************************/
+
+        footer {
+            padding: 0.5em;
+            text-align: center;
+            width: 100%;
+            color: #6e6e6e;
+        }
+    </style>
+</head>
+<body>
+    <div class="content">
+        <div class="header">
+            <h1 class="contractName">Analysis_2023-03-27_15-28-38</h1>
+            <div id="logo">
+                <svg id="logoSvg" width="210mm" height="210mm" enable-background="new" version="1.1" viewBox="0 0 210 210" xmlns="http://www.w3.org/2000/svg" xmlns:cc="http://creativecommons.org/ns#" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:xlink="http://www.w3.org/1999/xlink">
+
+                    <defs>
+                        <linearGradient id="linearGradient877">
+                            <stop stop-color="#ff8b1c" offset="0"/>
+                            <stop stop-color="#fff01c" offset="1"/>
+                        </linearGradient>
+                        <linearGradient id="linearGradient871" x1="18.168" x2="141.16" y1="99.942" y2="220.83" gradientTransform="translate(18.548 24.903)" gradientUnits="userSpaceOnUse">
+                            <stop stop-color="#ff2d33" offset="0"/>
+                            <stop stop-color="#ff842d" offset="1"/>
+                        </linearGradient>
+                        <linearGradient id="linearGradient879-3" x1="74.072" x2="195.66" y1="160.04" y2="281.63" gradientTransform="translate(-24.368 -24.302)" gradientUnits="userSpaceOnUse" xlink:href="#linearGradient877"/>
+                        <linearGradient id="linearGradient870" x1="74.072" x2="195.66" y1="160.04" y2="281.63" gradientTransform="translate(-24.368 -24.302)" gradientUnits="userSpaceOnUse" xlink:href="#linearGradient877"/>
+                    </defs>
+                    <metadata>
+                        <rdf:RDF>
+                            <cc:Work rdf:about="">
+                                <dc:format>image/svg+xml</dc:format>
+                                <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"/>
+                                <dc:title/>
+                            </cc:Work>
+                        </rdf:RDF>
+                    </metadata>
+                    <g transform="translate(0,-87)">
+                        <g>
+                            <rect id="YellowSquare1" x="49.703" y="135.74" width="121.59" height="121.59" enable-background="new" fill="url(#linearGradient879-3)"/>
+                            <rect id="RedSquare" x="36.716" y="124.84" width="122.99" height="120.89" fill="url(#linearGradient871)"/>
+                            <rect id="YellowSquare2" x="49.703" y="135.74" width="121.59" height="121.59" enable-background="new" fill="url(#linearGradient870)" opacity=".721"/>
+                        </g>
+                        <g id="LetterE" transform="matrix(.13332 0 0 .13859 31.332 141.96)">
+                            <g transform="translate(1.6822e-6 1.2158e-5)">
+                                <path transform="rotate(90.136 751.75 66.009)" d="m640.79 38.448 158.94 91.319-158.55 91.986z" fill-opacity=".8"/>
+                                <path transform="rotate(-89.864 610.44 144.38)" d="m640.79 38.448 158.94 91.319-158.55 91.986z" enable-background="new" fill-opacity=".8902"/>
+                                <path transform="rotate(90.136 626.73 99.63)" d="m640.79 38.448 158.94 91.319-158.55 91.986z" enable-background="new" fill-opacity=".6"/>
+                                <path transform="rotate(90.136 501.71 133.25)" d="m640.79 38.448 158.94 91.319-158.55 91.986z" enable-background="new" fill-opacity=".8"/>
+                                <g fill-opacity=".78039">
+                                    <path transform="rotate(-89.864 677.84 395.02)" d="m640.79 38.448 158.94 91.319-158.55 91.986z" enable-background="new"/>
+                                    <path transform="rotate(-89.864 644.14 269.7)" d="m640.79 38.448 158.94 91.319-158.55 91.986z" enable-background="new"/>
+                                    <path transform="rotate(-89.864 702.12 52.538)" d="m640.79 38.448 158.94 91.319-158.55 91.986z" enable-background="new"/>
+                                </g>
+                                <path transform="rotate(-89.864 769.52 303.17)" d="m640.79 38.448 158.94 91.319-158.55 91.986z" enable-background="new" fill-opacity=".8902"/>
+                                <path transform="rotate(90.136 593.34 224.71)" d="m640.79 38.448 158.94 91.319-158.55 91.986z" enable-background="new" fill-opacity=".6"/>
+                                <path transform="rotate(90.136 376.69 166.87)" d="m640.79 38.448 158.94 91.319-158.55 91.986z" enable-background="new" fill-opacity=".6"/>
+                                <path transform="rotate(-89.864 711.54 520.34)" d="m640.79 38.448 158.94 91.319-158.55 91.986z" enable-background="new" fill-opacity=".8902"/>
+                                <path transform="rotate(90.136 251.67 200.5)" d="m640.79 38.448 158.94 91.319-158.55 91.986z" enable-background="new" fill-opacity=".8"/>
+                                <path transform="rotate(-89.864 745.24 645.65)" d="m640.79 38.448 158.94 91.319-158.55 91.986z" enable-background="new" fill-opacity=".6"/>
+                                <path transform="rotate(-89.864 836.92 553.81)" d="m640.79 38.448 158.94 91.319-158.55 91.986z" enable-background="new" fill-opacity=".78039"/>
+                                <path transform="rotate(90.136 343.3 291.96)" d="m640.79 38.448 158.94 91.319-158.55 91.986z" enable-background="new" fill-opacity=".8902"/>
+                                <path transform="rotate(90.136 843.38 157.47)" d="m640.79 38.448 158.94 91.319-158.55 91.986z" enable-background="new" fill-opacity=".6"/>
+                            </g>
+                        </g>
+                    </g>
+                </svg>
+                <h1 class="logoTitle">
+                    EtherSolve
+                </h1>
+            </div>
+        </div>
+        <div class="gridLayout">
+            <div class="cfg gridElement">
+                <div class="cfgContent">
+                    <?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN"
+ "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<!-- Generated by graphviz version 2.38.0 (20140413.2041)
+ -->
+<!-- Title: G Pages: 1 -->
+<svg width="663pt" height="2526pt"
+ viewBox="0.00 0.00 663.00 2526.00" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<g id="graph0" class="graph" transform="scale(1 1) rotate(0) translate(4 2522)">
+<title>G</title>
+<!-- 86 -->
+<g id="node1" class="node"><title>86</title>
+<polygon fill="lemonchiffon" stroke="crimson" points="415.5,-190 297.5,-190 297.5,-72 415.5,-72 415.5,-190"/>
+<polyline fill="none" stroke="crimson" points="309.5,-190 297.5,-178 "/>
+<polyline fill="none" stroke="crimson" points="297.5,-84 309.5,-72 "/>
+<polyline fill="none" stroke="crimson" points="403.5,-72 415.5,-84 "/>
+<polyline fill="none" stroke="crimson" points="415.5,-178 403.5,-190 "/>
+<text text-anchor="start" x="305.5" y="-134.8" font-family="arial" font-size="14.00">86: JUMPDEST</text>
+<text text-anchor="start" x="305.5" y="-119.8" font-family="arial" font-size="14.00">87: STOP</text>
+</g>
+<!-- 185 -->
+<g id="node16" class="node"><title>185</title>
+<polygon fill="crimson" stroke="black" points="536,-36 401,-36 401,-0 536,-0 536,-36"/>
+<text text-anchor="start" x="409" y="-14.3" font-family="arial" font-size="14.00">185: EXIT BLOCK</text>
+</g>
+<!-- 86&#45;&gt;185 -->
+<g id="edge22" class="edge"><title>86&#45;&gt;185</title>
+<path fill="none" stroke="black" d="M415.124,-71.8993C425.276,-61.8379 435.313,-51.8908 443.896,-43.3844"/>
+<polygon fill="black" stroke="black" points="446.392,-45.8385 451.031,-36.3133 441.464,-40.8666 446.392,-45.8385"/>
+</g>
+<!-- 68 -->
+<g id="node2" class="node"><title>68</title>
+<polygon fill="lemonchiffon" stroke="black" points="359,-2104.5 234,-2104.5 234,-2006.5 359,-2006.5 359,-2104.5"/>
+<text text-anchor="start" x="242" y="-2089.3" font-family="arial" font-size="14.00">68: JUMPDEST</text>
+<text text-anchor="start" x="242" y="-2074.3" font-family="arial" font-size="14.00">69: CALLVALUE</text>
+<text text-anchor="start" x="242" y="-2059.3" font-family="arial" font-size="14.00">70: DUP1</text>
+<text text-anchor="start" x="242" y="-2044.3" font-family="arial" font-size="14.00">71: ISZERO</text>
+<text text-anchor="start" x="242" y="-2029.3" font-family="arial" font-size="14.00">72: PUSH1 0x4f</text>
+<text text-anchor="start" x="242" y="-2014.3" font-family="arial" font-size="14.00">74: JUMPI</text>
+</g>
+<!-- 75 -->
+<g id="node4" class="node"><title>75</title>
+<polygon fill="lemonchiffon" stroke="crimson" points="299,-1799 176,-1799 176,-1676 299,-1676 299,-1799"/>
+<polyline fill="none" stroke="crimson" points="188,-1799 176,-1787 "/>
+<polyline fill="none" stroke="crimson" points="176,-1688 188,-1676 "/>
+<polyline fill="none" stroke="crimson" points="287,-1676 299,-1688 "/>
+<polyline fill="none" stroke="crimson" points="299,-1787 287,-1799 "/>
+<text text-anchor="start" x="184" y="-1748.8" font-family="arial" font-size="14.00">75: PUSH1 0x00</text>
+<text text-anchor="start" x="184" y="-1733.8" font-family="arial" font-size="14.00">77: DUP1</text>
+<text text-anchor="start" x="184" y="-1718.8" font-family="arial" font-size="14.00">78: REVERT</text>
+</g>
+<!-- 68&#45;&gt;75 -->
+<g id="edge6" class="edge"><title>68&#45;&gt;75</title>
+<path fill="none" stroke="black" d="M287.475,-2006.16C277.664,-1953.62 261.892,-1869.14 250.692,-1809.16"/>
+<polygon fill="black" stroke="black" points="254.073,-1808.19 248.797,-1799 247.192,-1809.48 254.073,-1808.19"/>
+</g>
+<!-- 79 -->
+<g id="node9" class="node"><title>79</title>
+<polygon fill="lemonchiffon" stroke="black" points="430,-1958 307,-1958 307,-1875 430,-1875 430,-1958"/>
+<text text-anchor="start" x="315" y="-1942.8" font-family="arial" font-size="14.00">79: JUMPDEST</text>
+<text text-anchor="start" x="315" y="-1927.8" font-family="arial" font-size="14.00">80: POP</text>
+<text text-anchor="start" x="315" y="-1912.8" font-family="arial" font-size="14.00">81: PUSH1 0x56</text>
+<text text-anchor="start" x="315" y="-1897.8" font-family="arial" font-size="14.00">83: PUSH1 0x58</text>
+<text text-anchor="start" x="315" y="-1882.8" font-family="arial" font-size="14.00">85: JUMP</text>
+</g>
+<!-- 68&#45;&gt;79 -->
+<g id="edge3" class="edge"><title>68&#45;&gt;79</title>
+<path fill="none" stroke="black" d="M321.885,-2006.2C328.531,-1993.55 335.707,-1979.9 342.39,-1967.18"/>
+<polygon fill="black" stroke="black" points="345.601,-1968.6 347.155,-1958.11 339.405,-1965.34 345.601,-1968.6"/>
+</g>
+<!-- 12 -->
+<g id="node3" class="node"><title>12</title>
+<polygon fill="lemonchiffon" stroke="black" points="593,-2341 0,-2341 0,-2153 593,-2153 593,-2341"/>
+<text text-anchor="start" x="8" y="-2325.8" font-family="arial" font-size="14.00">12: PUSH1 0x00</text>
+<text text-anchor="start" x="8" y="-2310.8" font-family="arial" font-size="14.00">14: CALLDATALOAD</text>
+<text text-anchor="start" x="8" y="-2295.8" font-family="arial" font-size="14.00">15: PUSH29 0x0100000000000000000000000000000000000000000000000000000000</text>
+<text text-anchor="start" x="8" y="-2280.8" font-family="arial" font-size="14.00">45: SWAP1</text>
+<text text-anchor="start" x="8" y="-2265.8" font-family="arial" font-size="14.00">46: DIV</text>
+<text text-anchor="start" x="8" y="-2250.8" font-family="arial" font-size="14.00">47: PUSH4 0xffffffff</text>
+<text text-anchor="start" x="8" y="-2235.8" font-family="arial" font-size="14.00">52: AND</text>
+<text text-anchor="start" x="8" y="-2220.8" font-family="arial" font-size="14.00">53: DUP1</text>
+<text text-anchor="start" x="8" y="-2205.8" font-family="arial" font-size="14.00">54: PUSH4 0xc27fc305</text>
+<text text-anchor="start" x="8" y="-2190.8" font-family="arial" font-size="14.00">59: EQ</text>
+<text text-anchor="start" x="8" y="-2175.8" font-family="arial" font-size="14.00">60: PUSH1 0x44</text>
+<text text-anchor="start" x="8" y="-2160.8" font-family="arial" font-size="14.00">62: JUMPI</text>
+</g>
+<!-- 12&#45;&gt;68 -->
+<g id="edge5" class="edge"><title>12&#45;&gt;68</title>
+<path fill="none" stroke="black" d="M296.5,-2152.92C296.5,-2140.03 296.5,-2127.1 296.5,-2115.09"/>
+<polygon fill="black" stroke="black" points="300,-2114.79 296.5,-2104.79 293,-2114.79 300,-2114.79"/>
+</g>
+<!-- 63 -->
+<g id="node17" class="node"><title>63</title>
+<polygon fill="lemonchiffon" stroke="crimson" points="655,-2117 532,-2117 532,-1994 655,-1994 655,-2117"/>
+<polyline fill="none" stroke="crimson" points="544,-2117 532,-2105 "/>
+<polyline fill="none" stroke="crimson" points="532,-2006 544,-1994 "/>
+<polyline fill="none" stroke="crimson" points="643,-1994 655,-2006 "/>
+<polyline fill="none" stroke="crimson" points="655,-2105 643,-2117 "/>
+<text text-anchor="start" x="540" y="-2074.3" font-family="arial" font-size="14.00">63: JUMPDEST</text>
+<text text-anchor="start" x="540" y="-2059.3" font-family="arial" font-size="14.00">64: PUSH1 0x00</text>
+<text text-anchor="start" x="540" y="-2044.3" font-family="arial" font-size="14.00">66: DUP1</text>
+<text text-anchor="start" x="540" y="-2029.3" font-family="arial" font-size="14.00">67: REVERT</text>
+</g>
+<!-- 12&#45;&gt;63 -->
+<g id="edge7" class="edge"><title>12&#45;&gt;63</title>
+<path fill="none" stroke="black" d="M442.39,-2152.92C470.604,-2134.91 498.943,-2116.83 523.333,-2101.27"/>
+<polygon fill="black" stroke="black" points="525.241,-2104.2 531.788,-2095.88 521.475,-2098.3 525.241,-2104.2"/>
+</g>
+<!-- 75&#45;&gt;185 -->
+<g id="edge8" class="edge"><title>75&#45;&gt;185</title>
+<path fill="none" stroke="black" d="M237.5,-1675.64C237.5,-1585.12 237.5,-1409.66 237.5,-1260.5 237.5,-1260.5 237.5,-1260.5 237.5,-281.5 237.5,-185.67 222.368,-141.354 288.5,-72 315.008,-44.2003 355.285,-30.7656 391.022,-24.3606"/>
+<polygon fill="black" stroke="black" points="391.662,-27.8025 400.966,-22.7344 390.533,-20.8943 391.662,-27.8025"/>
+</g>
+<!-- 115 -->
+<g id="node5" class="node"><title>115</title>
+<polygon fill="white" stroke="black" points="448,-1600 317,-1600 317,-1337 448,-1337 448,-1600"/>
+<text text-anchor="start" x="325" y="-1584.8" font-family="arial" font-size="14.00">115: JUMPDEST</text>
+<text text-anchor="start" x="325" y="-1569.8" font-family="arial" font-size="14.00">116: PUSH1 0x00</text>
+<text text-anchor="start" x="325" y="-1554.8" font-family="arial" font-size="14.00">118: DUP1</text>
+<text text-anchor="start" x="325" y="-1539.8" font-family="arial" font-size="14.00">119: PUSH1 0x00</text>
+<text text-anchor="start" x="325" y="-1524.8" font-family="arial" font-size="14.00">121: DUP4</text>
+<text text-anchor="start" x="325" y="-1509.8" font-family="arial" font-size="14.00">122: DUP6</text>
+<text text-anchor="start" x="325" y="-1494.8" font-family="arial" font-size="14.00">123: ADD</text>
+<text text-anchor="start" x="325" y="-1479.8" font-family="arial" font-size="14.00">124: SWAP2</text>
+<text text-anchor="start" x="325" y="-1464.8" font-family="arial" font-size="14.00">125: POP</text>
+<text text-anchor="start" x="325" y="-1449.8" font-family="arial" font-size="14.00">126: DUP5</text>
+<text text-anchor="start" x="325" y="-1434.8" font-family="arial" font-size="14.00">127: DUP3</text>
+<text text-anchor="start" x="325" y="-1419.8" font-family="arial" font-size="14.00">128: LT</text>
+<text text-anchor="start" x="325" y="-1404.8" font-family="arial" font-size="14.00">129: ISZERO</text>
+<text text-anchor="start" x="325" y="-1389.8" font-family="arial" font-size="14.00">130: DUP1</text>
+<text text-anchor="start" x="325" y="-1374.8" font-family="arial" font-size="14.00">131: ISZERO</text>
+<text text-anchor="start" x="325" y="-1359.8" font-family="arial" font-size="14.00">132: PUSH1 0x8c</text>
+<text text-anchor="start" x="325" y="-1344.8" font-family="arial" font-size="14.00">134: JUMPI</text>
+</g>
+<!-- 140 -->
+<g id="node13" class="node"><title>140</title>
+<polygon fill="white" stroke="black" points="496,-1182 365,-1182 365,-1099 496,-1099 496,-1182"/>
+<text text-anchor="start" x="373" y="-1166.8" font-family="arial" font-size="14.00">140: JUMPDEST</text>
+<text text-anchor="start" x="373" y="-1151.8" font-family="arial" font-size="14.00">141: ISZERO</text>
+<text text-anchor="start" x="373" y="-1136.8" font-family="arial" font-size="14.00">142: ISZERO</text>
+<text text-anchor="start" x="373" y="-1121.8" font-family="arial" font-size="14.00">143: PUSH1 0x93</text>
+<text text-anchor="start" x="373" y="-1106.8" font-family="arial" font-size="14.00">145: JUMPI</text>
+</g>
+<!-- 115&#45;&gt;140 -->
+<g id="edge11" class="edge"><title>115&#45;&gt;140</title>
+<path fill="none" stroke="black" d="M363.358,-1336.68C361.897,-1297.74 364.605,-1255.48 376.5,-1218 379.488,-1208.59 384.098,-1199.33 389.393,-1190.69"/>
+<polygon fill="black" stroke="black" points="392.352,-1192.56 394.882,-1182.28 386.488,-1188.74 392.352,-1192.56"/>
+</g>
+<!-- 135 -->
+<g id="node19" class="node"><title>135</title>
+<polygon fill="white" stroke="black" points="489.5,-1301 385.5,-1301 385.5,-1218 489.5,-1218 489.5,-1301"/>
+<text text-anchor="start" x="393.5" y="-1285.8" font-family="arial" font-size="14.00">135: POP</text>
+<text text-anchor="start" x="393.5" y="-1270.8" font-family="arial" font-size="14.00">136: DUP4</text>
+<text text-anchor="start" x="393.5" y="-1255.8" font-family="arial" font-size="14.00">137: DUP3</text>
+<text text-anchor="start" x="393.5" y="-1240.8" font-family="arial" font-size="14.00">138: LT</text>
+<text text-anchor="start" x="393.5" y="-1225.8" font-family="arial" font-size="14.00">139: ISZERO</text>
+</g>
+<!-- 115&#45;&gt;135 -->
+<g id="edge18" class="edge"><title>115&#45;&gt;135</title>
+<path fill="none" stroke="black" d="M417.176,-1336.99C419.559,-1328.02 421.865,-1319.34 424.015,-1311.25"/>
+<polygon fill="black" stroke="black" points="427.463,-1311.9 426.649,-1301.34 420.698,-1310.11 427.463,-1311.9"/>
+</g>
+<!-- 147 -->
+<g id="node6" class="node"><title>147</title>
+<polygon fill="white" stroke="black" points="484,-1063 353,-1063 353,-845 484,-845 484,-1063"/>
+<text text-anchor="start" x="361" y="-1047.8" font-family="arial" font-size="14.00">147: JUMPDEST</text>
+<text text-anchor="start" x="361" y="-1032.8" font-family="arial" font-size="14.00">148: DUP4</text>
+<text text-anchor="start" x="361" y="-1017.8" font-family="arial" font-size="14.00">149: DUP6</text>
+<text text-anchor="start" x="361" y="-1002.8" font-family="arial" font-size="14.00">150: ADD</text>
+<text text-anchor="start" x="361" y="-987.8" font-family="arial" font-size="14.00">151: SWAP1</text>
+<text text-anchor="start" x="361" y="-972.8" font-family="arial" font-size="14.00">152: POP</text>
+<text text-anchor="start" x="361" y="-957.8" font-family="arial" font-size="14.00">153: DUP5</text>
+<text text-anchor="start" x="361" y="-942.8" font-family="arial" font-size="14.00">154: DUP2</text>
+<text text-anchor="start" x="361" y="-927.8" font-family="arial" font-size="14.00">155: LT</text>
+<text text-anchor="start" x="361" y="-912.8" font-family="arial" font-size="14.00">156: ISZERO</text>
+<text text-anchor="start" x="361" y="-897.8" font-family="arial" font-size="14.00">157: DUP1</text>
+<text text-anchor="start" x="361" y="-882.8" font-family="arial" font-size="14.00">158: ISZERO</text>
+<text text-anchor="start" x="361" y="-867.8" font-family="arial" font-size="14.00">159: PUSH1 0xa7</text>
+<text text-anchor="start" x="361" y="-852.8" font-family="arial" font-size="14.00">161: JUMPI</text>
+</g>
+<!-- 162 -->
+<g id="node12" class="node"><title>162</title>
+<polygon fill="white" stroke="black" points="397.5,-797.5 293.5,-797.5 293.5,-714.5 397.5,-714.5 397.5,-797.5"/>
+<text text-anchor="start" x="301.5" y="-782.3" font-family="arial" font-size="14.00">162: POP</text>
+<text text-anchor="start" x="301.5" y="-767.3" font-family="arial" font-size="14.00">163: DUP4</text>
+<text text-anchor="start" x="301.5" y="-752.3" font-family="arial" font-size="14.00">164: DUP2</text>
+<text text-anchor="start" x="301.5" y="-737.3" font-family="arial" font-size="14.00">165: LT</text>
+<text text-anchor="start" x="301.5" y="-722.3" font-family="arial" font-size="14.00">166: ISZERO</text>
+</g>
+<!-- 147&#45;&gt;162 -->
+<g id="edge24" class="edge"><title>147&#45;&gt;162</title>
+<path fill="none" stroke="black" d="M378.263,-844.967C373.357,-831.794 368.542,-818.865 364.177,-807.147"/>
+<polygon fill="black" stroke="black" points="367.395,-805.758 360.625,-797.609 360.835,-808.201 367.395,-805.758"/>
+</g>
+<!-- 167 -->
+<g id="node18" class="node"><title>167</title>
+<polygon fill="white" stroke="black" points="451,-667 320,-667 320,-584 451,-584 451,-667"/>
+<text text-anchor="start" x="328" y="-651.8" font-family="arial" font-size="14.00">167: JUMPDEST</text>
+<text text-anchor="start" x="328" y="-636.8" font-family="arial" font-size="14.00">168: ISZERO</text>
+<text text-anchor="start" x="328" y="-621.8" font-family="arial" font-size="14.00">169: ISZERO</text>
+<text text-anchor="start" x="328" y="-606.8" font-family="arial" font-size="14.00">170: PUSH1 0xae</text>
+<text text-anchor="start" x="328" y="-591.8" font-family="arial" font-size="14.00">172: JUMPI</text>
+</g>
+<!-- 147&#45;&gt;167 -->
+<g id="edge20" class="edge"><title>147&#45;&gt;167</title>
+<path fill="none" stroke="black" d="M418.487,-844.795C417.14,-800.602 413.847,-749.13 406.5,-703 405.145,-694.495 403.2,-685.581 401.032,-676.964"/>
+<polygon fill="black" stroke="black" points="404.346,-675.804 398.408,-667.029 397.578,-677.591 404.346,-675.804"/>
+</g>
+<!-- 174 -->
+<g id="node7" class="node"><title>174</title>
+<polygon fill="white" stroke="black" points="405.5,-548 279.5,-548 279.5,-375 405.5,-375 405.5,-548"/>
+<text text-anchor="start" x="287.5" y="-532.8" font-family="arial" font-size="14.00">174: JUMPDEST</text>
+<text text-anchor="start" x="287.5" y="-517.8" font-family="arial" font-size="14.00">175: DUP1</text>
+<text text-anchor="start" x="287.5" y="-502.8" font-family="arial" font-size="14.00">176: SWAP3</text>
+<text text-anchor="start" x="287.5" y="-487.8" font-family="arial" font-size="14.00">177: POP</text>
+<text text-anchor="start" x="287.5" y="-472.8" font-family="arial" font-size="14.00">178: POP</text>
+<text text-anchor="start" x="287.5" y="-457.8" font-family="arial" font-size="14.00">179: POP</text>
+<text text-anchor="start" x="287.5" y="-442.8" font-family="arial" font-size="14.00">180: SWAP3</text>
+<text text-anchor="start" x="287.5" y="-427.8" font-family="arial" font-size="14.00">181: SWAP2</text>
+<text text-anchor="start" x="287.5" y="-412.8" font-family="arial" font-size="14.00">182: POP</text>
+<text text-anchor="start" x="287.5" y="-397.8" font-family="arial" font-size="14.00">183: POP</text>
+<text text-anchor="start" x="287.5" y="-382.8" font-family="arial" font-size="14.00">184: JUMP</text>
+</g>
+<!-- 107 -->
+<g id="node11" class="node"><title>107</title>
+<polygon fill="white" stroke="black" points="397,-339 266,-339 266,-226 397,-226 397,-339"/>
+<text text-anchor="start" x="274" y="-323.8" font-family="arial" font-size="14.00">107: JUMPDEST</text>
+<text text-anchor="start" x="274" y="-308.8" font-family="arial" font-size="14.00">108: PUSH1 0x00</text>
+<text text-anchor="start" x="274" y="-293.8" font-family="arial" font-size="14.00">110: DUP2</text>
+<text text-anchor="start" x="274" y="-278.8" font-family="arial" font-size="14.00">111: SWAP1</text>
+<text text-anchor="start" x="274" y="-263.8" font-family="arial" font-size="14.00">112: SSTORE</text>
+<text text-anchor="start" x="274" y="-248.8" font-family="arial" font-size="14.00">113: POP</text>
+<text text-anchor="start" x="274" y="-233.8" font-family="arial" font-size="14.00">114: JUMP</text>
+</g>
+<!-- 174&#45;&gt;107 -->
+<g id="edge23" class="edge"><title>174&#45;&gt;107</title>
+<path fill="none" stroke="black" d="M337.177,-374.852C336.639,-366.194 336.099,-357.5 335.577,-349.102"/>
+<polygon fill="black" stroke="black" points="339.064,-348.79 334.951,-339.027 332.078,-349.225 339.064,-348.79"/>
+</g>
+<!-- 146 -->
+<g id="node8" class="node"><title>146</title>
+<polygon fill="white" stroke="crimson" points="565.5,-809 459.5,-809 459.5,-703 565.5,-703 565.5,-809"/>
+<polyline fill="none" stroke="crimson" points="471.5,-809 459.5,-797 "/>
+<polyline fill="none" stroke="crimson" points="459.5,-715 471.5,-703 "/>
+<polyline fill="none" stroke="crimson" points="553.5,-703 565.5,-715 "/>
+<polyline fill="none" stroke="crimson" points="565.5,-797 553.5,-809 "/>
+<text text-anchor="start" x="467.5" y="-752.3" font-family="arial" font-size="14.00">146: INVALID</text>
+</g>
+<!-- 146&#45;&gt;185 -->
+<g id="edge9" class="edge"><title>146&#45;&gt;185</title>
+<path fill="none" stroke="black" d="M523.103,-702.942C534.036,-644.643 549.5,-547.213 549.5,-462.5 549.5,-462.5 549.5,-462.5 549.5,-281.5 549.5,-191.557 505.543,-91.6778 482.393,-45.3113"/>
+<polygon fill="black" stroke="black" points="485.441,-43.5832 477.792,-36.2522 479.2,-46.7531 485.441,-43.5832"/>
+</g>
+<!-- 88 -->
+<g id="node15" class="node"><title>88</title>
+<polygon fill="white" stroke="black" points="448,-1839 317,-1839 317,-1636 448,-1636 448,-1839"/>
+<text text-anchor="start" x="325" y="-1823.8" font-family="arial" font-size="14.00">88: JUMPDEST</text>
+<text text-anchor="start" x="325" y="-1808.8" font-family="arial" font-size="14.00">89: PUSH1 0x40</text>
+<text text-anchor="start" x="325" y="-1793.8" font-family="arial" font-size="14.00">91: PUSH1 0x00</text>
+<text text-anchor="start" x="325" y="-1778.8" font-family="arial" font-size="14.00">93: DUP2</text>
+<text text-anchor="start" x="325" y="-1763.8" font-family="arial" font-size="14.00">94: SWAP1</text>
+<text text-anchor="start" x="325" y="-1748.8" font-family="arial" font-size="14.00">95: SSTORE</text>
+<text text-anchor="start" x="325" y="-1733.8" font-family="arial" font-size="14.00">96: POP</text>
+<text text-anchor="start" x="325" y="-1718.8" font-family="arial" font-size="14.00">97: PUSH1 0x6b</text>
+<text text-anchor="start" x="325" y="-1703.8" font-family="arial" font-size="14.00">99: PUSH1 0x00</text>
+<text text-anchor="start" x="325" y="-1688.8" font-family="arial" font-size="14.00">101: SLOAD</text>
+<text text-anchor="start" x="325" y="-1673.8" font-family="arial" font-size="14.00">102: PUSH1 0x35</text>
+<text text-anchor="start" x="325" y="-1658.8" font-family="arial" font-size="14.00">104: PUSH1 0x73</text>
+<text text-anchor="start" x="325" y="-1643.8" font-family="arial" font-size="14.00">106: JUMP</text>
+</g>
+<!-- 79&#45;&gt;88 -->
+<g id="edge12" class="edge"><title>79&#45;&gt;88</title>
+<path fill="none" stroke="black" d="M371.712,-1874.89C372.346,-1866.87 373.04,-1858.1 373.76,-1849"/>
+<polygon fill="black" stroke="black" points="377.25,-1849.26 374.55,-1839.01 370.272,-1848.71 377.25,-1849.26"/>
+</g>
+<!-- 0 -->
+<g id="node10" class="node"><title>0</title>
+<polygon fill="gold" stroke="black" points="529,-2518 388,-2518 388,-2377 529,-2377 529,-2518"/>
+<polyline fill="none" stroke="black" points="400,-2518 388,-2506 "/>
+<polyline fill="none" stroke="black" points="388,-2389 400,-2377 "/>
+<polyline fill="none" stroke="black" points="517,-2377 529,-2389 "/>
+<polyline fill="none" stroke="black" points="529,-2506 517,-2518 "/>
+<text text-anchor="start" x="396" y="-2496.3" font-family="arial" font-size="14.00">0: PUSH1 0x80</text>
+<text text-anchor="start" x="396" y="-2481.3" font-family="arial" font-size="14.00">2: PUSH1 0x40</text>
+<text text-anchor="start" x="396" y="-2466.3" font-family="arial" font-size="14.00">4: MSTORE</text>
+<text text-anchor="start" x="396" y="-2451.3" font-family="arial" font-size="14.00">5: PUSH1 0x04</text>
+<text text-anchor="start" x="396" y="-2436.3" font-family="arial" font-size="14.00">7: CALLDATASIZE</text>
+<text text-anchor="start" x="396" y="-2421.3" font-family="arial" font-size="14.00">8: LT</text>
+<text text-anchor="start" x="396" y="-2406.3" font-family="arial" font-size="14.00">9: PUSH1 0x3f</text>
+<text text-anchor="start" x="396" y="-2391.3" font-family="arial" font-size="14.00">11: JUMPI</text>
+</g>
+<!-- 0&#45;&gt;12 -->
+<g id="edge10" class="edge"><title>0&#45;&gt;12</title>
+<path fill="none" stroke="black" d="M401.613,-2376.8C394.276,-2367.81 386.65,-2358.46 379.005,-2349.09"/>
+<polygon fill="black" stroke="black" points="381.62,-2346.76 372.586,-2341.23 376.197,-2351.19 381.62,-2346.76"/>
+</g>
+<!-- 0&#45;&gt;63 -->
+<g id="edge2" class="edge"><title>0&#45;&gt;63</title>
+<path fill="none" stroke="black" d="M529.305,-2412.72C557.13,-2395.46 586.064,-2371.57 601.5,-2341 635.203,-2274.25 626.266,-2187.01 613.323,-2126.82"/>
+<polygon fill="black" stroke="black" points="616.731,-2126.02 611.13,-2117.03 609.9,-2127.55 616.731,-2126.02"/>
+</g>
+<!-- 107&#45;&gt;86 -->
+<g id="edge19" class="edge"><title>107&#45;&gt;86</title>
+<path fill="none" stroke="black" d="M340.809,-225.832C342.206,-217.478 343.66,-208.784 345.094,-200.205"/>
+<polygon fill="black" stroke="black" points="348.568,-200.656 346.765,-190.215 341.664,-199.501 348.568,-200.656"/>
+</g>
+<!-- 162&#45;&gt;167 -->
+<g id="edge4" class="edge"><title>162&#45;&gt;167</title>
+<path fill="none" stroke="black" d="M358.156,-714.342C361.841,-702.506 365.911,-689.43 369.76,-677.063"/>
+<polygon fill="black" stroke="black" points="373.158,-677.923 372.789,-667.335 366.475,-675.843 373.158,-677.923"/>
+</g>
+<!-- 140&#45;&gt;147 -->
+<g id="edge25" class="edge"><title>140&#45;&gt;147</title>
+<path fill="none" stroke="black" d="M427.837,-1098.55C427.33,-1090.76 426.777,-1082.26 426.201,-1073.4"/>
+<polygon fill="black" stroke="black" points="429.684,-1073.02 425.542,-1063.27 422.699,-1073.48 429.684,-1073.02"/>
+</g>
+<!-- 140&#45;&gt;146 -->
+<g id="edge14" class="edge"><title>140&#45;&gt;146</title>
+<path fill="none" stroke="black" d="M471.05,-1098.8C479.59,-1087.98 487.514,-1075.74 492.5,-1063 523.71,-983.286 523.603,-882.984 519.208,-819.408"/>
+<polygon fill="black" stroke="black" points="522.676,-818.852 518.439,-809.142 515.696,-819.375 522.676,-818.852"/>
+</g>
+<!-- 173 -->
+<g id="node14" class="node"><title>173</title>
+<polygon fill="white" stroke="crimson" points="521.5,-335.5 415.5,-335.5 415.5,-229.5 521.5,-229.5 521.5,-335.5"/>
+<polyline fill="none" stroke="crimson" points="427.5,-335.5 415.5,-323.5 "/>
+<polyline fill="none" stroke="crimson" points="415.5,-241.5 427.5,-229.5 "/>
+<polyline fill="none" stroke="crimson" points="509.5,-229.5 521.5,-241.5 "/>
+<polyline fill="none" stroke="crimson" points="521.5,-323.5 509.5,-335.5 "/>
+<text text-anchor="start" x="423.5" y="-278.8" font-family="arial" font-size="14.00">173: INVALID</text>
+</g>
+<!-- 173&#45;&gt;185 -->
+<g id="edge17" class="edge"><title>173&#45;&gt;185</title>
+<path fill="none" stroke="black" d="M468.5,-229.325C468.5,-174.19 468.5,-89.3756 468.5,-46.2319"/>
+<polygon fill="black" stroke="black" points="472,-46.2043 468.5,-36.2044 465,-46.2044 472,-46.2043"/>
+</g>
+<!-- 88&#45;&gt;115 -->
+<g id="edge13" class="edge"><title>88&#45;&gt;115</title>
+<path fill="none" stroke="black" d="M382.5,-1635.94C382.5,-1627.55 382.5,-1618.97 382.5,-1610.35"/>
+<polygon fill="black" stroke="black" points="386,-1610.22 382.5,-1600.22 379,-1610.22 386,-1610.22"/>
+</g>
+<!-- 63&#45;&gt;185 -->
+<g id="edge1" class="edge"><title>63&#45;&gt;185</title>
+<path fill="none" stroke="black" d="M593.5,-1993.92C593.5,-1930.31 593.5,-1827.38 593.5,-1738.5 593.5,-1738.5 593.5,-1738.5 593.5,-281.5 593.5,-184.27 583.606,-153.446 530.5,-72 523.237,-60.8618 512.961,-50.764 502.86,-42.4419"/>
+<polygon fill="black" stroke="black" points="504.884,-39.5817 494.856,-36.1624 500.563,-45.0889 504.884,-39.5817"/>
+</g>
+<!-- 167&#45;&gt;174 -->
+<g id="edge21" class="edge"><title>167&#45;&gt;174</title>
+<path fill="none" stroke="black" d="M374.649,-583.621C372.53,-575.636 370.226,-566.955 367.857,-558.031"/>
+<polygon fill="black" stroke="black" points="371.215,-557.041 365.267,-548.273 364.45,-558.837 371.215,-557.041"/>
+</g>
+<!-- 167&#45;&gt;173 -->
+<g id="edge15" class="edge"><title>167&#45;&gt;173</title>
+<path fill="none" stroke="black" d="M402.386,-583.621C406.715,-572.216 411.102,-559.733 414.5,-548 434.248,-479.804 449.533,-399.699 458.722,-345.659"/>
+<polygon fill="black" stroke="black" points="462.216,-345.988 460.423,-335.546 455.313,-344.827 462.216,-345.988"/>
+</g>
+<!-- 135&#45;&gt;140 -->
+<g id="edge16" class="edge"><title>135&#45;&gt;140</title>
+<path fill="none" stroke="black" d="M435.071,-1217.91C434.572,-1209.56 434.04,-1200.67 433.523,-1192.02"/>
+<polygon fill="black" stroke="black" points="437.015,-1191.79 432.924,-1182.02 430.028,-1192.21 437.015,-1191.79"/>
+</g>
+</g>
+</svg>
+
+                </div>
+            </div>
+            <div class="info gridElement">
+                <ul class="infoList">
+                    <li id="successCard">
+                        <div class="card messageCard success">
+                            <i class="fas fa-check-circle"></i>
+                            <span class="number"></span>
+                            <span class="message">No errors occurred</span>
+                        </div>
+                    </li>
+                    <li id="criticalErrors">
+                        <div class="card messageCard error">
+                            <i class="fas fa-times-circle"></i>
+                            <span class="number">0</span>
+                            <span class="message">Critical errors</span>
+                        </div>
+                    </li>
+                    <li id="blockLimitErrors">
+                        <div class="card messageCard error">
+                            <i class="fas fa-times-circle"></i>
+                            <span class="number">0</span>
+                            <span class="message">Block limit errors</span>
+                        </div>
+                    </li>
+                    <li id="orphanJumpTargetUnknownErrors">
+                        <div class="card messageCard error">
+                            <i class="fas fa-times-circle"></i>
+                            <span class="number">0</span>
+                            <span class="message">Orphan jump target unknown errors</span>
+                        </div>
+                    </li>
+                    <li id="directJumpTargetErrors">
+                        <div class="card messageCard warning">
+                            <i class="fas fa-exclamation-circle"></i>
+                            <span class="number">0</span>
+                            <span class="message">Direct jump target errors</span>
+                        </div>
+                    </li>
+                    <li id="orphanJumpTargetNullErrors">
+                        <div class="card messageCard warning">
+                            <i class="fas fa-exclamation-circle"></i>
+                            <span class="number">0</span>
+                            <span class="message">Orphan jump target null errors</span>
+                        </div>
+                    </li>
+                    <li id="loopDepthExceededErrors">
+                        <div class="card messageCard warning">
+                            <i class="fas fa-exclamation-circle"></i>
+                            <span class="number">0</span>
+                            <span class="message">Loop depth exceeded errors</span>
+                        </div>
+                    </li>
+                    <li id="multipleRootNodesErrors">
+                        <div class="card messageCard warning">
+                            <i class="fas fa-exclamation-circle"></i>
+                            <span class="number">0</span>
+                            <span class="message">Multiple root nodes errors</span>
+                        </div>
+                    </li>
+                    <li id="stackExceededErrors">
+                        <div class="card messageCard warning">
+                            <i class="fas fa-exclamation-circle"></i>
+                            <span class="number">0</span>
+                            <span class="message">Stack exceeded errors</span>
+                        </div>
+                    </li>
+                    <li class="otherInfo card">
+                        <p class="titleInfo">Contract info</p>
+                        <ul>
+                            <li>
+                                <i class="fas fa-code-branch"></i>
+                                <strong>Solidity Version:</strong>
+                                Unknown or < 0.5.9
+                            </li>
+                            <li>
+                                <i class="fas fa-stopwatch"></i>
+                                <strong>Build time:</strong>
+                                13 ms
+                            </li>
+                            <li>
+                                <i class="fas fa-hashtag"></i>
+                                <strong>Source code hash:</strong>
+                                efd6ca6
+                            </li>
+                            <li>
+                                <i class="fas fa-check-square"></i>
+                                <strong>Runtime code only:</strong>
+                                false
+                            </li>
+                        </ul>
+                    </li>
+                </ul>
+            </div>
+            <div class="errorLog gridElement">
+                <h2 class="collapsibleHeader">
+                    Errors log
+                </h2>
+                <div class="collapsible collapsibleFixedHeight">
+                    <div class="collapsibleContent errorContent">Nothing to show</div>
+                </div>
+            </div>
+            <div class="sourceCode gridElement">
+                <h2 class="collapsibleHeader">
+                    Source code
+                    <i class="fas fa-copy icon iconCopy" onclick="copyTextToClipboard()"></i>
+                </h2>
+                <div class="collapsible collapsibleFixedHeight">
+                    <div class="collapsibleContent" id="sourceCodeText">608060405234801561001057600080fd5b5060e58061001f6000396000f300608060405260043610603f576000357c0100000000000000000000000000000000000000000000000000000000900463ffffffff168063c27fc305146044575b600080fd5b348015604f57600080fd5b5060566058565b005b6040600081905550606b60005460356073565b600081905550565b60008060008385019150848210158015608c5750838210155b1515609357fe5b838501905084811015801560a75750838110155b151560ae57fe5b8092505050929150505600a165627a7a72305820a7ee9b4cf0d5e86fc104eea2a95fbe9efbf2fc619761959722db4dd8788c03b50029</div>
+                </div>
+                <div class="alertBox card alertHidden" id="textCopiedAlert">
+                    <p>Source code copied to clipboard</p>
+                </div>
+            </div>
+            <div class="remainingData gridElement">
+                <h2 class="collapsibleHeader">
+                    Remaining data hex format:
+                </h2>
+                <div class="collapsible collapsibleFill">
+                    <p id="remainingData">00</p>
+                </div>
+            </div>
+            <div class="decodedData gridElement">
+                <h2 class="collapsibleHeader">
+                    Remaining data decoded:
+                </h2>
+                <div class="collapsible collapsibleFill">
+                    <p id="decodedData"></p>
+                </div>
+            </div>
+        </div>
+        <footer>
+            Report generated with EtherSolve&#169; 2020
+        </footer>
+    </div>
+</body>
+
+<script>
+    function copyTextToClipboard() {
+        var textCopiedAlert = document.getElementById("textCopiedAlert");
+        var dummy = document.createElement("textarea");
+        document.body.appendChild(dummy);
+        dummy.value = document.getElementById("sourceCodeText").innerText;
+        dummy.select();
+        document.execCommand("copy");
+        document.body.removeChild(dummy);
+        // Show alert
+        textCopiedAlert.classList.remove("alertHidden");
+        textCopiedAlert.classList.add("alertActive")
+        setTimeout(() => {
+            textCopiedAlert.classList.remove("alertActive");
+            textCopiedAlert.classList.add("alertHidden");
+        }, 3000);
+    }
+
+    function showMessageCards() {
+        var successCard = document.getElementById("successCard");
+        var criticalErrorsCard = document.getElementById("criticalErrors");
+        var blockLimitErrorsCard = document.getElementById("blockLimitErrors");
+        var orphanJumpTargetUnknownErrors = document.getElementById("orphanJumpTargetUnknownErrors");
+        var directJumpTargetErrors = document.getElementById("directJumpTargetErrors");
+        var orphanJumpTargetNullErrors = document.getElementById("orphanJumpTargetNullErrors");
+        var loopDepthExceededErrors = document.getElementById("loopDepthExceededErrors");
+        var multipleRootNodesErrors = document.getElementById("multipleRootNodesErrors");
+        var stackExceededErrors = document.getElementById("stackExceededErrors");
+
+        if (0 != 0)
+            successCard.style.display = "None";
+        if (0 == 0)
+            criticalErrorsCard.style.display = "None";
+        if (0 == 0)
+            blockLimitErrorsCard.style.display = "None";
+        if (0 == 0)
+            orphanJumpTargetUnknownErrors.style.display = "None";
+        if (0 == 0)
+            directJumpTargetErrors.style.display = "None";
+        if (0 == 0)
+            orphanJumpTargetNullErrors.style.display = "None";
+        if (0 == 0)
+            loopDepthExceededErrors.style.display = "None";
+        if (0 == 0)
+            multipleRootNodesErrors.style.display = "None";
+        if (0 == 0)
+            stackExceededErrors.style.display = "None";
+
+    }
+
+    function translateRemainingData() {
+        var data = document.getElementById("remainingData").innerText;
+        var str = '';
+        for (var n = 0; n < data.length; n += 2) {
+            str += String.fromCharCode(parseInt(data.substr(n, 2), 16));
+        }
+        document.getElementById("decodedData").innerText = str;
+    }
+
+    function loadSvgPanZoom() {
+        window.zoomTiger = svgPanZoom('#svg_xml_graph', {
+            zoomEnabled: true,
+            minZoom: 1,
+            maxZoom: 100,
+            zoomScaleSensitivity: 0.4,
+            controlIconsEnabled: true,
+            fit: true,
+            center: true,
+        });
+    }
+
+    function configureSvg() {
+        var svg = document.getElementsByTagName('svg')[1];
+        svg.setAttribute('width', '100%'); //NB!
+        svg.setAttribute('height', '100%'); //NB!
+        svg.setAttribute("id", "svg_xml_graph");
+    }
+
+    showMessageCards();
+    translateRemainingData();
+    configureSvg();
+    loadSvgPanZoom();
+
+</script>
+
+</html>

@@ -64,7 +64,9 @@ class AssertionOptimizer:
             zip(self.nodes, [[] for i in range(0, len(self.nodes))]))  # 记录每个block中被移除的区间，每个区间的格式为:[from,to)
 
         # 重定位需要用到的信息
-        self.jumpEdgeInfo = None  # 跳转边信息，格式为:[[push的值，push指令的地址，push指令所在的block,jump所在的block]]
+        self.jumpEdgeInfo = None  # 跳转边信息，格式为:[[push的值，push的字节数，push指令的地址，push指令所在的block,jump所在的block]]
+        self.originalLength = 0  # 原来的字节码总长度
+        self.originalToNewAddr = {}  # 一个映射，格式为： 旧addr:新addr
         self.newBytecode = None  # 重新生成的字节码，用deque效率更高
 
     def optimize(self):
@@ -614,22 +616,34 @@ class AssertionOptimizer:
         :return:
         '''
 
-        # 第一步，将出现在已被删除字节码序列中的跳转信息删除
+        # 第一步，对删除区间信息去重
+        for node in self.nodes:
+            if self.removedRange[node].__len__() == 0:
+                continue
+            tempSet = set()
+            for _range in self.removedRange[node]:
+                tempSet.add(_range.__str__())  # 存为字符串
+            self.removedRange[node] = []  # 置空
+            for rangeStr in tempSet:
+                self.removedRange[node].append(json.loads(rangeStr))  # 再还原为list
+
+        # 第二步，将出现在已被删除字节码序列中的跳转信息删除
+        # [push的值，push的字节数，push指令的地址，push指令所在的block,jump所在的block]
         removedInfo = []
-        for i in range(self.jumpEdgeInfo.__len__()):
-            info = self.jumpEdgeInfo[i]
+        for info in self.jumpEdgeInfo:
             # 首先做一个检查
             delPush = False
             delJump = False
-            pusbBlock = info[2]
-            jumpDestBlock = info[0]
-            jumpAddr = jumpDestBlock + self.blocks[jumpDestBlock].length - 1
-            for _range in self.removedRange[pusbBlock]:
-                if info[1] in _range:  # push语句位于删除序列内
+            pushBlock = info[3]
+            pushAddr = info[2]
+            jumpBlock = info[4]
+            jumpAddr = jumpBlock + self.blocks[jumpBlock].length - 1
+            for _range in self.removedRange[pushBlock]:
+                if _range[0] <= pushAddr < _range[1]:  # push语句位于删除序列内
                     delPush = True
                     break
-            for _range in self.removedRange[jumpDestBlock]:
-                if jumpAddr in _range:  # jump/jumpi语句位于删除序列内
+            for _range in self.removedRange[jumpBlock]:
+                if _range[0] <= jumpAddr < _range[1]:  # jump/jumpi语句位于删除序列内
                     delJump = True
                     break
             # 解释一下为什么要做这个assert:因为这一个跳转信息是根据返回地址栈得出的
@@ -637,36 +651,76 @@ class AssertionOptimizer:
             # 在jump的时候会找不到返回地址
             assert delPush == delJump
             if delPush:  # 确定要删除
-                removedInfo.append(i)
-        for i in removedInfo:
-            self.jumpEdgeInfo.pop(i)  # 删除对应的信息
+                removedInfo.append(info)
+        for info in removedInfo:
+            self.jumpEdgeInfo.remove(info)  # 删除对应的信息
+        # print(self.jumpEdgeInfo)
 
-        # 第二步，将字节码拼在一起，同时还要记录旧地址到新地址的映射
-        self.newBytecode = deque()  # deque效率更高
-        originalOffsetToNew = {}  # 一个映射，从旧block offset到新block offset
+        # 第三步，对每一个block，删除空指令，同时还要记录旧地址到新地址的映射
         self.nodes.sort()  # 确保是从小到大排序的
-
+        mappedAddr = 0  # 映射后的新地址
         for node in self.nodes:
-            # 首先记录当前block的新旧offset映射
-            originalOffsetToNew[node] = self.newBytecode.__len__()
-            # 然后用一个映射，记录哪些字节是要删除，哪些要保留
+            self.originalLength += self.blocks[node].length
             blockLen = self.blocks[node].length
-            newBlockLen = blockLen
+            newBlockLen = blockLen  # block的新长度
             isDelete = [False for i in range(blockLen)]
+            # 设置要删除的下标，以及计算新的block长度
             for _range in self.removedRange[node]:  # 查看这一个block的删除区间
-                for i in range(_range[0]-node, _range[1]-node):
-                    isDelete[i] = True
+                for i in range(_range[0] - node, _range[1] - node):
+                    isDelete[i] = True  # 设置要删除的下标
                 newBlockLen -= _range[1] - _range[0]
-            blockBytecode = self.blocks[node].bytecode
+            # 重新生成字节码，并计算地址映射
+            bytecode = self.blocks[node].bytecode
+            newBytecode = bytearray()
             for i in range(blockLen):
-                if isDelete[i]: # 这一个字节是需要被删除的
+                self.originalToNewAddr[i + node] = mappedAddr
+                if isDelete[i]:  # 这一个字节是需要被删除的
                     continue
-                self.newBytecode.append(blockBytecode[i])
-        print(self.removedRange)
-        print(originalOffsetToNew)
+                newBytecode.append(bytecode[i])
+                mappedAddr += 1
+            self.blocks[node].length = newBlockLen  # 设置新的block长度
+            self.blocks[node].bytecode = newBytecode  # 设置新的block字节码
+        # print(self.removedRange)
+        # for k,v in self.originalToNewAddr.items():
+        #     print(k,v)
+        # for b in self.blocks.values():
+        #     b.printBlockInfo()
 
+        # 第四步，尝试将跳转地址填入
+        # 每一次都是做试填入，不能保证一定可以填入成功，地址可能会过长或者过短
+        # 这两种情况都需要改地址映射，并重新生成所有地址映射
+        # [push的值，push的字节数，push指令的地址，push指令所在的block,jump所在的block]
+        # 首先要根据push指令所在的地址，对这些进行进行一个排序(在路径生成器中已去重)
+        pushAddrToInfo = {}
+        for info in self.jumpEdgeInfo:
+            pushAddrToInfo[info[2]] = info
+        sortedAddrs = list(pushAddrToInfo.keys())
+        sortedAddrs.sort()
+        sortedJumpEdgeInfo = []
+        for addr in sortedAddrs:
+            sortedJumpEdgeInfo.append(pushAddrToInfo[addr])
+        # 然后尝试对每一个跳转信息，进行试填入
+        finishFilling = False
+        while not finishFilling:  # 只有所有的info都能成功填入，才能停止
+            finishFilling = True  # 默认可以全部成功填入
+            for info in sortedJumpEdgeInfo:
+                originalByteNum = info[1]  # 原来的内容占据的字节数
+                newAddr = self.originalToNewAddr[info[0]]  # 新的需要push的内容
+                newByteNum = 0  # 新内容需要的字节数
+                while newAddr != 0:
+                    newAddr >>= 8
+                    newByteNum += 1
+                offset = newByteNum - originalByteNum
+                if offset == 0:  # 不需要移动，直接填入新内容即可
+                    pushBlock = info[3]
+                    self.blocks[pushBlock].bytecode[info[2] - pushBlock] = self.originalToNewAddr[info[0]]
 
-    # 每一次都是做试填入，不能保证一定可以填入成功
+            # # 第四步，尝试将这些字节码拼成一个整体
+        # self.newBytecode = deque() #效率更高
+        # for node in self.nodes: # 有序的
+        #     # 第一步，
+        #     for bc in self.blocks[node].bytecode:
+        #         self.newBytecode.append(bc)
 
     def __outputFile(self):
         '''

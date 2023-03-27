@@ -10,7 +10,7 @@ class TagStack:
         self.cfg = cfg
         self.curBlock: BasicBlock = None  # 当前执行的基本块
         self.PC = 0  # 当前执行指令的指针
-        self.tagStack = Stack()  # tag栈，记录的格式为：[push的值，push指令的地址，push指令所在的block]，一旦该元素参与了运算，则将运算结果置为none
+        self.tagStack = Stack()  # tag栈，记录的格式为：[push的值，push的字节数，push指令的地址，push指令所在的block]，一旦该元素参与了运算，则将运算结果置为none
 
         # 辅助信息
         self.lastInstrAddrOfBlock = 0  # block内最后一个指令的地址
@@ -47,7 +47,11 @@ class TagStack:
         self.lastInstrAddrOfBlock = self.curBlock.offset + self.curBlock.length - 1  # 最后一条指令是一个字节的
 
     def getTagStackTop(self):
-        return self.tagStack.getTop()
+        temp = self.tagStack.getTop()
+        if temp is None:
+            return None
+        else:
+            return list(temp)
 
     def printState(self, printBlock: bool = True):
         """ 输出当前程序状态
@@ -422,7 +426,7 @@ class TagStack:
         # 注意这里不能push一个比特向量，而是一个具体的数
         # num = BitVecVal(num, 256)
 
-        self.tagStack.push([num, jumpOpcodeAddr, self.curBlock.offset])
+        self.tagStack.push([num, byteNum, jumpOpcodeAddr, self.curBlock.offset])
 
     def __execDup(self, opCode):  # 0x80
         pos = opCode - 0x80

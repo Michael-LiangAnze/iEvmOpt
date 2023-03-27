@@ -38,7 +38,7 @@ class PathGenerator:
             self.isInvalidNode[node] = True
         self.sccVisiting = dict(zip(self.nodes, [False for i in range(0, len(self.nodes))]))  # 记录某个函数内scc是否正在被访问
 
-        self.jumpEdgeInfo = []  # 跳转边信息，格式为:[[push的值，push指令的地址，push指令所在的block]]
+        self.jumpEdgeInfo = []  # 跳转边信息，格式为:[[push的值，push的字节数，push指令的地址，push指令所在的block,jump所在的block]]
         self.pathRecorder = Stack()
         self.returnAddrStack = Stack()
         self.pathId = 0  # 路径的id
@@ -57,6 +57,7 @@ class PathGenerator:
         # dfs寻路
 
         self.__dfs(self.beginNode, TagStack(self.cfg))
+
         # 因为得到的跳转信息有可能是重复的，这里需要做一个去重处理
         tempDict = {}
         for info in self.jumpEdgeInfo:
