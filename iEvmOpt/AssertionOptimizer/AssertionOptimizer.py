@@ -122,7 +122,7 @@ class AssertionOptimizer:
         self.log.info("字节码序列生成完毕")
 
         # 将优化后的字节码写入文件
-        self.log.info("正在将优化后的字节码写入文件")
+        self.log.info("正在将优化后的字节码写入到文件: {}".format(self.outputFile))
         self.__outputFile()
         self.log.info("写入完毕")
 
@@ -216,7 +216,7 @@ class AssertionOptimizer:
             for n in funcBody:
                 tempLen += self.cfg.blocks[n].length
             assert funcLen == tempLen
-            f.printFunc()
+            # f.printFunc()
 
         # 第六步，检查一个函数内的节点是否存在环，存在则将其标记出来
         for func in self.funcBodyDict.values():  # 取出一个函数
@@ -327,11 +327,11 @@ class AssertionOptimizer:
             for callChain, pathIds in callChain2PathIds.items():
                 self.invalidNode2CallChain[invNode].append(pathIds)
 
-        for k, v in self.invalidNode2PathIds.items():
-            print("invalid node is:{}".format(k))
-            for pathId in v:
-                self.invalidPaths[pathId].printPath()
-        print(self.invalidNode2CallChain)
+        # for k, v in self.invalidNode2PathIds.items():
+        #     print("invalid node is:{}".format(k))
+        #     for pathId in v:
+        #         self.invalidPaths[pathId].printPath()
+        # print(self.invalidNode2CallChain)
 
     def __reachabilityAnalysis(self):
         '''
@@ -392,8 +392,8 @@ class AssertionOptimizer:
                 self.redundantType[invNode] = fullyRedundant
             else:  # 既有可达的也有不可达的，是部分冗余
                 self.redundantType[invNode] = partiallyRedundant
-        for node, t in self.redundantType.items():
-            print(node, t)
+        # for node, t in self.redundantType.items():
+        #     print(node, t)
 
     def __buildDominatorTree(self):
         # 因为支配树算法中，节点是按1~N进行标号的，因此需要先做一个标号映射，并处理映射后的边，才能进行支配树的生成
@@ -699,28 +699,78 @@ class AssertionOptimizer:
         sortedJumpEdgeInfo = []
         for addr in sortedAddrs:
             sortedJumpEdgeInfo.append(pushAddrToInfo[addr])
+        # print(sortedJumpEdgeInfo)
         # 然后尝试对每一个跳转信息，进行试填入
         finishFilling = False
         while not finishFilling:  # 只有所有的info都能成功填入，才能停止
             finishFilling = True  # 默认可以全部成功填入
-            for info in sortedJumpEdgeInfo:
+            for index in range(sortedJumpEdgeInfo.__len__()):
+                info = sortedJumpEdgeInfo[index]
                 originalByteNum = info[1]  # 原来的内容占据的字节数
                 newAddr = self.originalToNewAddr[info[0]]  # 新的需要push的内容
+                tempAddr = newAddr
                 newByteNum = 0  # 新内容需要的字节数
-                while newAddr != 0:
-                    newAddr >>= 8
+                while tempAddr != 0:
+                    tempAddr >>= 8
                     newByteNum += 1
                 offset = newByteNum - originalByteNum
-                if offset == 0:  # 不需要移动，直接填入新内容即可
+                # if offset == 0:  # 不需要移动，直接填入新内容即可
+                if offset <= 0:  # 不需要移动，直接填入新内容即可
                     pushBlock = info[3]
-                    self.blocks[pushBlock].bytecode[info[2] - pushBlock] = self.originalToNewAddr[info[0]]
+                    pushBlockOffset = self.originalToNewAddr[pushBlock]  # push所在block的新偏移量
+                    pushAddr = self.originalToNewAddr[info[2]]  # push指令的新地址
+                    newAddrBytes = deque()  # 新地址的字节码
+                    tempAddr = newAddr
+                    while tempAddr != 0:
+                        newAddrBytes.appendleft(tempAddr & 0xff)  # 取低八位
+                        tempAddr >>= 8
+                    for i in range(-offset):
+                        newAddrBytes.appendleft(0x00)  # 原有的位置多出来的地方，用0填充
+                    for i in range(originalByteNum):  # 按原来的字节数填
+                        self.blocks[pushBlock].bytecode[pushAddr - pushBlockOffset + 1 + i] = newAddrBytes[
+                            i]  # 改的是地址，因此需要+1
+                else:  # 新内容不能直接填入，原位置空间不够，需要移动字节码
+                    self.log.warning("原push位置不能直接填入新地址，需要移动字节码")
+                    # 先改push的操作码
+                    originalOpcode = 0x60 + originalByteNum - 1
+                    newOpcode = originalOpcode + offset
+                    # print(originalOpcode, newOpcode)
+                    assert 0x60 <= newOpcode <= 0x7f
+                    pushBlock = info[3]
+                    pushBlockOffset = self.originalToNewAddr[pushBlock]  # push所在block的新偏移量
+                    pushAddr = self.originalToNewAddr[info[2]]  # push指令的新地址
+                    self.blocks[pushBlock].bytecode[pushAddr - pushBlockOffset] = newOpcode
 
-            # # 第四步，尝试将这些字节码拼成一个整体
-        # self.newBytecode = deque() #效率更高
-        # for node in self.nodes: # 有序的
-        #     # 第一步，
-        #     for bc in self.blocks[node].bytecode:
-        #         self.newBytecode.append(bc)
+                    # 然后再改地址
+                    if offset > 0:
+                        for i in range(offset):
+                            self.blocks[pushBlock].bytecode.insert(pushAddr - pushBlockOffset + 1, 0x00)  # 先插入足够的位置
+                    else:
+                        for i in range(-offset):
+                            self.blocks[pushBlock].bytecode.pop(pushAddr - pushBlockOffset + 1)  # 先删掉多出的位置
+                    # 再改地址
+                    # for i in range(newByteNum):
+                    #     self.blocks[pushBlock].bytecode[pushAddr - pushBlockOffset + 1 + i] = newAddrBytes[
+                    #         i]  # 改的是地址，因此需要+1
+                    # 不改地址，因为会进行下一次的试填入，必然会填入新地址
+
+                    # 接着，需要修改新旧地址映射，以及跳转信息中的字节量（供下一次试填入使用)
+                    for original in self.originalToNewAddr.keys():
+                        if original > info[2]:
+                            self.originalToNewAddr[original] += offset  # 映射信息需要增加偏移量
+                    sortedJumpEdgeInfo[index][1] = newByteNum  # 只改字节数，其他信息与原来相同
+
+                    # 最后需要改一些其他信息
+                    self.blocks[pushBlock].length += offset
+                    finishFilling = False  # 本次试填入失败
+                    break  # 不再查看其他的跳转信息，重新开始再做试填入
+
+        # 第四步，尝试将这些字节码拼成一个整体
+        self.newBytecode = deque()  # 效率更高
+        for node in self.nodes:  # 有序的
+            # 第一步，
+            for bc in self.blocks[node].bytecode:
+                self.newBytecode.append(bc)
 
     def __outputFile(self):
         '''
@@ -740,23 +790,13 @@ class AssertionOptimizer:
         # print(funcBodyStr)
         assert originalBytecodeStr.count(funcBodyStr) == 1
 
-        # 第二步，修改原文件
-        beginIndex = originalBytecodeStr.find(funcBodyStr) >> 1  # 因为找出的是字符串的偏移量，需要除2变为字节偏移量
-        # print(beginIndex)
-        newBytecode = bytearray.fromhex(originalBytecodeStr)  # 首先转换成字节数组
-        for offset, block in self.cfg.blocks.items():
-            if not block.isModified:
-                continue
-            # block.printBlockInfo()
-            for i in range(block.bytecode.__len__()):  # 替换
-                newBytecode[beginIndex + offset + i] = block.bytecode[i]
-
-        # for i in range(newBytecode.__len__()):
-        #     print(i,hex(int(newBytecode[i])))
+        # 第二步，获取原文件中，在函数体之前的以及之后的字符串，同时将其与新函数体的字符串拼接起来
+        beginIndex = originalBytecodeStr.find(funcBodyStr)  # 因为找出的是字符串的偏移量，需要除2变为字节偏移量
+        preStr = originalBytecodeStr[:beginIndex]
+        postStr = originalBytecodeStr[beginIndex + self.originalLength * 2:]
+        newFuncBodyStr = "".join(['{:02x}'.format(num) for num in self.newBytecode])  # 再转换回字符串
+        newBytecodeStr = preStr + newFuncBodyStr + postStr
 
         # 第三步，将结果写入文件
-        newBytecodeStr = "".join(['{:02x}'.format(num) for num in newBytecode])  # 再转换回字符串
-        # print(originalBytecodeStr)
-        # print(newBytecodeStr)
         with open(self.outputFile, "w+") as f:
             f.write(newBytecodeStr)
