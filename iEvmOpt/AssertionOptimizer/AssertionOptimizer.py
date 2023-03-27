@@ -111,10 +111,10 @@ class AssertionOptimizer:
             self.log.info("正在对完全冗余的Assertion进行优化")
             self.__optimizeFullyRedundantAssertion(fullyRedundantNodes)
             self.log.info("完全冗余Assertion优化完毕")
-        # if partiallyRedundantNodes.__len__() > 0:
-        #     self.log.info("正在对部分冗余的Assertion进行优化")
-        #     self.__optimizePartiallyRedundantAssertion(partiallyRedundantNodes)
-        #     self.log.info("部分冗余Assertion优化完毕")
+        if partiallyRedundantNodes.__len__() > 0:
+            self.log.info("正在对部分冗余的Assertion进行优化")
+            self.__optimizePartiallyRedundantAssertion(partiallyRedundantNodes)
+            self.log.info("部分冗余Assertion优化完毕")
 
         # 重新生成字节码序列
         self.log.info("正在重新生成字节码序列")
@@ -487,49 +487,39 @@ class AssertionOptimizer:
             # 首先做一个检查，检查是否为jumpi的失败边走向Invalid，且该invalid节点只有一个入边
             assert self.cfg.inEdges[invNode].__len__() == 1
             assert invNode == self.cfg.blocks[self.cfg.inEdges[invNode][0]].jumpiDest[False]
-            executor.clearExecutor()
-
-            # 第一步，检查所有的函数调用链，找到所有路径都不可达的函数函数调用链
             for pathIdsOfCallChain in self.invalidNode2CallChain[invNode]:  # 对一个调用链
+                # 第一步，检查所有的函数调用链，找到所有路径都不可达的函数函数调用链
                 allUnreachable = True
                 for pathId in pathIdsOfCallChain:  # 取出所有的路径
                     if self.pathReachable[pathId]:  # 发现一条是可达的
                         allUnreachable = False
                         break
-                if not allUnreachable:  # 该调用链中所有的路径都不可达
+                if not allUnreachable:  # 该调用链中存在可达的路径
                     continue
 
-                # 第二步，获取路径上所有指令位置的程序状态，同时使用tagStack记录栈的情况，关键是记录调用
-                # assertion所在函数的jump的地址在何处被push
+                # 第二步，获取路径上所有指令位置的程序状态，顺带获取invalid所在函数的调用者节点
                 pathNodes = self.invalidPaths[pathIdsOfCallChain[0]].pathNodes  # 随意取出一条路径
-                invNodeFuncId = self.node2FuncId[pathNodes[pathNodes.__len__() - 1]]  # 找出invalid节点所在的函数的id
-                jumpNode = None  # 调用者的jump所在节点
-                jumpAddr = None  # 调用者的jump所在地址
-                for node in reversed(pathNodes):
-                    if self.node2FuncId[node] != invNodeFuncId:  # 找到invalid所在函数的调用者的id
-                        jumpNode = node
-                        jumpAddr = self.cfg.blocks[node].length + jumpNode - 1  # 找到jump的地址
-                        break
-
-                pushOpcodeAddr = None  # 需要寻找的push指令所在的地址
-                pushOpcodeBlock = None
                 stateMap = {}  # 状态map，实际存储的是，地址处的指令在执行前的程序状态
+                invNodeFuncId = self.node2FuncId[pathNodes[pathNodes.__len__() - 1]]  # 找出invalid节点所在的函数的id
+                callerNode = None  # 调用者节点
+                lastNode = pathNodes[0]
+                lastNodeFuncId = None
+                executor.clearExecutor()
                 for node in pathNodes:
                     executor.setBeginBlock(node)
                     while not executor.allInstrsExecuted():  # block还没有执行完
                         offset, state = executor.getCurState()
                         stateMap[offset] = state
-                        if node == jumpNode and offset == jumpAddr:  # 到了调用者的jump节点，但是还没有做jump，栈顶为跳转地址
-                            tagStackTop = executor.getTagStackTop()  # 格式：[push的值，push指令的地址，push指令所在的block]
-                            assert tagStackTop is not None, "跳转地址不是通过push得到的"  # 该值应该是通过push得到的
-                            pushOpcodeAddr = tagStackTop[1]
-                            pushOpcodeBlock = tagStackTop[2]
-                            # print(pushOpcodeAddr,pushOpcodeBlock)
                         executor.execNextOpCode()
-                # print(stateMap)
+                    curNodeFuncId = self.node2FuncId[node]
+                    if curNodeFuncId == invNodeFuncId and lastNodeFuncId != curNodeFuncId:
+                        callerNode = lastNode
+                    lastNode = node
+                    lastNodeFuncId = curNodeFuncId
+                # print(callerNode)
 
                 # 第三步，在支配树中，从invalid节点出发，寻找程序状态与之相同的地址，定位invalid相关字节码
-                # 因为在符号执行中，invalid指令没有做任何操作，因此invalid处的状态和执行完jumpi的状态是一致的
+                # 因为在符号执行中，invalid指令没有做任何操作，因此invalid处的状态和执行jumpi前的状态是一致的
                 # 即 targetState = stateMap[invNode]
                 targetAddr = None
                 targetNode = None
@@ -544,71 +534,81 @@ class AssertionOptimizer:
                     node = self.domTree[node]
                 assert targetAddr and targetNode  # 不能为none
                 assert self.cfg.blocks[targetNode].blockType != "dispatcher"  # 不应该出现在dispatcher中
-                print(targetAddr)
-                print(targetNode)
+                # print(targetAddr)
+                # print(targetNode)
 
                 # 第四步，构造一个新函数体，其中去除了assertion相关的字节码
-                # 新函数体不包括的部分为： targetAddr <= offset <= invNode之间的字节码
-                # originalFuncBytecodes = bytearray()
-                newFuncBytecodes = bytearray()
+                # 新函数体不包括的部分为： targetAddr <= addr <= invNode之间的字节码
                 funcBodyNodes = self.funcBodyDict[invNodeFuncId].funcBodyNodes
                 # print(funcBodyNodes)
-                funcBodyNodes.sort()
-                for node in funcBodyNodes:
-                    for i in range(self.cfg.blocks[node].length):
-                        offset = node + i
-                        # originalFuncBytecodes.append(self.cfg.blocks[node].bytecode[i])
-                        if targetAddr <= offset <= invNode:
-                            continue
-                        newFuncBytecodes.append(self.cfg.blocks[node].bytecode[i])
-                self.cfg.blocks[244].printBlockInfo()
-                # originalFuncBytecodeStr = "".join([self.cfg.blocks[k].bytecodeStr for k in funcBodyNodes])
-                # newFuncBytecodeStr = "".join(['{:02x}'.format(num) for num in newFuncBytecodes])
-                # print(originalFuncBytecodeStr)
-                # print(newFuncBytecodeStr)
+                newFuncBodyNodes = []
+                funcBodyNodes.sort()  # 从小到大一个个加
+                self.blocks[self.cfg.exitBlockId].length = 1  # ethersolve有bug？原图中最后一个block的长度为0，但是应该为1
+                curLastNode = max(self.nodes)
+                offset = curLastNode + self.blocks[curLastNode].length - funcBodyNodes[0]  # 两个函数体之间的偏移量
+                for node in funcBodyNodes:  # 对每一个原有的block，都新建一个相同的block
+                    newBlockInfo = {}  # 模拟使用json文件输入
+                    originalBlock = self.blocks[node]
+                    beginOffset = node + offset
+                    newBlockInfo["offset"] = beginOffset
+                    newBlockInfo["length"] = originalBlock.length
+                    newBlockInfo["type"] = originalBlock.blockType
+                    newBlockInfo["stackBalance"] = str(originalBlock.stackBalance)
+                    newBlockInfo["bytecodeHex"] = originalBlock.bytecodeStr
+                    newBlockInfo["parsedOpcodes"] = originalBlock.instrsStr
+                    newBlock = BasicBlock(newBlockInfo)  # 新建一个block
+                    # 添加删除序列信息，并将被删除序列置为空指令
+                    self.removedRange[beginOffset] = []
+                    if targetNode <= node <= invNode:  # 是要删除字节码的block
+                        beginAddr = max(targetAddr, node)
+                        endAddr = node + originalBlock.length
+                        for i in range(beginAddr - node, endAddr - node):
+                            newBlock.bytecode[i] = 0x1f  # 置为空指令
+                        beginAddr += offset
+                        endAddr += offset
+                        self.removedRange[beginOffset].append([beginAddr, endAddr])
+                    # 放入到cfg中
+                    self.blocks[beginOffset] = newBlock  # 添加到原图中
+                    self.nodes.append(beginOffset)  # 添加到原图中
+                    newFuncBodyNodes.append(beginOffset)
 
-                # # 第三步，直接修改该地址处的字节码，将其变为jump，跳转到invalid前的jumpi的true的地方，即invalid的地址+1处
-            # jumpDestAddr = hex(invNode + 1)[2:]  # 转为了十六进制，并且去除了0x
-            # # jumpDestAddr = hex(0x01ffff)[2:]  # 测试用
-            # if jumpDestAddr.__len__() % 2 == 1:
-            #     jumpDestAddr = '0' + jumpDestAddr
-            # pushOpcode = 0x60 + jumpDestAddr.__len__() // 2 - 1  # push指令的操作码
-            # # print("put {}:{} in addr {}".format(pushOpcode, jumpDestAddr, targetAddr))
-            # originalBytecode = self.cfg.blocks[targetNode].bytecode
-            # # print(originalBytecode)
-            # pushOffsetInTargetBlock = targetAddr - targetNode  # push指令的偏移量，这里的偏移量是字节偏移量
-            # jumpOffsetInTargetBlock = pushOffsetInTargetBlock + jumpDestAddr.__len__() // 2 + 1  # jump指令的偏移量
-            # assert jumpOffsetInTargetBlock < self.cfg.blocks[targetNode].length  # 修改的所有内容，不应当超出原的block的范围
-            # newBytecode = bytearray()
-            # for i in range(self.cfg.blocks[targetNode].length):
-            #     if i < pushOffsetInTargetBlock:  # 还没到push指令，直接复制
-            #         newBytecode.append(originalBytecode[i])
-            #     elif i == pushOffsetInTargetBlock:  # 到了push指令处
-            #         newBytecode.append(pushOpcode)
-            #     elif i < pushOffsetInTargetBlock + 1 + jumpDestAddr.__len__() // 2:  # 到了push指令的内容处
-            #         addrIndex = 2 * (i - pushOffsetInTargetBlock - 1)
-            #         newBytecode.append(int(jumpDestAddr[addrIndex:addrIndex + 2], 16))
-            #     elif i == jumpOffsetInTargetBlock:  # 到了jump指令的内容处
-            #         newBytecode.append(0x56)  # jump
-            #         # newBytecode.append(0x57)
-            #     else:  # 过了jump指令，后面全部用5b代替
-            #         newBytecode.append(0x5b)
-            #
-            # assert newBytecode.__len__() == originalBytecode.__len__()
-            # self.cfg.blocks[targetNode].bytecode = newBytecode  # 改为新的字节数组
-            # self.cfg.blocks[targetNode].isModified = True
-            # # for i in range(18):
-            # #     print(hex(originalBytecode[i]), hex(newBytecode[i]))
-            #
-            # # 第四步，将该invalid的其他所有路径中targetNode之后的所有node全部置为空指令
-            # for pathId in self.invalidNode2PathIds[invNode]:
-            #     for node in self.invalidPaths[pathId].pathNodes:
-            #         if node <= targetNode:
-            #             continue
-            #         # 取到一个大于targetNode的节点
-            #         self.cfg.blocks[node].isModified = True
-            #         for i in range(self.cfg.blocks[node].length):
-            #             self.cfg.blocks[node].bytecode[i] = 0x5b
+                # 第五步，添加跳转边信息
+                # 新函数体需要考虑的边有：
+                # 1.内部跳转的边 2.函数调用者的出边 3.函数体返回的边 4.函数体内进行函数调用的边
+                # [push的值，push的字节数，push指令的地址，push指令所在的block, jump所在的block]
+                newJumpEdgeInfo = []  # 要新添加的跳转边信息
+                originalFuncRange = range(funcBodyNodes[0], funcBodyNodes[-1] + self.blocks[funcBodyNodes[-1]].length)
+                for node in funcBodyNodes:  # 先处理函数内部跳转的边
+                    for info in self.jumpEdgeInfo:
+                        if info[3] == node:  # 某个jump的地址是在新的block的原block中push的
+                            newInfo = list(info)
+                            if info[0] in originalFuncRange:  # 在本函数中push和jump
+                                newInfo[0] += offset
+                                newInfo[4] += offset
+                                temp = newInfo[0]  # 重新计算push的字节数
+                                byteNum = 0
+                                while temp != 0:
+                                    temp >>= 8
+                                    byteNum += 1
+                                info[1] = max(byteNum, info[1])  # 如果计算出来的比原来还少，那就继续用原来的
+                            # else:#在本函数中进行push，但不是在本函数内jump
+                            # 即外部函数的调用相关的push。不需要改push的值
+                            newInfo[2] += offset
+                            newInfo[3] += offset
+                            newJumpEdgeInfo.append(newInfo)
+                for i in range(self.jumpEdgeInfo.__len__()):  # 再处理函数调用者的出边，以及函数体返回的边
+                    info = self.jumpEdgeInfo[i]
+                    if info[0] == funcBodyNodes[0] and info[4] == callerNode:  # 是调用者的出边
+                        info[0] += offset  # 变成调用新函数
+                        temp = newInfo[0]  # 重新计算push的字节数
+                        byteNum = 0
+                        while temp != 0:
+                            temp >>= 8
+                            byteNum += 1
+                        info[1] = max(byteNum, info[1])  # 如果计算出来的比原来还少，那就继续用原来的
+                        self.jumpEdgeInfo[i] = info
+                        break
+                        # 实际上，不能就此停下，可能别的调用链也是冗余的，这样就会导致函数体多次被构造
 
     def __regenerateBytecode(self):
         '''
@@ -715,7 +715,7 @@ class AssertionOptimizer:
                     newByteNum += 1
                 offset = newByteNum - originalByteNum
                 # if offset == 0:  # 不需要移动，直接填入新内容即可
-                if offset <= 0:  # 不需要移动，直接填入新内容即可
+                if offset <= 0:  # 原有的字节数已经足够表示新地址，不需要移动，直接填入新内容即可
                     pushBlock = info[3]
                     pushBlockOffset = self.originalToNewAddr[pushBlock]  # push所在block的新偏移量
                     pushAddr = self.originalToNewAddr[info[2]]  # push指令的新地址
@@ -724,8 +724,8 @@ class AssertionOptimizer:
                     while tempAddr != 0:
                         newAddrBytes.appendleft(tempAddr & 0xff)  # 取低八位
                         tempAddr >>= 8
-                    for i in range(-offset):
-                        newAddrBytes.appendleft(0x00)  # 原有的位置多出来的地方，用0填充
+                    for i in range(-offset):  # 高位缺失的字节用0填充
+                        newAddrBytes.appendleft(0x00)
                     for i in range(originalByteNum):  # 按原来的字节数填
                         self.blocks[pushBlock].bytecode[pushAddr - pushBlockOffset + 1 + i] = newAddrBytes[
                             i]  # 改的是地址，因此需要+1
