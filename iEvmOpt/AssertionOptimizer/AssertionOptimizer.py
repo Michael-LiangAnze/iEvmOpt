@@ -1,5 +1,6 @@
 from collections import deque
 
+from graphviz import Digraph
 from z3 import *
 
 from AssertionOptimizer.Function import Function
@@ -17,6 +18,8 @@ import json
 from Utils.Logger import Logger
 
 # 调试用
+from Utils.OpcodeTranslator import OpcodeTranslator
+
 fullyRedundant = "fullyRedundant"
 partiallyRedundant = "partiallyRedundant"
 
@@ -64,10 +67,34 @@ class AssertionOptimizer:
             zip(self.nodes, [[] for i in range(0, len(self.nodes))]))  # 记录每个block中被移除的区间，每个区间的格式为:[from,to)
 
         # 重定位需要用到的信息
-        self.jumpEdgeInfo = None  # 跳转边信息，格式为:[[push的值，push的字节数，push指令的地址，push指令所在的block,jump所在的block]]
-        self.originalLength = 0  # 原来的字节码总长度
+        self.jumpEdgeInfo = None  # 跳转边信息，格式为:[[push的值，push的字节数，push指令的地址，push指令所在的block，jump所在的block，跳转的type(可选),新老函数体之间的offset(可选)]]
+        # 这里给一个设定：
+        # 1.一旦出现了第六个和第七个参数，即说明这是新构造函数体的相关跳转信息
+        # 2.此时为第一次读取到这条信息，后面会根据这条信息进行试填入。填入之后，直接修改信息，然后将最后两个参数pop，即将该信息变回到普通的信息，统一处理。
+        # 3.一旦出现第六第七个参数，则前面所有的信息都不是真实的，需要根据跳转边类型进行修改如下
+        #   跳转的type为0，说明push在且jump也在新函数体，但是push的值不在（新函数体跳到其他地方），此时需要将2、3、4号位信息加上offset
+        #   跳转的type为1，说明push在且jump也在新函数体，且push的值在（新函数体内部的跳转），此时需要将0、2、3、4号位信息加上offset，并重新计算字节数
+        #   跳转的type为2，说明push不在且jump也不在新函数体，但是push的值在（新函数的调用），此时需要将0号位的push加上offset，并重新计算字节数（调用新的函数体）
+        #   跳转的type为3，说明push不在但jump在新函数体（新函数体返回），此时需要将4号位加上offset即可
+        #   跳转的type为4，说明push在但jump不在新函数体（新函数体对其他函数的调用后返回），此时需要将0、2、3号位信息加上offset，并重新计算字节数
+
+        # 将原文件读入一个字符串，然后让其和原函数体字符串做匹配，找到offset为0对应的下标
+        with open(self.inputFile, "r") as f:
+            self.originalBytecodeStr = f.read()
+            f.close()
+        sortedKeys = list(self.cfg.blocks.keys())
+        sortedKeys.sort()
+        funcBodyStr = "".join([self.cfg.blocks[k].bytecodeStr if k <= self.cfg.exitBlockId else "" for k in sortedKeys])
+        assert self.originalBytecodeStr.count(funcBodyStr) == 1  # 应该只出现一次
+        self.funcBodyStrBeginIndex = self.originalBytecodeStr.find(funcBodyStr)  # 找出的是字符串的偏移量，需要除2变为字节偏移量
+        self.originalLength = 0  # 原来的字节码函数体的总长度
+        for b in self.blocks.values():
+            self.originalLength += b.length
         self.originalToNewAddr = {}  # 一个映射，格式为： 旧addr:新addr
-        self.newBytecode = None  # 重新生成的字节码，用deque效率更高
+
+        # 重新生成函数体代码的信息
+        self.newBytecode1 = None  # 第一段字节码，即原函数体相关的字节码
+        self.newBytecode2 = None  # 第二段字节码，即新构造函数体相关的字节码
 
     def optimize(self):
         self.log.info("开始进行字节码分析")
@@ -125,6 +152,9 @@ class AssertionOptimizer:
         self.log.info("正在将优化后的字节码写入到文件: {}".format(self.outputFile))
         self.__outputFile()
         self.log.info("写入完毕")
+
+        # 测试使用
+        self.__outputNewCfgPic()
 
     def __identifyAndCheckFunctions(self):
         '''
@@ -537,19 +567,31 @@ class AssertionOptimizer:
                 # print(targetAddr)
                 # print(targetNode)
 
-                # 第四步，构造一个新函数体，其中去除了assertion相关的字节码
+                # 第四步，在原有的函数体部分后面，添加一个新的block，这个block没有任何内容，它的作用是替代合约字节码中的数据段，
+                # 方便在后面插入新构造的函数体
+                curLastNode = max(self.nodes)
+                if curLastNode == self.cfg.exitBlockId and self.blocks[curLastNode].length == 0:  # 新的block还没有添加
+                    postStr = self.originalBytecodeStr[self.funcBodyStrBeginIndex + self.originalLength * 2:]
+                    assert postStr.__len__() % 2 == 0
+                    self.blocks[curLastNode].length = postStr.__len__() // 2  # 直接改exit block的长度
+                    tempByteCode = bytearray()
+                    for i in range(postStr.__len__() // 2):
+                        tempByteCode.append(0x00)
+                    self.blocks[curLastNode].bytecode = tempByteCode
+
+                # 第五步，构造一个新函数体，其中去除了assertion相关的字节码
                 # 新函数体不包括的部分为： targetAddr <= addr <= invNode之间的字节码
                 funcBodyNodes = self.funcBodyDict[invNodeFuncId].funcBodyNodes
                 # print(funcBodyNodes)
                 newFuncBodyNodes = []
                 funcBodyNodes.sort()  # 从小到大一个个加
-                self.blocks[self.cfg.exitBlockId].length = 1  # ethersolve有bug？原图中最后一个block的长度为0，但是应该为1
-                curLastNode = max(self.nodes)
                 offset = curLastNode + self.blocks[curLastNode].length - funcBodyNodes[0]  # 两个函数体之间的偏移量
+                # print(curLastNode,self.blocks[curLastNode].length,funcBodyNodes[0])
+                # print(offset)
                 for node in funcBodyNodes:  # 对每一个原有的block，都新建一个相同的block
-                    newBlockInfo = {}  # 模拟使用json文件输入
                     originalBlock = self.blocks[node]
                     beginOffset = node + offset
+                    newBlockInfo = {}
                     newBlockInfo["offset"] = beginOffset
                     newBlockInfo["length"] = originalBlock.length
                     newBlockInfo["type"] = originalBlock.blockType
@@ -570,52 +612,84 @@ class AssertionOptimizer:
                     # 放入到cfg中
                     self.blocks[beginOffset] = newBlock  # 添加到原图中
                     self.nodes.append(beginOffset)  # 添加到原图中
+                    self.edges[beginOffset] = []
                     newFuncBodyNodes.append(beginOffset)
 
-                # 第五步，添加跳转边信息
-                # 新函数体需要考虑的边有：
-                # 1.内部跳转的边 2.函数调用者的出边 3.函数体返回的边 4.函数体内进行函数调用的边
-                # [push的值，push的字节数，push指令的地址，push指令所在的block, jump所在的block]
+                # 第六步，添加跳转边信息
+                # [[push的值，push的字节数，push指令的地址，push指令所在的block，jump所在的block，跳转的type(可选),新老函数体之间的offset(可选)]]
+                # 这里给一个设定：
+                # 1.一旦出现了第六个和第七个参数，即说明这是新构造函数体的相关跳转信息
+                # 2.此时为第一次读取到这条信息，后面会根据这条信息进行试填入。填入之后，直接修改信息，然后将最后两个参数pop，即将该信息变回到普通的信息，统一处理。
+                # 3.一旦出现第六第七个参数，则前面所有的信息都不是真实的，需要根据跳转边类型进行修改如下
+                #   跳转的type为0，说明push在且jump也在新函数体，但是push的值不在（新函数体跳到其他地方），此时需要将2、3、4号位信息加上offset
+                #   跳转的type为1，说明push在且jump也在新函数体，且push的值在（新函数体内部的跳转），此时需要将0、2、3、4号位信息加上offset，并重新计算字节数
+                #   跳转的type为2，说明push不在且jump也不在新函数体，但是push的值在，而且callerNode==jump所在的Block（新函数的调用），此时需要将0号位的push加上offset，并重新计算字节数（调用新的函数体）
+                #   跳转的type为3，说明push不在但jump在新函数体,而且callerNodeJumpAddr+1==push的值（新函数体返回），此时需要将4号位加上offset即可
+                #   跳转的type为4，说明push在但jump不在新函数体（新函数体对其他函数的调用后返回），此时需要将0、2、3号位信息加上offset，并重新计算字节数
                 newJumpEdgeInfo = []  # 要新添加的跳转边信息
                 originalFuncRange = range(funcBodyNodes[0], funcBodyNodes[-1] + self.blocks[funcBodyNodes[-1]].length)
-                for node in funcBodyNodes:  # 先处理函数内部跳转的边
-                    for info in self.jumpEdgeInfo:
-                        if info[3] == node:  # 某个jump的地址是在新的block的原block中push的
-                            newInfo = list(info)
-                            if info[0] in originalFuncRange:  # 在本函数中push和jump
-                                newInfo[0] += offset
-                                newInfo[4] += offset
-                                temp = newInfo[0]  # 重新计算push的字节数
-                                byteNum = 0
-                                while temp != 0:
-                                    temp >>= 8
-                                    byteNum += 1
-                                info[1] = max(byteNum, info[1])  # 如果计算出来的比原来还少，那就继续用原来的
-                            # else:#在本函数中进行push，但不是在本函数内jump
-                            # 即外部函数的调用相关的push。不需要改push的值
-                            newInfo[2] += offset
-                            newInfo[3] += offset
+                for info in self.jumpEdgeInfo:
+                    newInfo = list(info)
+                    checker = 0  # 将三个信息映射到一个数字
+                    if info[3] in originalFuncRange:  # push在
+                        checker |= 4
+                    if info[4] in originalFuncRange:  # jump在
+                        checker |= 2
+                    if info[0] in originalFuncRange:  # push的值在
+                        checker |= 1
+                    match checker:
+                        case 0b110:  # 0
+                            newInfo.append(0)
+                            newInfo.append(offset)
                             newJumpEdgeInfo.append(newInfo)
-                for i in range(self.jumpEdgeInfo.__len__()):  # 再处理函数调用者的出边，以及函数体返回的边
-                    info = self.jumpEdgeInfo[i]
-                    if info[0] == funcBodyNodes[0] and info[4] == callerNode:  # 是调用者的出边
-                        info[0] += offset  # 变成调用新函数
-                        temp = newInfo[0]  # 重新计算push的字节数
-                        byteNum = 0
-                        while temp != 0:
-                            temp >>= 8
-                            byteNum += 1
-                        info[1] = max(byteNum, info[1])  # 如果计算出来的比原来还少，那就继续用原来的
-                        self.jumpEdgeInfo[i] = info
-                        break
-                        # 实际上，不能就此停下，可能别的调用链也是冗余的，这样就会导致函数体多次被构造
+                            self.edges[info[4] + offset].append(info[0])
+                        case 0b111:  # 1
+                            newInfo.append(1)
+                            newInfo.append(offset)
+                            newJumpEdgeInfo.append(newInfo)
+                            self.edges[info[4] + offset].append(info[0] + offset)
+                        case 0b001:  # 2
+                            if info[4] == callerNode:  # 是新函数体的调用边
+                                newInfo.append(2)
+                                newInfo.append(offset)
+                                newJumpEdgeInfo.append(newInfo)
+                                self.edges[info[4]].append(info[0] + offset)
+                        case 0b011 | 0b010:  # 3
+                            assert info[0] not in originalFuncRange  # 必须是返回边
+                            if info[0] == callerNode + self.blocks[callerNode].length:  # 是新函数体的返回边
+                                newInfo.append(3)
+                                newInfo.append(offset)
+                                newJumpEdgeInfo.append(newInfo)
+                                self.edges[info[4] + offset].append(info[0])
+                        case 0b101 | 0b100:  # 4
+                            assert info[0] in originalFuncRange  # 必须是返回到新函数体
+                            newInfo.append(4)
+                            newInfo.append(offset)
+                            newJumpEdgeInfo.append(newInfo)
+                            self.edges[info[4]].append(info[0] + offset)
+                        # 否则，不需要修改这条边信息
+                # print(newJumpEdgeInfo)
+                for info in newJumpEdgeInfo:
+                    self.jumpEdgeInfo.append(info)
+                for node in funcBodyNodes:  # 将不需要重定位的边添加到edges中
+                    tempType = self.blocks[node].jumpType
+                    if tempType == "fall":
+                        _from = node + offset
+                        _to = node + offset + self.blocks[node].length
+                        self.edges[_from].append(_to)
+                    elif tempType == "terminal":
+                        _from = node + offset
+                        self.edges[_from].append(self.cfg.exitBlockId)
 
     def __regenerateBytecode(self):
         '''
         重新生成字节码，同时完成重定位
         :return:
         '''
-
+        # for b in self.blocks.values():
+        #     b.printBlockInfo()
+        # print(self.jumpEdgeInfo)
+        # print(self.removedRange)
         # 第一步，对删除区间信息去重
         for node in self.nodes:
             if self.removedRange[node].__len__() == 0:
@@ -628,16 +702,45 @@ class AssertionOptimizer:
                 self.removedRange[node].append(json.loads(rangeStr))  # 再还原为list
 
         # 第二步，将出现在已被删除字节码序列中的跳转信息删除
-        # [push的值，push的字节数，push指令的地址，push指令所在的block,jump所在的block]
+        # [[push的值，push的字节数，push指令的地址，push指令所在的block，jump所在的block，跳转的type(可选),新老函数体之间的offset(可选)]]
+        # 这里给一个设定：
+        # 1.一旦出现了第六个和第七个参数，即说明这是新构造函数体的相关跳转信息
+        # 2.此时为第一次读取到这条信息，后面会根据这条信息进行试填入。填入之后，直接修改信息，然后将最后两个参数pop，即将该信息变回到普通的信息，统一处理。
+        # 3.一旦出现第六第七个参数，则前面所有的信息都不是真实的，需要根据跳转边类型进行修改如下
+        #   跳转的type为0，说明push在且jump也在新函数体，但是push的值不在（新函数体跳到其他地方），此时需要将2、3、4号位信息加上offset
+        #   跳转的type为1，说明push在且jump也在新函数体，且push的值在（新函数体内部的跳转），此时需要将0、2、3、4号位信息加上offset，并重新计算字节数
+        #   跳转的type为2，说明push不在且jump也不在新函数体，但是push的值在（新函数的调用），此时需要将0号位的push加上offset，并重新计算字节数（调用新的函数体）
+        #   跳转的type为3，说明push不在但jump在新函数体（新函数体返回），此时需要将4号位加上offset即可
+        #   跳转的type为4，说明push在但jump不在新函数体（新函数体对其他函数的调用后返回），此时需要将0、2、3号位信息加上offset，并重新计算字节数
         removedInfo = []
         for info in self.jumpEdgeInfo:
             # 首先做一个检查
-            delPush = False
-            delJump = False
+            addr = info[0]
             pushBlock = info[3]
             pushAddr = info[2]
             jumpBlock = info[4]
+            if info.__len__() == 7:  # 是新block相关的信息
+                match info[5]:
+                    case 0:
+                        pushBlock += info[6]
+                        pushAddr += info[6]
+                        jumpBlock += info[6]
+                    case 1:
+                        addr += info[6]
+                        pushBlock += info[6]
+                        pushAddr += info[6]
+                        jumpBlock += info[6]
+                    case 2:
+                        addr += info[6]
+                    case 3:
+                        jumpBlock += info[6]
+                    case 4:
+                        addr += info[6]
+                        pushAddr += info[6]
+                        pushBlock += info[6]
             jumpAddr = jumpBlock + self.blocks[jumpBlock].length - 1
+            delPush = False
+            delJump = False
             for _range in self.removedRange[pushBlock]:
                 if _range[0] <= pushAddr < _range[1]:  # push语句位于删除序列内
                     delPush = True
@@ -652,6 +755,7 @@ class AssertionOptimizer:
             assert delPush == delJump
             if delPush:  # 确定要删除
                 removedInfo.append(info)
+                self.edges[jumpBlock].remove(addr)
         for info in removedInfo:
             self.jumpEdgeInfo.remove(info)  # 删除对应的信息
         # print(self.jumpEdgeInfo)
@@ -660,7 +764,6 @@ class AssertionOptimizer:
         self.nodes.sort()  # 确保是从小到大排序的
         mappedAddr = 0  # 映射后的新地址
         for node in self.nodes:
-            self.originalLength += self.blocks[node].length
             blockLen = self.blocks[node].length
             newBlockLen = blockLen  # block的新长度
             isDelete = [False for i in range(blockLen)]
@@ -678,6 +781,7 @@ class AssertionOptimizer:
                     continue
                 newBytecode.append(bytecode[i])
                 mappedAddr += 1
+
             self.blocks[node].length = newBlockLen  # 设置新的block长度
             self.blocks[node].bytecode = newBytecode  # 设置新的block字节码
         # print(self.removedRange)
@@ -689,11 +793,28 @@ class AssertionOptimizer:
         # 第四步，尝试将跳转地址填入
         # 每一次都是做试填入，不能保证一定可以填入成功，地址可能会过长或者过短
         # 这两种情况都需要改地址映射，并重新生成所有地址映射
-        # [push的值，push的字节数，push指令的地址，push指令所在的block,jump所在的block]
+        # [[push的值，push的字节数，push指令的地址，push指令所在的block，jump所在的block，跳转的type(可选),新老函数体之间的offset(可选)]]
+        # 这里给一个设定：
+        # 1.一旦出现了第六个和第七个参数，即说明这是新构造函数体的相关跳转信息
+        # 2.此时为第一次读取到这条信息，后面会根据这条信息进行试填入。填入之后，直接修改信息，然后将最后两个参数pop，即将该信息变回到普通的信息，统一处理。
+        # 3.一旦出现第六第七个参数，则前面所有的信息都不是真实的，需要根据跳转边类型进行修改如下
+        #   跳转的type为0，说明push在且jump也在新函数体，但是push的值不在（新函数体跳到其他地方），此时需要将2、3、4号位信息加上offset
+        #   跳转的type为1，说明push在且jump也在新函数体，且push的值在（新函数体内部的跳转），此时需要将0、2、3、4号位信息加上offset，并重新计算字节数
+        #   跳转的type为2，说明push不在且jump也不在新函数体，但是push的值在（新函数的调用），此时需要将0号位的push加上offset，并重新计算字节数（调用新的函数体）
+        #   跳转的type为3，说明push不在但jump在新函数体（新函数体返回），此时需要将4号位加上offset即可
+        #   跳转的type为4，说明push在但jump不在新函数体（新函数体对其他函数的调用后返回），此时需要将0、2、3号位信息加上offset，并重新计算字节数
+
         # 首先要根据push指令所在的地址，对这些进行进行一个排序(在路径生成器中已去重)
         pushAddrToInfo = {}
         for info in self.jumpEdgeInfo:
-            pushAddrToInfo[info[2]] = info
+            if info.__len__() == 7:
+                newPushAddr = info[2]
+                match info[5]:
+                    case 0 | 1 | 4:
+                        newPushAddr += info[6]
+                pushAddrToInfo[newPushAddr] = info
+            else:
+                pushAddrToInfo[info[2]] = info
         sortedAddrs = list(pushAddrToInfo.keys())
         sortedAddrs.sort()
         sortedJumpEdgeInfo = []
@@ -706,97 +827,216 @@ class AssertionOptimizer:
             finishFilling = True  # 默认可以全部成功填入
             for index in range(sortedJumpEdgeInfo.__len__()):
                 info = sortedJumpEdgeInfo[index]
-                originalByteNum = info[1]  # 原来的内容占据的字节数
-                newAddr = self.originalToNewAddr[info[0]]  # 新的需要push的内容
-                tempAddr = newAddr
+                originalByteNum = info[1]  # 原来的内容占据的字节数,这一条无需修改
+                # [[push的值，push的字节数，push指令的地址，push指令所在的block，jump所在的block，跳转的type(可选), 新老函数体之间的offset(可选)]]
+                #   跳转的type为0，说明push在且jump也在新函数体，但是push的值不在（新函数体跳到其他地方），此时需要将2、3、4号位信息加上offset
+                #   跳转的type为1，说明push在且jump也在新函数体，且push的值在（新函数体内部的跳转），此时需要将0、2、3、4号位信息加上offset，并重新计算字节数
+                #   跳转的type为2，说明push不在且jump也不在新函数体，但是push的值在（新函数的调用），此时需要将0号位的push加上offset，并重新计算字节数（调用新的函数体）
+                #   跳转的type为3，说明push不在但jump在新函数体（新函数体返回），此时需要将4号位加上offset即可
+                #   跳转的type为4，说明push在但jump不在新函数体（新函数体对其他函数的调用后返回），此时需要将0、2、3号位信息加上offset，并重新计算字节数
+                if info.__len__() == 7:  # 第一次读取到这种信息，需要重新计算，计算完成后，pop两个元素，变为普通信息
+                    tempAddr = info[0]
+                    tempPushAddr = info[2]
+                    tempPushBlock = info[3]
+                    tempJumpBlock = info[4]
+                    offset = info[6]
+                    match info[5]:
+                        case 0:
+                            info[2] = tempPushAddr + offset
+                            info[3] = tempPushBlock + offset
+                            info[4] = tempJumpBlock + offset
+                        case 1:
+                            info[0] = tempAddr + offset
+                            info[2] = tempPushAddr + offset
+                            info[3] = tempPushBlock + offset
+                            info[4] = tempJumpBlock + offset
+                        case 2:
+                            info[0] = tempAddr + offset
+                        case 3:
+                            info[4] = tempJumpBlock + offset
+                        case 4:
+                            info[0] = tempAddr + offset
+                            info[2] = tempPushAddr + offset
+                            info[3] = tempPushBlock + offset
+                    info = info[:5]
+                # 当前读取到的是普通信息，尝试进行试填入
+                newAddr = self.originalToNewAddr[info[0]]
+                pushAddr = self.originalToNewAddr[info[2]]  # push指令的新地址
+                pushBlock = info[3]  # push所在的block，当前的block还是按原来的为准
+                pushBlockOffset = self.originalToNewAddr[pushBlock]  # push所在block的新偏移量
+
                 newByteNum = 0  # 新内容需要的字节数
+                tempAddr = newAddr
                 while tempAddr != 0:
                     tempAddr >>= 8
                     newByteNum += 1
+                info[1] = newByteNum  # 只修改字节数
+                sortedJumpEdgeInfo[index] = info
+
+                # 下面根据是否能填入，进行地址填入
                 offset = newByteNum - originalByteNum
-                # if offset == 0:  # 不需要移动，直接填入新内容即可
                 if offset <= 0:  # 原有的字节数已经足够表示新地址，不需要移动，直接填入新内容即可
-                    pushBlock = info[3]
-                    pushBlockOffset = self.originalToNewAddr[pushBlock]  # push所在block的新偏移量
-                    pushAddr = self.originalToNewAddr[info[2]]  # push指令的新地址
                     newAddrBytes = deque()  # 新地址的字节码
-                    tempAddr = newAddr
-                    while tempAddr != 0:
-                        newAddrBytes.appendleft(tempAddr & 0xff)  # 取低八位
-                        tempAddr >>= 8
+                    while newAddr != 0:
+                        newAddrBytes.appendleft(newAddr & 0xff)  # 取低八位
+                        newAddr >>= 8
                     for i in range(-offset):  # 高位缺失的字节用0填充
                         newAddrBytes.appendleft(0x00)
                     for i in range(originalByteNum):  # 按原来的字节数填
                         self.blocks[pushBlock].bytecode[pushAddr - pushBlockOffset + 1 + i] = newAddrBytes[
                             i]  # 改的是地址，因此需要+1
                 else:  # 新内容不能直接填入，原位置空间不够，需要移动字节码
-                    self.log.warning("原push位置不能直接填入新地址，需要移动字节码")
+                    self.log.warning("原push位置:{}不能直接填入新地址:{}，需要移动字节码".format(pushAddr, newAddr))
                     # 先改push的操作码
                     originalOpcode = 0x60 + originalByteNum - 1
                     newOpcode = originalOpcode + offset
                     # print(originalOpcode, newOpcode)
                     assert 0x60 <= newOpcode <= 0x7f
-                    pushBlock = info[3]
-                    pushBlockOffset = self.originalToNewAddr[pushBlock]  # push所在block的新偏移量
-                    pushAddr = self.originalToNewAddr[info[2]]  # push指令的新地址
                     self.blocks[pushBlock].bytecode[pushAddr - pushBlockOffset] = newOpcode
 
                     # 然后再改地址
                     if offset > 0:
                         for i in range(offset):
-                            self.blocks[pushBlock].bytecode.insert(pushAddr - pushBlockOffset + 1, 0x00)  # 先插入足够的位置
+                            self.blocks[pushBlock].bytecode.insert(pushAddr - pushBlockOffset + 1, 0x00)  # 插入足够的位置
                     else:
                         for i in range(-offset):
-                            self.blocks[pushBlock].bytecode.pop(pushAddr - pushBlockOffset + 1)  # 先删掉多出的位置
-                    # 再改地址
+                            self.blocks[pushBlock].bytecode.pop(pushAddr - pushBlockOffset + 1)  # 删掉多出的位置
+                    # 改地址
                     # for i in range(newByteNum):
                     #     self.blocks[pushBlock].bytecode[pushAddr - pushBlockOffset + 1 + i] = newAddrBytes[
                     #         i]  # 改的是地址，因此需要+1
-                    # 不改地址，因为会进行下一次的试填入，必然会填入新地址
+                    # 不改地址，因为会进行下一次的试填入，而且下一次试填入时必然是可以填入的，会填入新地址
 
                     # 接着，需要修改新旧地址映射，以及跳转信息中的字节量（供下一次试填入使用)
                     for original in self.originalToNewAddr.keys():
                         if original > info[2]:
                             self.originalToNewAddr[original] += offset  # 映射信息需要增加偏移量
-                    sortedJumpEdgeInfo[index][1] = newByteNum  # 只改字节数，其他信息与原来相同
-
                     # 最后需要改一些其他信息
                     self.blocks[pushBlock].length += offset
                     finishFilling = False  # 本次试填入失败
                     break  # 不再查看其他的跳转信息，重新开始再做试填入
 
-        # 第四步，尝试将这些字节码拼成一个整体
-        self.newBytecode = deque()  # 效率更高
+        # 第五步，尝试将这些字节码拼成一个整体
+        self.newBytecode1 = deque()  # 效率更高
+        self.newBytecode2 = deque()
         for node in self.nodes:  # 有序的
-            # 第一步，
-            for bc in self.blocks[node].bytecode:
-                self.newBytecode.append(bc)
+            if node < self.cfg.exitBlockId:
+                for bc in self.blocks[node].bytecode:
+                    self.newBytecode1.append(bc)
+            elif node > self.cfg.exitBlockId:
+                for bc in self.blocks[node].bytecode:
+                    self.newBytecode2.append(bc)
+        # print(sortedJumpEdgeInfo)
+
+        # 第六步，修改各个block的偏移量，添加新的边信息
+        # 这些修改都是用于输出新的cfg的图片
+        newOffset = 0
+        newToOriginal = {}
+        originalToNew = {}
+        for node in self.nodes:  # 有序的
+            newToOriginal[newOffset] = node
+            originalToNew[node] = newOffset
+            self.blocks[node].offset = newOffset
+            newOffset += self.blocks[node].length
+        self.nodes = list(newToOriginal.keys())
+        newBlocks = {}
+        for node in self.nodes:
+            newBlocks[node] = self.blocks[newToOriginal[node]]
+        self.blocks = newBlocks
+        self.cfg.exitBlockId = originalToNew[self.cfg.exitBlockId]
+        newEdge = {}
+        for node in self.nodes:
+            newEdge[node] = []
+
+        # 对于需要重定位的边
+        for info in sortedJumpEdgeInfo:
+            _from = originalToNew[info[4]]
+            _to = originalToNew[info[0]]
+            if self.blocks[_from].jumpType == "unconditional":
+                newEdge[_from].append(_to)
+            elif self.blocks[_from].jumpType == "conditional":
+                newEdge[_from].append(_to)
+                _to = _from + self.blocks[_from].length
+                newEdge[_from].append(_to)
+        # 对于不需要重定位的边
+        for node in self.nodes:
+            if self.blocks[node].jumpType == "terminal":
+                newEdge[node].append(self.cfg.exitBlockId)
+            elif self.blocks[node].jumpType == "fall":
+                if node != self.cfg.exitBlockId:  # exit节点默认也是fall类型
+                    newEdge[node].append(node + self.blocks[node].length)
+
+        self.edges = newEdge
+        # for b in self.blocks.values():
+        #     b.printBlockInfo()
 
     def __outputFile(self):
         '''
         将修改后的cfg写回到文件中
         :return:
         '''
-        # 给定一个假设，dispatcher中的内容不能被修改
-        # 第一步，将原文件读入一个字符串，然后让其和原函数体字符串做匹配，找到offset为0对应的下标
-        with open(self.inputFile, "r") as f:
-            originalBytecodeStr = f.read()
-            f.close()
-        # print(originalBytecodeStr)
-        sortedKeys = list(self.cfg.blocks.keys())
-        sortedKeys.sort()
-        # print(sortedKeys)
-        funcBodyStr = "".join([self.cfg.blocks[k].bytecodeStr for k in sortedKeys])
-        # print(funcBodyStr)
-        assert originalBytecodeStr.count(funcBodyStr) == 1
+        # for b in self.blocks.values():
+        #     b.printBlockInfo()
 
         # 第二步，获取原文件中，在函数体之前的以及之后的字符串，同时将其与新函数体的字符串拼接起来
-        beginIndex = originalBytecodeStr.find(funcBodyStr)  # 因为找出的是字符串的偏移量，需要除2变为字节偏移量
-        preStr = originalBytecodeStr[:beginIndex]
-        postStr = originalBytecodeStr[beginIndex + self.originalLength * 2:]
-        newFuncBodyStr = "".join(['{:02x}'.format(num) for num in self.newBytecode])  # 再转换回字符串
-        newBytecodeStr = preStr + newFuncBodyStr + postStr
+        preStr = self.originalBytecodeStr[:self.funcBodyStrBeginIndex]
+        postStr = self.originalBytecodeStr[self.funcBodyStrBeginIndex + self.originalLength * 2:]
+        newFuncBodyStr1 = "".join(['{:02x}'.format(num) for num in self.newBytecode1])  # 再转换回字符串
+        newFuncBodyStr2 = "".join(['{:02x}'.format(num) for num in self.newBytecode2])  # 再转换回字符串
+        newBytecodeStr = preStr + newFuncBodyStr1 + postStr + newFuncBodyStr2
 
         # 第三步，将结果写入文件
         with open(self.outputFile, "w+") as f:
             f.write(newBytecodeStr)
+
+    def __outputNewCfgPic(self):
+        # 测试使用，将新的cfg输出为图片，方便检查
+        self.blocks[self.cfg.exitBlockId].bytecode = bytearray()
+        self.blocks[self.cfg.exitBlockId].length = 0
+        translator = OpcodeTranslator(self.blocks, self.cfg.exitBlockId)
+        translator.translate()
+
+        # 修改原有的指令信息
+        for node in self.nodes:
+            self.blocks[node].instr = translator.getParsedOpcode(node)
+
+        # for b in self.blocks.values():
+        #     b.printBlockInfo()
+        G = Digraph(name="G",
+                    node_attr={'shape': 'box',
+                               'style': 'filled',
+                               'color': 'black',
+                               'fillcolor': 'white',
+                               'fontname': 'arial',
+                               'fontcolor': 'black'
+                               }
+                    )
+        G.attr(bgcolor='transparent')
+        G.attr(rankdir='UD')
+        for node in self.nodes:
+            if self.blocks[node].instrs.__len__() == 0 and node != self.cfg.exitBlockId:
+                continue
+            if node == self.cfg.initBlockId:
+                G.node(name=str(node), label="\l".join(self.blocks[node].instrs) + "\l", fillcolor='gold',
+                       shape='Msquare')
+            elif node == self.cfg.exitBlockId:
+                G.node(name=str(node), label="\l".join(self.blocks[node].instrs) + "\l", fillcolor='crimson',
+                       )
+            elif self.blocks[node].blockType == "dispatcher":
+                if self.blocks[node].jumpType != "terminal":
+                    G.node(name=str(node), label="\l".join(self.blocks[node].instrs) + "\l", fillcolor='lemonchiffon'
+                           )
+                else:
+                    G.node(name=str(node), label="\l".join(self.blocks[node].instrs) + "\l", fillcolor='lemonchiffon',
+                           color='crimson', shape='Msquare')
+            elif self.blocks[node].jumpType == "terminal":  # invalid
+                G.node(name=str(node), label="\l".join(self.blocks[node].instrs) + "\l", color='crimson',
+                       shape='Msquare')
+            else:
+                G.node(name=str(node), label="\l".join(self.blocks[node].instrs) + "\l")
+
+        for _from in self.edges.keys():
+            for _to in self.edges[_from]:
+                G.edge(str(_from), str(_to))
+        G.render(filename=sys.argv[0] + "_regenerate_bytecode.gv",
+                 outfile=sys.argv[0] + "_regenerate_bytecode.png", format='png')
