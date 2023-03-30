@@ -22,10 +22,7 @@ from Utils.OpcodeTranslator import OpcodeTranslator
 
 fullyRedundant = "fullyRedundant"
 partiallyRedundant = "partiallyRedundant"
-
-
-# fullyRedundant = 0
-# partiallyRedundant = 1
+nonRedundant = "nonRedundant"
 
 
 class AssertionOptimizer:
@@ -60,6 +57,10 @@ class AssertionOptimizer:
         self.pathReachable = {}  # 某条路径是否可达
         self.invNodeReachable = None  # 某个Invalid节点是否可达，格式为： invNode:True/Flase
         self.redundantType = {}  # 每个invalid节点的冗余类型，类型包括fullyredundant和partiallyredundant，格式为： invNode: type
+        self.fullyRedundantInvNodes = []  # 完全冗余的invalid节点
+        self.partiallyRedundantInvNodes = []  # 部分冗余的invalid节点
+        self.nonRedundantInvNodes = []  # 不冗余的invalid节点
+        self.invNodeToRedundantCallChain = {}  # 每个invalid节点对应的，冗余的函数调用链，格式为： invNode:[[pid1,pid2],[pid3,pid4]]
 
         # 冗余assertion优化需要用到的信息
         self.domTree = {}  # 支配树。注意，为了方便从invalid节点往前做遍历，该支配树存储的是入边，格式为   to:from
@@ -69,13 +70,13 @@ class AssertionOptimizer:
         # 重定位需要用到的信息
         self.jumpEdgeInfo = None  # 跳转边信息，格式为:[[push的值，push的字节数，push指令的地址，push指令所在的block，jump所在的block，跳转的type(可选),新老函数体之间的offset(可选)]]
         # 这里给一个设定：
-        # 1.一旦出现了第六个和第七个参数，即说明这是新构造函数体的相关跳转信息
-        # 2.此时为第一次读取到这条信息，后面会根据这条信息进行试填入。填入之后，直接修改信息，然后将最后两个参数pop，即将该信息变回到普通的信息，统一处理。
-        # 3.一旦出现第六第七个参数，则前面所有的信息都不是真实的，需要根据跳转边类型进行修改如下
+        # 在重定位时，一旦出现了第六个和第七个参数，即说明这是新构造函数体的相关跳转信息
+        # 此时为第一次读取到这条信息，后面会根据这条信息进行试填入。填入之后，直接修改信息，然后将最后两个参数pop，即将该信息变回到普通的信息，统一处理。
+        # 一旦出现第六第七个参数，则前面所有的信息都不是真实的，需要根据跳转边类型进行修改如下
         #   跳转的type为0，说明push在且jump也在新函数体，但是push的值不在（新函数体跳到其他地方），此时需要将2、3、4号位信息加上offset
         #   跳转的type为1，说明push在且jump也在新函数体，且push的值在（新函数体内部的跳转），此时需要将0、2、3、4号位信息加上offset，并重新计算字节数
-        #   跳转的type为2，说明push不在且jump也不在新函数体，但是push的值在（新函数的调用），此时需要将0号位的push加上offset，并重新计算字节数（调用新的函数体）
-        #   跳转的type为3，说明push不在但jump在新函数体（新函数体返回），此时需要将4号位加上offset即可
+        #   跳转的type为2，说明push不在且jump也不在新函数体，但是push的值在，而且callerNode==jump所在的Block（新函数的调用），此时需要将0号位的push加上offset，并重新计算字节数（调用新的函数体）
+        #   跳转的type为3，说明push不在但jump在新函数体,而且callerNodeJumpAddr+1==push的值（新函数体返回），此时需要将4号位加上offset即可
         #   跳转的type为4，说明push在但jump不在新函数体（新函数体对其他函数的调用后返回），此时需要将0、2、3号位信息加上offset，并重新计算字节数
 
         # 将原文件读入一个字符串，然后让其和原函数体字符串做匹配，找到offset为0对应的下标
@@ -110,8 +111,11 @@ class AssertionOptimizer:
         for invNode in self.invalidNodeList:
             callChainNum += self.invalidNode2CallChain[invNode].__len__()
         self.log.info(
-            "路径搜索完毕，一共找到{}个可优化的Invalid节点，一共找到{}条路径，{}条函数调用链".format(self.invalidNodeList.__len__(),
+            "路径搜索完毕，一共找到{}个待处理的Assertion，一共找到{}条路径，{}条函数调用链".format(self.invalidNodeList.__len__(),
                                                                     self.invalidPaths.__len__(), callChainNum))
+        if self.invalidNodeList.__len__() == 0:
+            self.log.info("没有待处理的Assertion，优化结束")
+            return
 
         # 求解各条路径是否可行
         self.log.info("正在分析路径可达性")
@@ -121,26 +125,21 @@ class AssertionOptimizer:
         # 生成cfg的支配树
         self.__buildDominatorTree()
 
-        # 根据冗余类型进行优化
-        fullyRedundantNodes = []
-        partiallyRedundantNodes = []
-        for invNode, rType in self.redundantType.items():
-            if rType == fullyRedundant:
-                fullyRedundantNodes.append(invNode)
-            else:
-                partiallyRedundantNodes.append(invNode)
-        if fullyRedundantNodes.__len__() == 0 and partiallyRedundantNodes.__len__() == 0:
+        self.log.info(
+            "一共找到{}个可优化的assertion，具体为：{}个完全冗余，{}个部分冗余，{}个不冗余".format(
+                self.invalidNodeList.__len__(), self.fullyRedundantInvNodes.__len__(),
+                self.partiallyRedundantInvNodes.__len__(),
+                self.nonRedundantInvNodes.__len__()))
+        if self.fullyRedundantInvNodes.__len__() == 0 and self.partiallyRedundantInvNodes.__len__() == 0:
             self.log.info("不存在可优化的Assertion，优化结束")
-
-        self.log.info("一共找到{}个完全冗余的invalid节点，{}个部分冗余的invalid节点".format(fullyRedundantNodes.__len__(),
-                                                                       partiallyRedundantNodes.__len__()))
-        if fullyRedundantNodes.__len__() > 0:  # 存在完全冗余的节点
+            return
+        if self.fullyRedundantInvNodes.__len__() > 0:  # 存在完全冗余的节点
             self.log.info("正在对完全冗余的Assertion进行优化")
-            self.__optimizeFullyRedundantAssertion(fullyRedundantNodes)
+            self.__optimizeFullyRedundantAssertion()
             self.log.info("完全冗余Assertion优化完毕")
-        if partiallyRedundantNodes.__len__() > 0:
+        if self.partiallyRedundantInvNodes.__len__() > 0:
             self.log.info("正在对部分冗余的Assertion进行优化")
-            self.__optimizePartiallyRedundantAssertion(partiallyRedundantNodes)
+            self.__optimizePartiallyRedundantAssertion()
             self.log.info("部分冗余Assertion优化完毕")
 
         # 重新生成字节码序列
@@ -412,16 +411,41 @@ class AssertionOptimizer:
         # for pid, r in self.pathReachable.items():
         #     print(pid, r)
 
-        # 第二步，根据各条路径的可达性，判断每个invalid节点的冗余类型
+        # invalidNode2CallChain
+        # 第二步，根据各个函数调用链的可达性，判断每个invalid节点的冗余类型
         for invNode in self.invalidNodeList:
+            self.invNodeToRedundantCallChain[invNode] = []
             hasReachable = False  # 一个invalid的路径中是否包含可达的路径
-            for pathId in self.invalidNode2PathIds[invNode]:  # 取出一条路径
-                if self.pathReachable[pathId]:  # 找到一条可达的
-                    hasReachable = True
+            hasRedundantCallChain = False  # 一个invalid的所有函数调用链，是否都是冗余的
+            for pathIds in self.invalidNode2CallChain[invNode]:  # 取出一条函数调用链中的所有路径
+                isRedundantCallChain = True
+                for pathId in pathIds:  # 取出一条路径
+                    if self.pathReachable[pathId]:  # 找到一条可达的
+                        hasReachable = True
+                        isRedundantCallChain = False  # 该调用链不是冗余的
+                if isRedundantCallChain:  # 调用链是冗余的
+                    hasRedundantCallChain = True
+                    self.invNodeToRedundantCallChain[invNode].append(pathIds)
             if not hasReachable:  # 没有一条路径可达，是完全冗余
                 self.redundantType[invNode] = fullyRedundant
-            else:  # 既有可达的也有不可达的，是部分冗余
-                self.redundantType[invNode] = partiallyRedundant
+                self.fullyRedundantInvNodes.append(invNode)
+            else:  # 有可达的路径
+                if hasRedundantCallChain:  # 有冗余的函数调用链
+                    self.redundantType[invNode] = partiallyRedundant
+                    self.partiallyRedundantInvNodes.append(invNode)
+                else:  # 没有冗余的调用链
+                    self.redundantType[invNode] = nonRedundant
+                    self.nonRedundantInvNodes.append(invNode)
+        # # 第二步，根据各条路径的可达性，判断每个invalid节点的冗余类型
+        # for invNode in self.invalidNodeList:
+        #     hasReachable = False  # 一个invalid的路径中是否包含可达的路径
+        #     for pathId in self.invalidNode2PathIds[invNode]:  # 取出一条路径
+        #         if self.pathReachable[pathId]:  # 找到一条可达的
+        #             hasReachable = True
+        #     if not hasReachable:  # 没有一条路径可达，是完全冗余
+        #         self.redundantType[invNode] = fullyRedundant
+        #     else:  # 既有可达的也有不可达的，是部分冗余
+        #         self.redundantType[invNode] = partiallyRedundant
         # for node, t in self.redundantType.items():
         #     print(node, t)
 
@@ -447,7 +471,7 @@ class AssertionOptimizer:
         # g3 = DotGraphGenerator(self.domTree, self.nodes)
         # g3.genDotGraph(sys.argv[0], "_dom_tree")
 
-    def __optimizeFullyRedundantAssertion(self, fullyRedundantNodes: list):
+    def __optimizeFullyRedundantAssertion(self):
         '''
         对字节码中完全冗余的assertion进行优化
         :return:
@@ -455,7 +479,7 @@ class AssertionOptimizer:
         # for pid, t in self.redundantType.items():
         #     print(pid, t)
         executor = SymbolicExecutor(self.cfg)
-        for invNode in fullyRedundantNodes:  # 取出一个invalid节点
+        for invNode in self.fullyRedundantInvNodes:  # 取出一个invalid节点
             # 首先做一个检查，检查是否为jumpi的失败边走向Invalid，且该invalid节点只有一个入边
             assert self.inEdges[invNode].__len__() == 1
             assert invNode == self.blocks[self.inEdges[invNode][0]].jumpiDest[False]
@@ -507,13 +531,13 @@ class AssertionOptimizer:
                 self.blocks[invNode + 1].bytecode[0] = 0x1f
             # print(self.removedRange)
 
-    def __optimizePartiallyRedundantAssertion(self, partiallyRedundantNodes: list):
+    def __optimizePartiallyRedundantAssertion(self):
         '''
         对字节码中部分冗余的assertion进行优化
         :return:
         '''
         executor = SymbolicExecutor(self.cfg)
-        for invNode in partiallyRedundantNodes:
+        for invNode in self.partiallyRedundantInvNodes:
             # 首先做一个检查，检查是否为jumpi的失败边走向Invalid，且该invalid节点只有一个入边
             assert self.cfg.inEdges[invNode].__len__() == 1
             assert invNode == self.cfg.blocks[self.cfg.inEdges[invNode][0]].jumpiDest[False]
@@ -624,9 +648,9 @@ class AssertionOptimizer:
                 # 第六步，添加跳转边信息
                 # [[push的值，push的字节数，push指令的地址，push指令所在的block，jump所在的block，跳转的type(可选),新老函数体之间的offset(可选)]]
                 # 这里给一个设定：
-                # 1.一旦出现了第六个和第七个参数，即说明这是新构造函数体的相关跳转信息
-                # 2.此时为第一次读取到这条信息，后面会根据这条信息进行试填入。填入之后，直接修改信息，然后将最后两个参数pop，即将该信息变回到普通的信息，统一处理。
-                # 3.一旦出现第六第七个参数，则前面所有的信息都不是真实的，需要根据跳转边类型进行修改如下
+                # 在重定位时，一旦出现了第六个和第七个参数，即说明这是新构造函数体的相关跳转信息
+                # 此时为第一次读取到这条信息，后面会根据这条信息进行试填入。填入之后，直接修改信息，然后将最后两个参数pop，即将该信息变回到普通的信息，统一处理。
+                # 一旦出现第六第七个参数，则前面所有的信息都不是真实的，需要根据跳转边类型进行修改如下
                 #   跳转的type为0，说明push在且jump也在新函数体，但是push的值不在（新函数体跳到其他地方），此时需要将2、3、4号位信息加上offset
                 #   跳转的type为1，说明push在且jump也在新函数体，且push的值在（新函数体内部的跳转），此时需要将0、2、3、4号位信息加上offset，并重新计算字节数
                 #   跳转的type为2，说明push不在且jump也不在新函数体，但是push的值在，而且callerNode==jump所在的Block（新函数的调用），此时需要将0号位的push加上offset，并重新计算字节数（调用新的函数体）
@@ -719,13 +743,13 @@ class AssertionOptimizer:
         # 第二步，将出现在已被删除字节码序列中的跳转信息删除
         # [[push的值，push的字节数，push指令的地址，push指令所在的block，jump所在的block，跳转的type(可选),新老函数体之间的offset(可选)]]
         # 这里给一个设定：
-        # 1.一旦出现了第六个和第七个参数，即说明这是新构造函数体的相关跳转信息
-        # 2.此时为第一次读取到这条信息，后面会根据这条信息进行试填入。填入之后，直接修改信息，然后将最后两个参数pop，即将该信息变回到普通的信息，统一处理。
-        # 3.一旦出现第六第七个参数，则前面所有的信息都不是真实的，需要根据跳转边类型进行修改如下
+        # 在重定位时，一旦出现了第六个和第七个参数，即说明这是新构造函数体的相关跳转信息
+        # 此时为第一次读取到这条信息，后面会根据这条信息进行试填入。填入之后，直接修改信息，然后将最后两个参数pop，即将该信息变回到普通的信息，统一处理。
+        # 一旦出现第六第七个参数，则前面所有的信息都不是真实的，需要根据跳转边类型进行修改如下
         #   跳转的type为0，说明push在且jump也在新函数体，但是push的值不在（新函数体跳到其他地方），此时需要将2、3、4号位信息加上offset
         #   跳转的type为1，说明push在且jump也在新函数体，且push的值在（新函数体内部的跳转），此时需要将0、2、3、4号位信息加上offset，并重新计算字节数
-        #   跳转的type为2，说明push不在且jump也不在新函数体，但是push的值在（新函数的调用），此时需要将0号位的push加上offset，并重新计算字节数（调用新的函数体）
-        #   跳转的type为3，说明push不在但jump在新函数体（新函数体返回），此时需要将4号位加上offset即可
+        #   跳转的type为2，说明push不在且jump也不在新函数体，但是push的值在，而且callerNode==jump所在的Block（新函数的调用），此时需要将0号位的push加上offset，并重新计算字节数（调用新的函数体）
+        #   跳转的type为3，说明push不在但jump在新函数体,而且callerNodeJumpAddr+1==push的值（新函数体返回），此时需要将4号位加上offset即可
         #   跳转的type为4，说明push在但jump不在新函数体（新函数体对其他函数的调用后返回），此时需要将0、2、3号位信息加上offset，并重新计算字节数
         removedInfo = []
         # for _from,_to in self.edges.items():
@@ -814,13 +838,13 @@ class AssertionOptimizer:
         # 这两种情况都需要改地址映射，并重新生成所有地址映射
         # [[push的值，push的字节数，push指令的地址，push指令所在的block，jump所在的block，跳转的type(可选),新老函数体之间的offset(可选)]]
         # 这里给一个设定：
-        # 1.一旦出现了第六个和第七个参数，即说明这是新构造函数体的相关跳转信息
-        # 2.此时为第一次读取到这条信息，后面会根据这条信息进行试填入。填入之后，直接修改信息，然后将最后两个参数pop，即将该信息变回到普通的信息，统一处理。
-        # 3.一旦出现第六第七个参数，则前面所有的信息都不是真实的，需要根据跳转边类型进行修改如下
+        # 在重定位时，一旦出现了第六个和第七个参数，即说明这是新构造函数体的相关跳转信息
+        # 此时为第一次读取到这条信息，后面会根据这条信息进行试填入。填入之后，直接修改信息，然后将最后两个参数pop，即将该信息变回到普通的信息，统一处理。
+        # 一旦出现第六第七个参数，则前面所有的信息都不是真实的，需要根据跳转边类型进行修改如下
         #   跳转的type为0，说明push在且jump也在新函数体，但是push的值不在（新函数体跳到其他地方），此时需要将2、3、4号位信息加上offset
         #   跳转的type为1，说明push在且jump也在新函数体，且push的值在（新函数体内部的跳转），此时需要将0、2、3、4号位信息加上offset，并重新计算字节数
-        #   跳转的type为2，说明push不在且jump也不在新函数体，但是push的值在（新函数的调用），此时需要将0号位的push加上offset，并重新计算字节数（调用新的函数体）
-        #   跳转的type为3，说明push不在但jump在新函数体（新函数体返回），此时需要将4号位加上offset即可
+        #   跳转的type为2，说明push不在且jump也不在新函数体，但是push的值在，而且callerNode==jump所在的Block（新函数的调用），此时需要将0号位的push加上offset，并重新计算字节数（调用新的函数体）
+        #   跳转的type为3，说明push不在但jump在新函数体,而且callerNodeJumpAddr+1==push的值（新函数体返回），此时需要将4号位加上offset即可
         #   跳转的type为4，说明push在但jump不在新函数体（新函数体对其他函数的调用后返回），此时需要将0、2、3号位信息加上offset，并重新计算字节数
 
         # 首先要根据push指令所在的地址，对这些进行进行一个排序(在路径生成器中已去重)
