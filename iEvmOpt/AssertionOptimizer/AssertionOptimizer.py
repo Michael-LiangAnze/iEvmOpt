@@ -609,6 +609,12 @@ class AssertionOptimizer:
                         beginAddr += offset
                         endAddr += offset
                         self.removedRange[beginOffset].append([beginAddr, endAddr])
+                    elif node == invNode + 1 and self.inEdges[invNode + 1].__len__() == 1:
+                        # invalid的下一个block，只有一条入边，说明这个jumpdest也可以删除
+                        self.removedRange[invNode + 1 + offset].append([invNode + 1 + offset, invNode + 2 + offset])
+                        newBlock.bytecode[0] = 0x1f
+                    translator = OpcodeTranslator(self.cfg.exitBlockId)
+                    newBlock.instrs = translator.translate(newBlock)
                     # 放入到cfg中
                     self.blocks[beginOffset] = newBlock  # 添加到原图中
                     self.nodes.append(beginOffset)  # 添加到原图中
@@ -671,15 +677,24 @@ class AssertionOptimizer:
                 # print(newJumpEdgeInfo)
                 for info in newJumpEdgeInfo:
                     self.jumpEdgeInfo.append(info)
-                for node in funcBodyNodes:  # 将不需要重定位的边添加到edges中
+                # print(targetNode,invNode)
+                for node in funcBodyNodes:  # 将不需要重定位，而且不在删除序列中的边添加到edges中
                     tempType = self.blocks[node].jumpType
                     if tempType == "fall":
+                        if targetNode <= node <= invNode:
+                            continue
                         _from = node + offset
                         _to = node + offset + self.blocks[node].length
                         self.edges[_from].append(_to)
                     elif tempType == "terminal":
+                        if targetNode <= node <= invNode:
+                            continue
                         _from = node + offset
                         self.edges[_from].append(self.cfg.exitBlockId)
+                    elif tempType == "conditional":  # 添加其中的fall边
+                        _from = node + offset
+                        _to = _to = node + offset + self.blocks[node].length
+                        self.edges[_from].append(_to)
 
     def __regenerateBytecode(self):
         '''
@@ -713,6 +728,8 @@ class AssertionOptimizer:
         #   跳转的type为3，说明push不在但jump在新函数体（新函数体返回），此时需要将4号位加上offset即可
         #   跳转的type为4，说明push在但jump不在新函数体（新函数体对其他函数的调用后返回），此时需要将0、2、3号位信息加上offset，并重新计算字节数
         removedInfo = []
+        # for _from,_to in self.edges.items():
+        #     print(_from,_to)
         for info in self.jumpEdgeInfo:
             # 首先做一个检查
             addr = info[0]
@@ -756,6 +773,8 @@ class AssertionOptimizer:
             if delPush:  # 确定要删除
                 removedInfo.append(info)
                 self.edges[jumpBlock].remove(addr)
+                if self.blocks[jumpBlock].jumpType == "conditional":  # 删除其中的fall边
+                    self.edges[jumpBlock].remove(jumpBlock + self.blocks[jumpBlock].length)
         for info in removedInfo:
             self.jumpEdgeInfo.remove(info)  # 删除对应的信息
         # print(self.jumpEdgeInfo)
@@ -993,12 +1012,9 @@ class AssertionOptimizer:
         # 测试使用，将新的cfg输出为图片，方便检查
         self.blocks[self.cfg.exitBlockId].bytecode = bytearray()
         self.blocks[self.cfg.exitBlockId].length = 0
-        translator = OpcodeTranslator(self.blocks, self.cfg.exitBlockId)
-        translator.translate()
-
-        # 修改原有的指令信息
-        for node in self.nodes:
-            self.blocks[node].instr = translator.getParsedOpcode(node)
+        translator = OpcodeTranslator(self.cfg.exitBlockId)
+        for node in self.blocks.keys():
+            self.blocks[node].instrs = translator.translate(self.blocks[node])
 
         # for b in self.blocks.values():
         #     b.printBlockInfo()
