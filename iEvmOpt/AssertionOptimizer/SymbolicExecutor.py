@@ -137,8 +137,8 @@ class SymbolicExecutor:
                 self.__execAddMod()
             case 0x09:
                 self.__execMulMod()
-            # case 0x0a:
-            #     self.__execExp()
+            case 0x0a:
+                self.__execExp()
             # case 0x0b:
             #     self.__execSignExtend()
             case 0x10:
@@ -284,7 +284,15 @@ class SymbolicExecutor:
         self.stack.push(simplify(Extract(255, 0, res)))  # 先做截断再push
 
     def __execExp(self):  # 0x0a
-        assert 0
+        a, b = self.stack.pop(), self.stack.pop()
+        assert (not is_bool(a)) and (not is_bool(b))
+        if is_bv_value(a) and is_bv_value(b):
+            res = BitVecVal(pow(int(a.__str__()), int(b.__str__())), 256)
+            self.stack.push(res)
+        else:
+            res = BitVec("exp#" + a.__str__() + "#" + b.__str__(), 256)
+            self.stack.push(res)
+
 
     def __execSignExtend(self):  # 0x0b
         assert 0

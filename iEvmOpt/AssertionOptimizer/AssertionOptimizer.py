@@ -26,12 +26,13 @@ nonRedundant = "nonRedundant"
 
 
 class AssertionOptimizer:
-    def __init__(self, cfg: Cfg, inputFile: str, outputFile: str):
+    def __init__(self, cfg: Cfg, inputFile: str, outputFile: str, outputProcessInfo: bool = False):
         self.cfg = cfg
         self.blocks = self.cfg.blocks  # 存储基本块，格式为 起始offset:BasicBlock
         self.inputFile = inputFile  # 处理前的文件
         self.outputFile = outputFile  # 处理后的新文件
         self.log = Logger()
+        self.outputProcessInfo = outputProcessInfo
 
         # 函数识别、处理时需要用到的信息
         self.uncondJumpEdge = []  # 存储所有的unconditional jump的边，类型为JumpEdge
@@ -126,7 +127,7 @@ class AssertionOptimizer:
         self.__buildDominatorTree()
 
         self.log.info(
-            "一共找到{}个可优化的assertion，具体为：{}个完全冗余，{}个部分冗余，{}个不冗余".format(
+            "一共找到{}个待优化的assertion，具体为：{}个完全冗余，{}个部分冗余，{}个不冗余".format(
                 self.invalidNodeList.__len__(), self.fullyRedundantInvNodes.__len__(),
                 self.partiallyRedundantInvNodes.__len__(),
                 self.nonRedundantInvNodes.__len__()))
@@ -394,9 +395,10 @@ class AssertionOptimizer:
                             if nextNode != expectedTarget:  # 不匹配，直接置为不可达，后续不做check
                                 self.pathReachable[pathId] = False
                                 isSolve = False  # 不对这一条路径使用约束求解了
-                                self.log.processing(
-                                    "路径{}在实际运行中不可能出现：在节点{}处本应跳转到{}，却跳转到了{}".format(pathId, curNode, expectedTarget,
-                                                                                   nextNode))
+                                if self.outputProcessInfo:  # 需要输出处理信息
+                                    self.log.processing(
+                                        "路径{}在实际运行中不可能出现：在节点{}处本应跳转到{}，却跳转到了{}".format(pathId, curNode, expectedTarget,
+                                                                                       nextNode))
                                 break
                         else:  # 不是确定的跳转地址
                             if nextNode == self.cfg.blocks[curNode].jumpiDest[True]:
@@ -514,8 +516,8 @@ class AssertionOptimizer:
                 node = self.domTree[node]
             assert targetAddr and targetNode  # 不能为none
             assert self.blocks[targetNode].blockType != "dispatcher"  # 不应该出现在dispatcher中
-            # print(targetNode)
-            # print(targetAddr)
+            if self.outputProcessInfo:  # 需要输出处理信息
+                self.log.processing("找到和节点{}程序状态相同的地址:{}，对应的节点为:{}".format(invNode, targetAddr, targetNode))
 
             # 第三步，将这一段序列置为空指令
             for node in self.nodes:
@@ -581,8 +583,8 @@ class AssertionOptimizer:
                 node = self.domTree[node]
             assert targetAddr and targetNode  # 不能为none
             assert self.cfg.blocks[targetNode].blockType != "dispatcher"  # 不应该出现在dispatcher中
-            # print(targetAddr)
-            # print(targetNode)
+            if self.outputProcessInfo:  # 需要输出处理信息
+                self.log.processing("找到和节点{}程序状态相同的地址:{}，对应的节点为:{}".format(invNode, targetAddr, targetNode))
 
             # 第四步，构造一个新函数体，其中去除了assertion相关的字节码
             # 新函数体不包括的部分为： targetAddr <= addr <= invNode之间的字节码
@@ -1052,7 +1054,6 @@ class AssertionOptimizer:
             self.nodes.remove(node)
             self.blocks.pop(node)
         # self.blocks[299].printBlockInfo()
-
 
     def __outputFile(self):
         '''

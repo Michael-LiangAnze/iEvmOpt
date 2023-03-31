@@ -92,8 +92,8 @@ class TagStack:
                 self.__execAddMod()
             case 0x09:
                 self.__execMulMod()
-            # case 0x0a:
-            #     self.__execExp()
+            case 0x0a:
+                self.__execExp()
             # case 0x0b:
             #     self.__execSignExtend()
             case 0x10:
@@ -217,7 +217,9 @@ class TagStack:
         self.tagStack.push(None)
 
     def __execExp(self):  # 0x0a
-        assert 0
+        self.tagStack.pop()
+        self.tagStack.pop()
+        self.tagStack.push(None)
 
     def __execSignExtend(self):  # 0x0b
         assert 0

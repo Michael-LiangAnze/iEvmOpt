@@ -40,8 +40,8 @@ class OpcodeTranslator:
                     addrToContent[tempPc] = "ADDMOD"
                 case 0x09:
                     addrToContent[tempPc] = "MULMOD"
-                # case 0x0a:
-                #     self.__execExp()
+                case 0x0a:
+                    addrToContent[tempPc] = "EXP"
                 # case 0x0b:
                 #     self.__execSignExtend()
                 case 0x10:
