@@ -536,189 +536,181 @@ class AssertionOptimizer:
         对字节码中部分冗余的assertion进行优化
         :return:
         '''
+        # 第一步，修改原来exit block的长度以及内容，它的作用是替代合约字节码中的数据段，
+        # 方便在后面插入新构造的函数体
+        curLastNode = self.cfg.exitBlockId
+        postStr = self.originalBytecodeStr[self.funcBodyStrBeginIndex + self.originalLength * 2:]
+        assert postStr.__len__() % 2 == 0
+        self.blocks[curLastNode].length = postStr.__len__() // 2  # 直接改exit block的长度
+        tempByteCode = bytearray()
+        for i in range(postStr.__len__() // 2):
+            tempByteCode.append(0x1f)  # 指令置为空指令
+        self.blocks[curLastNode].bytecode = tempByteCode
+
         executor = SymbolicExecutor(self.cfg)
-        for invNode in self.partiallyRedundantInvNodes:
+        for invNode in self.partiallyRedundantInvNodes:  # 在可达性分析中已经确认该节点是部分冗余的
             # 首先做一个检查，检查是否为jumpi的失败边走向Invalid，且该invalid节点只有一个入边
             assert self.cfg.inEdges[invNode].__len__() == 1
             assert invNode == self.cfg.blocks[self.cfg.inEdges[invNode][0]].jumpiDest[False]
-            for pathIdsOfCallChain in self.invalidNode2CallChain[invNode]:  # 对一个调用链
-                # 第一步，检查所有的函数调用链，找到所有路径都不可达的函数函数调用链
-                allUnreachable = True
-                for pathId in pathIdsOfCallChain:  # 取出所有的路径
-                    if self.pathReachable[pathId]:  # 发现一条是可达的
-                        allUnreachable = False
-                        break
-                if not allUnreachable:  # 该调用链中存在可达的路径
-                    continue
 
-                # 第二步，获取路径上所有指令位置的程序状态，顺带获取invalid所在函数的调用者节点
-                pathNodes = self.invalidPaths[pathIdsOfCallChain[0]].pathNodes  # 随意取出一条路径
-                stateMap = {}  # 状态map，实际存储的是，地址处的指令在执行前的程序状态
-                invNodeFuncId = self.node2FuncId[pathNodes[pathNodes.__len__() - 1]]  # 找出invalid节点所在的函数的id
-                callerNode = None  # 调用者节点
-                lastNode = pathNodes[0]
-                lastNodeFuncId = None
-                executor.clearExecutor()
-                for node in pathNodes:
-                    executor.setBeginBlock(node)
-                    while not executor.allInstrsExecuted():  # block还没有执行完
-                        offset, state = executor.getCurState()
-                        stateMap[offset] = state
-                        executor.execNextOpCode()
+            # 第二步，使用符号执行，找到程序状态与Invalid执行完之后相同的targetNode和targetAddr
+            pathIds = self.invNodeToRedundantCallChain[invNode][0]  # 随意取出一条调用链
+            pathNodes = self.invalidPaths[pathIds[0]].pathNodes  # 随意取出一条路径
+            stateMap = {}  # 状态map，实际存储的是，地址处的指令在执行前的程序状态
+            executor.clearExecutor()
+            for node in pathNodes:
+                executor.setBeginBlock(node)
+                while not executor.allInstrsExecuted():  # block还没有执行完
+                    offset, state = executor.getCurState()
+                    stateMap[offset] = state
+                    executor.execNextOpCode()
+
+            # 第三步，在支配树中，从invalid节点出发，寻找程序状态与之相同的地址，定位invalid相关字节码
+            # 因为在符号执行中，invalid指令没有做任何操作，因此invalid处的状态和执行完jumpi的状态是一致的
+            # 即 targetState = stateMap[invNode]
+            targetAddr = None
+            targetNode = None
+            targetState = stateMap[invNode]
+            node = self.domTree[invNode]
+            while node != 0:
+                addrs = self.cfg.blocks[node].instrAddrs
+                for addr in reversed(addrs):  # 从后往前遍历
+                    if stateMap[addr] == targetState:  # 找到一个状态相同的点
+                        targetAddr = addr
+                        targetNode = node
+                node = self.domTree[node]
+            assert targetAddr and targetNode  # 不能为none
+            assert self.cfg.blocks[targetNode].blockType != "dispatcher"  # 不应该出现在dispatcher中
+            # print(targetAddr)
+            # print(targetNode)
+
+            # 第四步，构造一个新函数体，其中去除了assertion相关的字节码
+            # 新函数体不包括的部分为： targetAddr <= addr <= invNode之间的字节码
+            invNodeFuncId = self.node2FuncId[invNode]  # 找出invalid节点所在的函数的id
+            funcBodyNodes = self.funcBodyDict[invNodeFuncId].funcBodyNodes
+            # print(funcBodyNodes)
+            newFuncBodyNodes = []
+            funcBodyNodes.sort()  # 从小到大一个个加
+            offset = curLastNode + self.blocks[curLastNode].length - funcBodyNodes[0]  # 两个函数体之间的偏移量
+            # print(curLastNode,self.blocks[curLastNode].length,funcBodyNodes[0])
+            # print(offset)
+            for node in funcBodyNodes:  # 对每一个原有的block，都新建一个相同的block
+                originalBlock = self.blocks[node]
+                beginOffset = node + offset
+                newBlockInfo = {}
+                newBlockInfo["offset"] = beginOffset
+                newBlockInfo["length"] = originalBlock.length
+                newBlockInfo["type"] = originalBlock.blockType
+                newBlockInfo["stackBalance"] = str(originalBlock.stackBalance)
+                newBlockInfo["bytecodeHex"] = originalBlock.bytecodeStr
+                newBlockInfo["parsedOpcodes"] = originalBlock.instrsStr
+                newBlock = BasicBlock(newBlockInfo)  # 新建一个block
+                # 添加删除序列信息，并将被删除序列置为空指令
+                self.removedRange[beginOffset] = []
+                if targetNode <= node <= invNode:  # 是要删除字节码的block
+                    beginAddr = max(targetAddr, node)
+                    endAddr = node + originalBlock.length
+                    for i in range(beginAddr - node, endAddr - node):
+                        newBlock.bytecode[i] = 0x1f  # 置为空指令
+                    beginAddr += offset
+                    endAddr += offset
+                    self.removedRange[beginOffset].append([beginAddr, endAddr])
+                elif node == invNode + 1 and self.inEdges[invNode + 1].__len__() == 1:
+                    # invalid的下一个block，只有一条入边，说明这个jumpdest也可以删除
+                    self.removedRange[invNode + 1 + offset].append([invNode + 1 + offset, invNode + 2 + offset])
+                    newBlock.bytecode[0] = 0x1f
+                translator = OpcodeTranslator(self.cfg.exitBlockId)
+                newBlock.instrs = translator.translate(newBlock)
+                # 放入到cfg中
+                self.blocks[beginOffset] = newBlock  # 添加到原图中
+                self.nodes.append(beginOffset)  # 添加到原图中
+                self.edges[beginOffset] = []
+                newFuncBodyNodes.append(beginOffset)
+
+            # 第六步，找出各个函数调用链的，新函数体的调用节点
+            callerNodes = []
+            for callChain in self.invNodeToRedundantCallChain[invNode]:
+                pathId = callChain[0]  # 在调用链上随意取出一条路径
+                pathNodes = self.invalidPaths[pathId].pathNodes
+                for node in reversed(pathNodes):
                     curNodeFuncId = self.node2FuncId[node]
-                    if curNodeFuncId == invNodeFuncId and lastNodeFuncId != curNodeFuncId:
-                        callerNode = lastNode
-                    lastNode = node
-                    lastNodeFuncId = curNodeFuncId
-                # print(callerNode)
+                    if curNodeFuncId != invNodeFuncId:  # 出了invalid的函数
+                        callerNodes.append(node)
+                        break
+            returnedNodes = [node + self.blocks[node].length for node in callerNodes]  # 应当返回的节点
 
-                # 第三步，在支配树中，从invalid节点出发，寻找程序状态与之相同的地址，定位invalid相关字节码
-                # 因为在符号执行中，invalid指令没有做任何操作，因此invalid处的状态和执行jumpi前的状态是一致的
-                # 即 targetState = stateMap[invNode]
-                targetAddr = None
-                targetNode = None
-                targetState = stateMap[invNode]
-                node = self.domTree[invNode]
-                while node != 0:
-                    addrs = self.cfg.blocks[node].instrAddrs
-                    for addr in reversed(addrs):  # 从后往前遍历
-                        if stateMap[addr] == targetState:  # 找到一个状态相同的点
-                            targetAddr = addr
-                            targetNode = node
-                    node = self.domTree[node]
-                assert targetAddr and targetNode  # 不能为none
-                assert self.cfg.blocks[targetNode].blockType != "dispatcher"  # 不应该出现在dispatcher中
-                # print(targetAddr)
-                # print(targetNode)
-
-                # 第四步，在原有的函数体部分后面，添加一个新的block，这个block没有任何内容，它的作用是替代合约字节码中的数据段，
-                # 方便在后面插入新构造的函数体
-                curLastNode = max(self.nodes)
-                if curLastNode == self.cfg.exitBlockId and self.blocks[curLastNode].length == 0:  # 新的block还没有添加
-                    postStr = self.originalBytecodeStr[self.funcBodyStrBeginIndex + self.originalLength * 2:]
-                    assert postStr.__len__() % 2 == 0
-                    self.blocks[curLastNode].length = postStr.__len__() // 2  # 直接改exit block的长度
-                    tempByteCode = bytearray()
-                    for i in range(postStr.__len__() // 2):
-                        tempByteCode.append(0x00)
-                    self.blocks[curLastNode].bytecode = tempByteCode
-
-                # 第五步，构造一个新函数体，其中去除了assertion相关的字节码
-                # 新函数体不包括的部分为： targetAddr <= addr <= invNode之间的字节码
-                funcBodyNodes = self.funcBodyDict[invNodeFuncId].funcBodyNodes
-                # print(funcBodyNodes)
-                newFuncBodyNodes = []
-                funcBodyNodes.sort()  # 从小到大一个个加
-                offset = curLastNode + self.blocks[curLastNode].length - funcBodyNodes[0]  # 两个函数体之间的偏移量
-                # print(curLastNode,self.blocks[curLastNode].length,funcBodyNodes[0])
-                # print(offset)
-                for node in funcBodyNodes:  # 对每一个原有的block，都新建一个相同的block
-                    originalBlock = self.blocks[node]
-                    beginOffset = node + offset
-                    newBlockInfo = {}
-                    newBlockInfo["offset"] = beginOffset
-                    newBlockInfo["length"] = originalBlock.length
-                    newBlockInfo["type"] = originalBlock.blockType
-                    newBlockInfo["stackBalance"] = str(originalBlock.stackBalance)
-                    newBlockInfo["bytecodeHex"] = originalBlock.bytecodeStr
-                    newBlockInfo["parsedOpcodes"] = originalBlock.instrsStr
-                    newBlock = BasicBlock(newBlockInfo)  # 新建一个block
-                    # 添加删除序列信息，并将被删除序列置为空指令
-                    self.removedRange[beginOffset] = []
-                    if targetNode <= node <= invNode:  # 是要删除字节码的block
-                        beginAddr = max(targetAddr, node)
-                        endAddr = node + originalBlock.length
-                        for i in range(beginAddr - node, endAddr - node):
-                            newBlock.bytecode[i] = 0x1f  # 置为空指令
-                        beginAddr += offset
-                        endAddr += offset
-                        self.removedRange[beginOffset].append([beginAddr, endAddr])
-                    elif node == invNode + 1 and self.inEdges[invNode + 1].__len__() == 1:
-                        # invalid的下一个block，只有一条入边，说明这个jumpdest也可以删除
-                        self.removedRange[invNode + 1 + offset].append([invNode + 1 + offset, invNode + 2 + offset])
-                        newBlock.bytecode[0] = 0x1f
-                    translator = OpcodeTranslator(self.cfg.exitBlockId)
-                    newBlock.instrs = translator.translate(newBlock)
-                    # 放入到cfg中
-                    self.blocks[beginOffset] = newBlock  # 添加到原图中
-                    self.nodes.append(beginOffset)  # 添加到原图中
-                    self.edges[beginOffset] = []
-                    newFuncBodyNodes.append(beginOffset)
-
-                # 第六步，添加跳转边信息
-                # [[push的值，push的字节数，push指令的地址，push指令所在的block，jump所在的block，跳转的type(可选),新老函数体之间的offset(可选)]]
-                # 这里给一个设定：
-                # 在重定位时，一旦出现了第六个和第七个参数，即说明这是新构造函数体的相关跳转信息
-                # 此时为第一次读取到这条信息，后面会根据这条信息进行试填入。填入之后，直接修改信息，然后将最后两个参数pop，即将该信息变回到普通的信息，统一处理。
-                # 一旦出现第六第七个参数，则前面所有的信息都不是真实的，需要根据跳转边类型进行修改如下
-                #   跳转的type为0，说明push在且jump也在新函数体，但是push的值不在（新函数体跳到其他地方），此时需要将2、3、4号位信息加上offset
-                #   跳转的type为1，说明push在且jump也在新函数体，且push的值在（新函数体内部的跳转），此时需要将0、2、3、4号位信息加上offset，并重新计算字节数
-                #   跳转的type为2，说明push不在且jump也不在新函数体，但是push的值在，而且callerNode==jump所在的Block（新函数的调用），此时需要将0号位的push加上offset，并重新计算字节数（调用新的函数体）
-                #   跳转的type为3，说明push不在但jump在新函数体,而且callerNodeJumpAddr+1==push的值（新函数体返回），此时需要将4号位加上offset即可
-                #   跳转的type为4，说明push在但jump不在新函数体（新函数体对其他函数的调用后返回），此时需要将0、2、3号位信息加上offset，并重新计算字节数
-                newJumpEdgeInfo = []  # 要新添加的跳转边信息
-                originalFuncRange = range(funcBodyNodes[0], funcBodyNodes[-1] + self.blocks[funcBodyNodes[-1]].length)
-                for info in self.jumpEdgeInfo:
-                    newInfo = list(info)
-                    checker = 0  # 将三个信息映射到一个数字
-                    if info[3] in originalFuncRange:  # push在
-                        checker |= 4
-                    if info[4] in originalFuncRange:  # jump在
-                        checker |= 2
-                    if info[0] in originalFuncRange:  # push的值在
-                        checker |= 1
-                    match checker:
-                        case 0b110:  # 0
-                            newInfo.append(0)
-                            newInfo.append(offset)
-                            newJumpEdgeInfo.append(newInfo)
-                            self.edges[info[4] + offset].append(info[0])
-                        case 0b111:  # 1
-                            newInfo.append(1)
-                            newInfo.append(offset)
-                            newJumpEdgeInfo.append(newInfo)
-                            self.edges[info[4] + offset].append(info[0] + offset)
-                        case 0b001:  # 2
-                            if info[4] == callerNode:  # 是新函数体的调用边
-                                newInfo.append(2)
-                                newInfo.append(offset)
-                                newJumpEdgeInfo.append(newInfo)
-                                self.edges[info[4]].append(info[0] + offset)
-                        case 0b011 | 0b010:  # 3
-                            assert info[0] not in originalFuncRange  # 必须是返回边
-                            if info[0] == callerNode + self.blocks[callerNode].length:  # 是新函数体的返回边
-                                newInfo.append(3)
-                                newInfo.append(offset)
-                                newJumpEdgeInfo.append(newInfo)
-                                self.edges[info[4] + offset].append(info[0])
-                        case 0b101 | 0b100:  # 4
-                            assert info[0] in originalFuncRange  # 必须是返回到新函数体
-                            newInfo.append(4)
+            # 第七步，添加跳转边信息
+            # [[push的值，push的字节数，push指令的地址，push指令所在的block，jump所在的block，跳转的type(可选),新老函数体之间的offset(可选)]]
+            # 这里给一个设定：
+            # 在重定位时，一旦出现了第六个和第七个参数，即说明这是新构造函数体的相关跳转信息
+            # 此时为第一次读取到这条信息，后面会根据这条信息进行试填入。填入之后，直接修改信息，然后将最后两个参数pop，即将该信息变回到普通的信息，统一处理。
+            # 一旦出现第六第七个参数，则前面所有的信息都不是真实的，需要根据跳转边类型进行修改如下
+            #   跳转的type为0，说明push在且jump也在新函数体，但是push的值不在（新函数体跳到其他地方），此时需要将2、3、4号位信息加上offset
+            #   跳转的type为1，说明push在且jump也在新函数体，且push的值在（新函数体内部的跳转），此时需要将0、2、3、4号位信息加上offset，并重新计算字节数
+            #   跳转的type为2，说明push不在且jump也不在新函数体，但是push的值在，而且callerNode==jump所在的Block（新函数的调用），此时需要将0号位的push加上offset，并重新计算字节数（调用新的函数体）
+            #   跳转的type为3，说明push不在但jump在新函数体,而且callerNodeJumpAddr+1==push的值（新函数体返回），此时需要将4号位加上offset即可
+            #   跳转的type为4，说明push在但jump不在新函数体（新函数体对其他函数的调用后返回），此时需要将0、2、3号位信息加上offset，并重新计算字节数
+            newJumpEdgeInfo = []  # 要新添加的跳转边信息
+            originalFuncRange = range(funcBodyNodes[0], funcBodyNodes[-1] + self.blocks[funcBodyNodes[-1]].length)
+            for info in self.jumpEdgeInfo:
+                newInfo = list(info)
+                checker = 0  # 将三个信息映射到一个数字
+                if info[3] in originalFuncRange:  # push在
+                    checker |= 4
+                if info[4] in originalFuncRange:  # jump在
+                    checker |= 2
+                if info[0] in originalFuncRange:  # push的值在
+                    checker |= 1
+                match checker:
+                    case 0b110:  # 0
+                        newInfo.append(0)
+                        newInfo.append(offset)
+                        newJumpEdgeInfo.append(newInfo)
+                        self.edges[info[4] + offset].append(info[0])
+                    case 0b111:  # 1
+                        newInfo.append(1)
+                        newInfo.append(offset)
+                        newJumpEdgeInfo.append(newInfo)
+                        self.edges[info[4] + offset].append(info[0] + offset)
+                    case 0b001:  # 2
+                        if info[4] in callerNodes:  # 是新函数体的调用边
+                            newInfo.append(2)
                             newInfo.append(offset)
                             newJumpEdgeInfo.append(newInfo)
                             self.edges[info[4]].append(info[0] + offset)
-                        # 否则，不需要修改这条边信息
-                # print(newJumpEdgeInfo)
-                for info in newJumpEdgeInfo:
-                    self.jumpEdgeInfo.append(info)
-                # print(targetNode,invNode)
-                for node in funcBodyNodes:  # 将不需要重定位，而且不在删除序列中的边添加到edges中
-                    tempType = self.blocks[node].jumpType
-                    if tempType == "fall":
-                        if targetNode <= node <= invNode:
-                            continue
-                        _from = node + offset
-                        _to = node + offset + self.blocks[node].length
-                        self.edges[_from].append(_to)
-                    elif tempType == "terminal":
-                        if targetNode <= node <= invNode:
-                            continue
-                        _from = node + offset
-                        self.edges[_from].append(self.cfg.exitBlockId)
-                    elif tempType == "conditional":  # 添加其中的fall边
-                        _from = node + offset
-                        _to = _to = node + offset + self.blocks[node].length
-                        self.edges[_from].append(_to)
+                    case 0b011 | 0b010:  # 3
+                        assert info[0] not in originalFuncRange  # 必须是返回边
+                        if info[0] in returnedNodes:  # 是新函数体的返回边
+                            newInfo.append(3)
+                            newInfo.append(offset)
+                            newJumpEdgeInfo.append(newInfo)
+                            self.edges[info[4] + offset].append(info[0])
+                    case 0b101 | 0b100:  # 4
+                        assert info[0] in originalFuncRange  # 必须是返回到新函数体
+                        newInfo.append(4)
+                        newInfo.append(offset)
+                        newJumpEdgeInfo.append(newInfo)
+                        self.edges[info[4]].append(info[0] + offset)
+                    # 否则，不需要修改这条边信息
+            for info in newJumpEdgeInfo:
+                self.jumpEdgeInfo.append(info)
+            for node in funcBodyNodes:  # 将不需要重定位，而且不在删除序列中的边添加到edges中
+                tempType = self.blocks[node].jumpType
+                if tempType == "fall":
+                    if targetNode <= node <= invNode:
+                        continue
+                    _from = node + offset
+                    _to = node + offset + self.blocks[node].length
+                    self.edges[_from].append(_to)
+                elif tempType == "terminal":
+                    if targetNode <= node <= invNode:
+                        continue
+                    _from = node + offset
+                    self.edges[_from].append(self.cfg.exitBlockId)
+                elif tempType == "conditional":  # 添加其中的fall边
+                    _from = node + offset
+                    _to = _to = node + offset + self.blocks[node].length
+                    self.edges[_from].append(_to)
 
     def __regenerateBytecode(self):
         '''
@@ -1008,10 +1000,59 @@ class AssertionOptimizer:
             elif self.blocks[node].jumpType == "fall":
                 if node != self.cfg.exitBlockId:  # exit节点默认也是fall类型
                     newEdge[node].append(node + self.blocks[node].length)
-
         self.edges = newEdge
         # for b in self.blocks.values():
         #     b.printBlockInfo()
+
+        # translator = OpcodeTranslator(self.cfg.exitBlockId)
+        # for node in self.blocks.keys():
+        #     self.blocks[node].instrs = translator.translate(self.blocks[node])
+        # self.blocks[299].printBlockInfo()
+        # self.blocks[308].printBlockInfo()
+        # 第七步，将相邻的，本应该连在一起的block合成一个大的block
+        self.nodes.sort()
+        removedNode = []
+        index = 0
+        while index < self.nodes.__len__() - 1:
+            node = self.nodes[index]
+            nextNode = self.nodes[index + 1]
+            if self.cfg.exitBlockId in [node, nextNode]:
+                index += 1
+                continue
+            lastByte = self.blocks[node].bytecode[-1]
+            nextBlockFirstByte = self.blocks[nextNode].bytecode[0]
+            if lastByte not in [0x56, 0x57] and nextBlockFirstByte != 0x5b:
+                # 不以jump/jumpi结尾，而且不以jumpdest开头的两个block
+                combinedNode = [node, nextNode]
+                index += 1
+                while index < self.nodes.__len__() - 1:
+                    node = self.nodes[index]
+                    nextNode = self.nodes[index + 1]
+                    if self.cfg.exitBlockId == nextNode:
+                        break
+                    lastByte = self.blocks[node].bytecode[-1]
+                    nextBlockFirstByte = self.blocks[nextNode].bytecode[0]
+                    if lastByte not in [0x56, 0x57] and nextBlockFirstByte != 0x5b:
+                        combinedNode.append(nextNode)
+                        index += 1
+                    else:
+                        break
+                for node in combinedNode:
+                    if node == combinedNode[0]:
+                        continue
+                    removedNode.append(node)
+                    self.blocks[combinedNode[0]].length += self.blocks[node].length
+                    self.blocks[combinedNode[0]].bytecode.extend(self.blocks[node].bytecode)
+                for _to in self.edges[combinedNode[-1]]:
+                    self.edges[combinedNode[0]].append(_to)
+                self.edges.pop(combinedNode[-1])
+            else:
+                index += 1
+        for node in removedNode:
+            self.nodes.remove(node)
+            self.blocks.pop(node)
+        # self.blocks[299].printBlockInfo()
+
 
     def __outputFile(self):
         '''
