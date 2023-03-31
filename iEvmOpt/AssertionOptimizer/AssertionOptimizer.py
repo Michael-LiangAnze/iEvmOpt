@@ -596,6 +596,7 @@ class AssertionOptimizer:
             offset = curLastNode + self.blocks[curLastNode].length - funcBodyNodes[0]  # 两个函数体之间的偏移量
             # print(curLastNode,self.blocks[curLastNode].length,funcBodyNodes[0])
             # print(offset)
+            translator = OpcodeTranslator(self.cfg.exitBlockId)
             for node in funcBodyNodes:  # 对每一个原有的block，都新建一个相同的block
                 originalBlock = self.blocks[node]
                 beginOffset = node + offset
@@ -621,7 +622,12 @@ class AssertionOptimizer:
                     # invalid的下一个block，只有一条入边，说明这个jumpdest也可以删除
                     self.removedRange[invNode + 1 + offset].append([invNode + 1 + offset, invNode + 2 + offset])
                     newBlock.bytecode[0] = 0x1f
-                translator = OpcodeTranslator(self.cfg.exitBlockId)
+                # 将原函数体中已经存在的删除序列信息，添加到新函数体中
+                for info in self.removedRange[node]:
+                    newInfo = list(info)
+                    newInfo[0] += offset
+                    newInfo[1] += offset
+                    self.removedRange[beginOffset].append(newInfo)
                 newBlock.instrs = translator.translate(newBlock)
                 # 放入到cfg中
                 self.blocks[beginOffset] = newBlock  # 添加到原图中
