@@ -94,6 +94,10 @@ class OpcodeTranslator:
                     addrToContent[tempPc] = "CODESIZE"
                 case 0x3a:
                     addrToContent[tempPc] = "GASPRICE"
+                case 0x3b:
+                    addrToContent[tempPc] = "EXTCODESIZE"
+                case 0x3f:
+                    addrToContent[tempPc] = "EXTCODEHASH"
                 case 0x40:
                     addrToContent[tempPc] = "BLOCKHASH"
                 case 0x41:
@@ -130,6 +134,8 @@ class OpcodeTranslator:
                     addrToContent[tempPc] = "JUMPI"
                 case 0x58:
                     addrToContent[tempPc] = "PC"
+                case 0x59:
+                    addrToContent[tempPc] = "MSIZE"
                 case 0x5a:
                     addrToContent[tempPc] = "GAS"
                 case 0x5b:
@@ -156,6 +162,8 @@ class OpcodeTranslator:
                     addrToContent[tempPc] = "REVERT"
                 case 0xfe:
                     addrToContent[tempPc] = "INVALID"
+                case 0xff:
+                    addrToContent[tempPc] = "SELFDESTRUCT"
                 case _:  # Pattern not attempted
                     err = 'Opcode {} is not found!'.format(hex(opcode))
                     assert 0, err

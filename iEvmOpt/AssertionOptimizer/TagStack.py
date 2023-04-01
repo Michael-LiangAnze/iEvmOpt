@@ -16,6 +16,8 @@ class TagStack:
         self.lastInstrAddrOfBlock = 0  # block内最后一个指令的地址
         self.jumpCond = None  # 如果当前的Block为无条件Jump，记录跳转的条件
 
+
+
     def clearExecutor(self):
         '''
         清空符号执行器
@@ -146,6 +148,10 @@ class TagStack:
                 self.__execCodesize()
             case 0x3a:
                 self.__execGasPrice()
+            case 0x3b:
+                self.__execExtCodeSize()
+            case 0x3f:
+                self.__execExtCodeHash()
             case 0x40:
                 self.__execBlockHash()
             case 0x41:
@@ -182,6 +188,8 @@ class TagStack:
                 self.__execJumpi()
             case 0x58:
                 self.__execPc()
+            case 0x59:
+                self.__execMSize()
             case 0x5a:
                 self.__execGas()
             case 0x5b:
@@ -200,6 +208,8 @@ class TagStack:
                 self.__execRevert()
             case 0xfe:
                 self.__execInvalid()
+            case 0xff:
+                self.__execSelfDestruct()
             case _:  # Pattern not attempted
                 err = 'Opcode {} is not found!'.format(hex(opCode))
                 assert 0, err
@@ -373,7 +383,8 @@ class TagStack:
         self.tagStack.push(None)
 
     def __execExtCodeSize(self):  # 0x3b
-        assert 0
+        self.tagStack.pop()
+        self.tagStack.push(None)
 
     def __execExtCodeCopy(self):  # 0x3c
         assert 0
@@ -385,7 +396,8 @@ class TagStack:
         assert 0
 
     def __execExtCodeHash(self):  # 0x3f
-        assert 0
+        self.tagStack.pop()
+        self.tagStack.push(None)
 
     def __execBlockHash(self):  # 0x40
         self.tagStack.pop()
@@ -449,7 +461,7 @@ class TagStack:
         self.tagStack.push(None)
 
     def __execMSize(self):  # 0x59
-        assert 0
+        self.tagStack.push(None)
 
     def __execGas(self):  # 0x5a
         self.tagStack.push(None)
@@ -520,4 +532,4 @@ class TagStack:
         pass
 
     def __execSelfDestruct(self):  # 0xff
-        assert 0
+        self.tagStack.pop()

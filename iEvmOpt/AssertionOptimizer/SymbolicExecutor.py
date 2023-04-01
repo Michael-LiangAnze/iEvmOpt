@@ -14,6 +14,7 @@ class SymbolicExecutor:
         self.storage = dict()  # 使用字典存储，格式为  addr:data
         self.memory = dict()  # 使用字典存储，格式为  addr:data
         self.gasOpcCnt = 0  # 统计gas指令被调用的次数
+        self.mSizeCnt = 0 # 统计msize指令被调用的次数
 
         # 辅助信息
         self.lastInstrAddrOfBlock = 0  # block内最后一个指令的地址
@@ -191,6 +192,10 @@ class SymbolicExecutor:
                 self.__execCodesize()
             case 0x3a:
                 self.__execGasPrice()
+            case 0x3b:
+                self.__execExtCodeSize()
+            case 0x3f:
+                self.__execExtCodeHash()
             case 0x40:
                 self.__execBlockHash()
             case 0x41:
@@ -227,6 +232,8 @@ class SymbolicExecutor:
                 self.__execJumpi()
             case 0x58:
                 self.__execPc()
+            case 0x59:
+                self.__execMSize()
             case 0x5a:
                 self.__execGas()
             case 0x5b:
@@ -245,6 +252,8 @@ class SymbolicExecutor:
                 self.__execRevert()
             case 0xfe:
                 self.__execInvalid()
+            case 0xff:
+                self.__execSelfDestruct()
             case _:  # Pattern not attempted
                 err = 'Opcode {} is not found!'.format(hex(opCode))
                 assert 0, err
@@ -495,7 +504,9 @@ class SymbolicExecutor:
         self.stack.push(tmp)
 
     def __execExtCodeSize(self):  # 0x3b
-        assert 0
+        a = self.stack.pop()
+        tmp = BitVec("EXTCODESIZE_"+a.__str__(), 256)
+        self.stack.push(tmp)
 
     def __execExtCodeCopy(self):  # 0x3c
         assert 0
@@ -507,7 +518,9 @@ class SymbolicExecutor:
         assert 0
 
     def __execExtCodeHash(self):  # 0x3f
-        assert 0
+        a = self.stack.pop()
+        tmp = BitVec("CODEHASH_" + a.__str__(), 256)
+        self.stack.push(tmp)
 
     def __execBlockHash(self):  # 0x40
         a = self.stack.pop()
@@ -609,7 +622,9 @@ class SymbolicExecutor:
         self.stack.push(BitVecVal(self.PC, 256))
 
     def __execMSize(self):  # 0x59
-        assert 0
+        tmp = BitVec("MSIZE_"+self.mSizeCnt,256)
+        self.stack.push(tmp)
+        self.mSizeCnt += 1
 
     def __execGas(self):  # 0x5a
         self.gasOpcCnt += 1
@@ -619,7 +634,6 @@ class SymbolicExecutor:
         pass
 
     def __execPush(self, opCode):  # 0x60 <= opCode <= 0x7f
-        jumpOpcodeAddr = self.PC  # 先记录下这一地址
         byteNum = opCode - 0x5f  # push的字节数
         num = 0
         for i in range(byteNum):
@@ -678,4 +692,4 @@ class SymbolicExecutor:
         pass
 
     def __execSelfDestruct(self):  # 0xff
-        assert 0
+        self.stack.pop()
