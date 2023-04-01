@@ -126,6 +126,8 @@ class TagStack:
                 self.__execSar()
             case 0x1f:
                 self.__execNonOp()
+            case 0x20:
+                self.__execSha3()
             case 0x30:
                 self.__execAddress()
             case 0x31:
@@ -140,6 +142,28 @@ class TagStack:
                 self.__execCallDataLoad()
             case 0x36:
                 self.__execCallDataSize()
+            case 0x38:
+                self.__execCodesize()
+            case 0x3a:
+                self.__execGasPrice()
+            case 0x40:
+                self.__execBlockHash()
+            case 0x41:
+                self.__execCoinBase()
+            case 0x42:
+                self.__execTimeStamp()
+            case 0x43:
+                self.__execNumber()
+            case 0x44:
+                self.__execPrevrandao()
+            case 0x45:
+                self.__execGasLimit()
+            case 0x46:
+                self.__execChainId()
+            case 0x47:
+                self.__execSelfBalance()
+            case 0x48:
+                self.__execBaseFee()
             case 0x50:
                 self.__execPop()
             case 0x51:
@@ -168,6 +192,8 @@ class TagStack:
                 self.__execDup(opCode)
             case i if 0x90 <= opCode <= 0x9f:  # swap
                 self.__execSwap(opCode)
+            case i if 0xa0 <= opCode <= 0xa4:  # log
+                self.__execLog(opCode)
             case 0xf3:
                 self.__execReturn()
             case 0xfd:
@@ -338,13 +364,13 @@ class TagStack:
             self.tagStack.pop()
 
     def __execCodesize(self):  # 0x38
-        assert 0
+        self.tagStack.push(None)
 
     def __execCodecopy(self):  # 0x39
         assert 0
 
     def __execGasPrice(self):  # 0x3a
-        assert 0
+        self.tagStack.push(None)
 
     def __execExtCodeSize(self):  # 0x3b
         assert 0
@@ -362,31 +388,32 @@ class TagStack:
         assert 0
 
     def __execBlockHash(self):  # 0x40
-        assert 0
+        self.tagStack.pop()
+        self.tagStack.push(None)
 
     def __execCoinBase(self):  # 0x41
-        assert 0
+        self.tagStack.push(None)
 
     def __execTimeStamp(self):  # 0x42
-        assert 0
+        self.tagStack.push(None)
 
     def __execNumber(self):  # 0x43
-        assert 0
+        self.tagStack.push(None)
 
     def __execPrevrandao(self):  # 0x44
-        assert 0
+        self.tagStack.push(None)
 
     def __execGasLimit(self):  # 0x45
-        assert 0
+        self.tagStack.push(None)
 
     def __execChainId(self):  # 0x46
-        assert 0
+        self.tagStack.push(None)
 
     def __execSelfBalance(self):  # 0x47
-        assert 0
+        self.tagStack.push(None)
 
     def __execBaseFee(self):  # 0x48
-        assert 0
+        self.tagStack.push(None)
 
     def __execPop(self):  # 0x50
         self.tagStack.pop()
@@ -456,7 +483,10 @@ class TagStack:
         self.tagStack.swap(stackSize - 1, pos)
 
     def __execLog(self, opCode):  # 0xa0 <= opCode <= 0xa4
-        assert 0
+        self.tagStack.pop()
+        self.tagStack.pop()
+        for i in range(0xa0, opCode):
+            self.tagStack.pop()
 
     def __execCreate(self):  # 0xf0
         assert 0

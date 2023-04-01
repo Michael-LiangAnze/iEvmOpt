@@ -171,6 +171,8 @@ class SymbolicExecutor:
                 self.__execSar()
             case 0x1f:
                 self.__execNonOp()
+            case 0x20:
+                self.__execSha3()
             case 0x30:
                 self.__execAddress()
             case 0x31:
@@ -185,6 +187,28 @@ class SymbolicExecutor:
                 self.__execCallDataLoad()
             case 0x36:
                 self.__execCallDataSize()
+            case 0x38:
+                self.__execCodesize()
+            case 0x3a:
+                self.__execGasPrice()
+            case 0x40:
+                self.__execBlockHash()
+            case 0x41:
+                self.__execCoinBase()
+            case 0x42:
+                self.__execTimeStamp()
+            case 0x43:
+                self.__execNumber()
+            case 0x44:
+                self.__execPrevrandao()
+            case 0x45:
+                self.__execGasLimit()
+            case 0x46:
+                self.__execChainId()
+            case 0x47:
+                self.__execSelfBalance()
+            case 0x48:
+                self.__execBaseFee()
             case 0x50:
                 self.__execPop()
             case 0x51:
@@ -213,6 +237,8 @@ class SymbolicExecutor:
                 self.__execDup(opCode)
             case i if 0x90 <= opCode <= 0x9f:  # swap
                 self.__execSwap(opCode)
+            case i if 0xa0 <= opCode <= 0xa4:  # log
+                self.__execLog(opCode)
             case 0xf3:
                 self.__execReturn()
             case 0xfd:
@@ -429,7 +455,7 @@ class SymbolicExecutor:
 
     def __execBalance(self):  # 0x31
         a = self.stack.pop()
-        tmp = BitVec("balance#"+a.__str__(),256)
+        tmp = BitVec("balance#" + a.__str__(), 256)
         self.stack.push(tmp)
 
     def __execOrigin(self):  # 0x32
@@ -458,13 +484,15 @@ class SymbolicExecutor:
             self.stack.pop()
 
     def __execCodesize(self):  # 0x38
-        assert 0
+        tmp = BitVec("CODESIZE", 256)
+        self.stack.push(tmp)
 
     def __execCodecopy(self):  # 0x39
         assert 0
 
     def __execGasPrice(self):  # 0x3a
-        assert 0
+        tmp = BitVec("GASPRICE", 256)
+        self.stack.push(tmp)
 
     def __execExtCodeSize(self):  # 0x3b
         assert 0
@@ -482,31 +510,41 @@ class SymbolicExecutor:
         assert 0
 
     def __execBlockHash(self):  # 0x40
-        assert 0
+        a = self.stack.pop()
+        tmp = BitVec("BLOCKHASH_" + a.__str__(), 256)
+        self.stack.push(tmp)
 
     def __execCoinBase(self):  # 0x41
-        assert 0
+        tmp = BitVec("COINBASE", 256)
+        self.stack.push(tmp)
 
     def __execTimeStamp(self):  # 0x42
-        assert 0
+        tmp = BitVec("TIMESTAMP", 256)
+        self.stack.push(tmp)
 
     def __execNumber(self):  # 0x43
-        assert 0
+        tmp = BitVec("BLOCK_NUMBER", 256)
+        self.stack.push(tmp)
 
     def __execPrevrandao(self):  # 0x44
-        assert 0
+        tmp = BitVec("PREVRANDAO", 256)
+        self.stack.push(tmp)
 
     def __execGasLimit(self):  # 0x45
-        assert 0
+        tmp = BitVec("GAS_LIMIT", 256)
+        self.stack.push(tmp)
 
     def __execChainId(self):  # 0x46
-        assert 0
+        tmp = BitVec("CHAIN_ID", 256)
+        self.stack.push(tmp)
 
     def __execSelfBalance(self):  # 0x47
-        assert 0
+        tmp = BitVec("SELF_BALANCE", 256)
+        self.stack.push(tmp)
 
     def __execBaseFee(self):  # 0x48
-        assert 0
+        tmp = BitVec("BASE_FEE", 256)
+        self.stack.push(tmp)
 
     def __execPop(self):  # 0x50
         self.stack.pop()
@@ -604,7 +642,10 @@ class SymbolicExecutor:
         self.stack.swap(stackSize - 1, pos)
 
     def __execLog(self, opCode):  # 0xa0 <= opCode <= 0xa4
-        assert 0
+        self.stack.pop()
+        self.stack.pop()
+        for i in range(0xa0, opCode):
+            self.stack.pop()
 
     def __execCreate(self):  # 0xf0
         assert 0

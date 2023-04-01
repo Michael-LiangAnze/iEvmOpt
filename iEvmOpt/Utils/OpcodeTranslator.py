@@ -74,6 +74,8 @@ class OpcodeTranslator:
                     addrToContent[tempPc] = "SAR"
                 case 0x1f:
                     addrToContent[tempPc] = "NONOP"
+                case 0x20:
+                    addrToContent[tempPc] = "SHA3"
                 case 0x30:
                     addrToContent[tempPc] = "ADDRESS"
                 case 0x31:
@@ -88,6 +90,28 @@ class OpcodeTranslator:
                     addrToContent[tempPc] = "CALLDATALOAD"
                 case 0x36:
                     addrToContent[tempPc] = "CALLDATASIZE"
+                case 0x38:
+                    addrToContent[tempPc] = "CODESIZE"
+                case 0x3a:
+                    addrToContent[tempPc] = "GASPRICE"
+                case 0x40:
+                    addrToContent[tempPc] = "BLOCKHASH"
+                case 0x41:
+                    addrToContent[tempPc] = "COINBASE"
+                case 0x42:
+                    addrToContent[tempPc] = "TIMESTAMP"
+                case 0x43:
+                    addrToContent[tempPc] = "NUMBER"
+                case 0x44:
+                    addrToContent[tempPc] = "PREVRANDAO"
+                case 0x45:
+                    addrToContent[tempPc] = "GASLIMIT"
+                case 0x46:
+                    addrToContent[tempPc] = "CHAINID"
+                case 0x47:
+                    addrToContent[tempPc] = "SELFBALANCE"
+                case 0x48:
+                    addrToContent[tempPc] = "BASEFEE"
                 case 0x50:
                     addrToContent[tempPc] = "POP"
                 case 0x51:
@@ -123,6 +147,9 @@ class OpcodeTranslator:
                 case i if 0x90 <= opcode <= 0x9f:  # swap
                     depth = opcode - 0x90 + 1
                     addrToContent[tempPc] = "SWAP" + str(depth)
+                case i if 0xa0 <= opcode <= 0xa4:  # log
+                    x = opcode - 0xa0
+                    addrToContent[tempPc] = "LOG" + str(x)
                 case 0xf3:
                     addrToContent[tempPc] = "RETURN"
                 case 0xfd:
