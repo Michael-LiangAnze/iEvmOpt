@@ -42,8 +42,8 @@ class OpcodeTranslator:
                     addrToContent[tempPc] = "MULMOD"
                 case 0x0a:
                     addrToContent[tempPc] = "EXP"
-                # case 0x0b:
-                #     self.__execSignExtend()
+                case 0x0b:
+                    addrToContent[tempPc] = "SIGNEXTEND"
                 case 0x10:
                     addrToContent[tempPc] = "LT"
                 case 0x11:
@@ -64,6 +64,8 @@ class OpcodeTranslator:
                     addrToContent[tempPc] = "XOR"
                 case 0x19:
                     addrToContent[tempPc] = "NOT"
+                case 0x1a:
+                    addrToContent[tempPc] = "BYTE"
                 case 0x1b:
                     addrToContent[tempPc] = "SHL"
                 case 0x1c:
@@ -72,6 +74,14 @@ class OpcodeTranslator:
                     addrToContent[tempPc] = "SAR"
                 case 0x1f:
                     addrToContent[tempPc] = "NONOP"
+                case 0x30:
+                    addrToContent[tempPc] = "ADDRESS"
+                case 0x31:
+                    addrToContent[tempPc] = "BALANCE"
+                case 0x32:
+                    addrToContent[tempPc] = "ORIGIN"
+                case 0x33:
+                    addrToContent[tempPc] = "CALLER"
                 case 0x34:
                     addrToContent[tempPc] = "CALLVALUE"
                 case 0x35:

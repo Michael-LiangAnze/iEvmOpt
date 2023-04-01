@@ -15,7 +15,7 @@ if __name__ == '__main__':
     s = SymbolicExecutor(cfg)
     s.setBeginBlock(0)
 
-    for i in range(6):
+    for i in range(2):
         cond = s.execNextOpCode()
         s.printState(False)
 

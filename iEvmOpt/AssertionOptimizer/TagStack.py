@@ -94,8 +94,8 @@ class TagStack:
                 self.__execMulMod()
             case 0x0a:
                 self.__execExp()
-            # case 0x0b:
-            #     self.__execSignExtend()
+            case 0x0b:
+                self.__execSignExtend()
             case 0x10:
                 self.__execLT()
             case 0x11:
@@ -116,6 +116,8 @@ class TagStack:
                 self.__execXor()
             case 0x19:
                 self.__execNot()
+            case 0x1a:
+                self.__execByte()
             case 0x1b:
                 self.__execShl()
             case 0x1c:
@@ -124,6 +126,14 @@ class TagStack:
                 self.__execSar()
             case 0x1f:
                 self.__execNonOp()
+            case 0x30:
+                self.__execAddress()
+            case 0x31:
+                self.__execBalance()
+            case 0x32:
+                self.__execOrigin()
+            case 0x33:
+                self.__execCaller()
             case 0x34:
                 self.__execCallValue()
             case 0x35:
@@ -222,7 +232,9 @@ class TagStack:
         self.tagStack.push(None)
 
     def __execSignExtend(self):  # 0x0b
-        assert 0
+        self.tagStack.pop()
+        self.tagStack.pop()
+        self.tagStack.push(None)
 
     def __execLT(self):  # 0x10
         self.tagStack.pop()
@@ -273,7 +285,9 @@ class TagStack:
         self.tagStack.push(None)
 
     def __execByte(self):  # 0x1a
-        assert 0
+        self.tagStack.pop()
+        self.tagStack.pop()
+        self.tagStack.push(None)
 
     def __execShl(self):  # 0x1b
         self.tagStack.pop()
@@ -297,16 +311,17 @@ class TagStack:
         assert 0
 
     def __execAddress(self):  # 0x30
-        assert 0
+        self.tagStack.push(None)
 
     def __execBalance(self):  # 0x31
-        assert 0
+        self.tagStack.pop()
+        self.tagStack.push(None)
 
     def __execOrigin(self):  # 0x32
-        assert 0
+        self.tagStack.push(None)
 
     def __execCaller(self):  # 0x33
-        assert 0
+        self.tagStack.push(None)
 
     def __execCallValue(self):  # 0x34
         self.tagStack.push(None)

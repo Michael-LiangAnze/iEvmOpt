@@ -139,8 +139,8 @@ class SymbolicExecutor:
                 self.__execMulMod()
             case 0x0a:
                 self.__execExp()
-            # case 0x0b:
-            #     self.__execSignExtend()
+            case 0x0b:
+                self.__execSignExtend()
             case 0x10:
                 self.__execLT()
             case 0x11:
@@ -161,6 +161,8 @@ class SymbolicExecutor:
                 self.__execXor()
             case 0x19:
                 self.__execNot()
+            case 0x1a:
+                self.__execByte()
             case 0x1b:
                 self.__execShl()
             case 0x1c:
@@ -169,6 +171,14 @@ class SymbolicExecutor:
                 self.__execSar()
             case 0x1f:
                 self.__execNonOp()
+            case 0x30:
+                self.__execAddress()
+            case 0x31:
+                self.__execBalance()
+            case 0x32:
+                self.__execOrigin()
+            case 0x33:
+                self.__execCaller()
             case 0x34:
                 self.__execCallValue()
             case 0x35:
@@ -293,9 +303,30 @@ class SymbolicExecutor:
             res = BitVec("exp#" + a.__str__() + "#" + b.__str__(), 256)
             self.stack.push(res)
 
-
     def __execSignExtend(self):  # 0x0b
-        assert 0
+        a, b = self.stack.pop(), self.stack.pop()
+        assert (not is_bool(a)) and (not is_bool(b))
+        if is_bv_value(a) and is_bv_value(b):  # 两个都是值
+            a = int(a.__str__())
+            if a < 0 or a >= 32:  # 原数字保持不变
+                self.stack.push(b)
+            else:
+                b = int(b.__str__())
+                flag = 1 << (8 * a + 7)
+                sign = flag & b
+                if sign == 0:  # 高位全是0，低位取原数
+                    mask = flag - 1
+                    tmp = BitVecVal(mask & b, 256)
+                    self.stack.push(tmp)
+                else:  # 高位全是1，低位取原数
+                    mask = 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff  # 2 ^ 256 - 1
+                    mask &= flag - 1
+                    mask = ~mask
+                    tmp = BitVecVal(mask | b, 256)
+                    self.stack.push(tmp)
+        else:
+            tmp = BitVec("signextend#" + a.__str__() + "#" + b.__str__(), 256)
+            self.stack.push(tmp)
 
     def __execLT(self):  # 0x10
         a, b = self.stack.pop(), self.stack.pop()
@@ -369,7 +400,10 @@ class SymbolicExecutor:
         self.stack.push(simplify(~a))
 
     def __execByte(self):  # 0x1a
-        assert 0
+        a, b = self.stack.pop(), self.stack.pop()
+        assert is_bv(a) and is_bv(b)
+        mask = BitVecVal(0xff, 256)
+        self.stack.push(simplify(mask & (b >> (31 - a) * 8)))
 
     def __execShl(self):  # 0x1b
         a, b = self.stack.pop(), self.stack.pop()
@@ -390,16 +424,21 @@ class SymbolicExecutor:
         assert 0
 
     def __execAddress(self):  # 0x30
-        assert 0
+        tmp = BitVec("ADDRESS", 256)
+        self.stack.push(tmp)
 
     def __execBalance(self):  # 0x31
-        assert 0
+        a = self.stack.pop()
+        tmp = BitVec("balance#"+a.__str__(),256)
+        self.stack.push(tmp)
 
     def __execOrigin(self):  # 0x32
-        assert 0
+        tmp = BitVec("ORIGIN", 256)
+        self.stack.push(tmp)
 
     def __execCaller(self):  # 0x33
-        assert 0
+        tmp = BitVec("CALLER", 256)
+        self.stack.push(tmp)
 
     def __execCallValue(self):  # 0x34
         tmp = BitVec("CALLVALUE", 256)
