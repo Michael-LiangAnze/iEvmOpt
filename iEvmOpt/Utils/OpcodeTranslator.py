@@ -92,10 +92,16 @@ class OpcodeTranslator:
                     addrToContent[tempPc] = "CALLDATASIZE"
                 case 0x38:
                     addrToContent[tempPc] = "CODESIZE"
+                case 0x39:
+                    addrToContent[tempPc] = "CODECOPY"
                 case 0x3a:
                     addrToContent[tempPc] = "GASPRICE"
                 case 0x3b:
                     addrToContent[tempPc] = "EXTCODESIZE"
+                case 0x3c:
+                    addrToContent[tempPc] = "EXTCODECOPY"
+                case 0x3e:
+                    addrToContent[tempPc] = "RETURNDATACOPY"
                 case 0x3f:
                     addrToContent[tempPc] = "EXTCODEHASH"
                 case 0x40:

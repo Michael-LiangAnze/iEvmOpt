@@ -153,8 +153,6 @@ class AssertionOptimizer:
         self.__outputFile()
         self.log.info("写入完毕")
 
-        # 测试使用
-        self.__outputNewCfgPic()
 
     def __identifyAndCheckFunctions(self):
         '''
@@ -1080,7 +1078,7 @@ class AssertionOptimizer:
         with open(self.outputFile, "w+") as f:
             f.write(newBytecodeStr)
 
-    def __outputNewCfgPic(self):
+    def outputNewCfgPic(self):
         # 测试使用，将新的cfg输出为图片，方便检查
         self.blocks[self.cfg.exitBlockId].bytecode = bytearray()
         self.blocks[self.cfg.exitBlockId].length = 0

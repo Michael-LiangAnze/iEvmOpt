@@ -14,7 +14,7 @@ class SymbolicExecutor:
         self.storage = dict()  # 使用字典存储，格式为  addr:data
         self.memory = dict()  # 使用字典存储，格式为  addr:data
         self.gasOpcCnt = 0  # 统计gas指令被调用的次数
-        self.mSizeCnt = 0 # 统计msize指令被调用的次数
+        self.mSizeCnt = 0  # 统计msize指令被调用的次数
 
         # 辅助信息
         self.lastInstrAddrOfBlock = 0  # block内最后一个指令的地址
@@ -190,10 +190,16 @@ class SymbolicExecutor:
                 self.__execCallDataSize()
             case 0x38:
                 self.__execCodesize()
+            case 0x39:
+                self.__execCodecopy()
             case 0x3a:
                 self.__execGasPrice()
             case 0x3b:
                 self.__execExtCodeSize()
+            case 0x3c:
+                self.__execExtCodeCopy()
+            case 0x3e:
+                self.__execReturnDataCopy()
             case 0x3f:
                 self.__execExtCodeHash()
             case 0x40:
@@ -497,7 +503,10 @@ class SymbolicExecutor:
         self.stack.push(tmp)
 
     def __execCodecopy(self):  # 0x39
-        assert 0
+        # 这里不对其进行分析，因为符号执行只在冗余分析的时候做
+        self.stack.pop()
+        self.stack.pop()
+        self.stack.pop()
 
     def __execGasPrice(self):  # 0x3a
         tmp = BitVec("GASPRICE", 256)
@@ -505,17 +514,22 @@ class SymbolicExecutor:
 
     def __execExtCodeSize(self):  # 0x3b
         a = self.stack.pop()
-        tmp = BitVec("EXTCODESIZE_"+a.__str__(), 256)
+        tmp = BitVec("EXTCODESIZE_" + a.__str__(), 256)
         self.stack.push(tmp)
 
     def __execExtCodeCopy(self):  # 0x3c
-        assert 0
+        self.stack.pop()
+        self.stack.pop()
+        self.stack.pop()
+        self.stack.pop()
 
     def __execReturnDataSize(self):  # 0x3d
         assert 0
 
     def __execReturnDataCopy(self):  # 0x3e
-        assert 0
+        self.stack.pop()
+        self.stack.pop()
+        self.stack.pop()
 
     def __execExtCodeHash(self):  # 0x3f
         a = self.stack.pop()
@@ -622,7 +636,7 @@ class SymbolicExecutor:
         self.stack.push(BitVecVal(self.PC, 256))
 
     def __execMSize(self):  # 0x59
-        tmp = BitVec("MSIZE_"+self.mSizeCnt,256)
+        tmp = BitVec("MSIZE_" + self.mSizeCnt, 256)
         self.stack.push(tmp)
         self.mSizeCnt += 1
 

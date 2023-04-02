@@ -146,10 +146,16 @@ class TagStack:
                 self.__execCallDataSize()
             case 0x38:
                 self.__execCodesize()
+            case 0x39:
+                self.__execCodecopy()
             case 0x3a:
                 self.__execGasPrice()
             case 0x3b:
                 self.__execExtCodeSize()
+            case 0x3c:
+                self.__execExtCodeCopy()
+            case 0x3e:
+                self.__execReturnDataCopy()
             case 0x3f:
                 self.__execExtCodeHash()
             case 0x40:
@@ -377,7 +383,9 @@ class TagStack:
         self.tagStack.push(None)
 
     def __execCodecopy(self):  # 0x39
-        assert 0
+        self.tagStack.pop()
+        self.tagStack.pop()
+        self.tagStack.pop()
 
     def __execGasPrice(self):  # 0x3a
         self.tagStack.push(None)
@@ -387,13 +395,18 @@ class TagStack:
         self.tagStack.push(None)
 
     def __execExtCodeCopy(self):  # 0x3c
-        assert 0
+        self.tagStack.pop()
+        self.tagStack.pop()
+        self.tagStack.pop()
+        self.tagStack.pop()
 
     def __execReturnDataSize(self):  # 0x3d
         assert 0
 
     def __execReturnDataCopy(self):  # 0x3e
-        assert 0
+        self.tagStack.pop()
+        self.tagStack.pop()
+        self.tagStack.pop()
 
     def __execExtCodeHash(self):  # 0x3f
         self.tagStack.pop()

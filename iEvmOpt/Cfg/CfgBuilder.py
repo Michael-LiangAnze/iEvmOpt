@@ -12,23 +12,23 @@ from Utils.Logger import Logger
 
 class CfgBuilder:
 
-    def __init__(self, _srcPath: str, isParseBefore: bool = False):
+    def __init__(self, srcPath: str, isParseBefore: bool = False):
         """ 使用EtherSolve工具分析字节码文件，得到对应的json、html、gv文件
             并通过json文件构造cfg
         :param isParseBefore:之前是否已经得到过了输出文件，若为False则不再对字节码使用EtherSolve分析，而是直接读取对应的输出文件
         """
-        self.srcPath = _srcPath  # 原bin文件的路径
-        self.srcName = os.path.basename(_srcPath).split(".")[0]  # 原bin文件的文件名
+        self.srcPath = srcPath  # 原bin文件的路径
+        self.srcName = os.path.basename(srcPath).split(".")[0]  # 原bin文件的文件名
         self.outputPath = "Cfg/CfgOutput/"  # 输出的目录名
+        self.constructorCfg = Cfg()
         self.cfg = Cfg()
         self.log = Logger()
         if not isParseBefore:
             self.__etherSolve()
         self.__buildCfg()
         if not isParseBefore:
-            dg = DotGraphGenerator(self.cfg.blocks.keys(),self.cfg.edges)
+            dg = DotGraphGenerator(self.cfg.blocks.keys(), self.cfg.edges)
             dg.genDotGraph(self.outputPath, self.srcName)
-
 
     def __etherSolve(self):
         self.log.info("正在使用EtherSolve处理字节码")
@@ -40,23 +40,48 @@ class CfgBuilder:
         p = subprocess.Popen(cmd)
         if p.wait() == 0:
             pass
+
+        # 生成构建时cfg
+        cmd = "java -jar ./Cfg/EtherSolve.jar -r -d -o " + self.outputPath + self.srcName + "_constructor_cfg.gv " + self.srcPath
+        p = subprocess.Popen(cmd)
+        if p.wait() == 0:
+            pass
+
+        # 生成运行时cfg
         cmd = "java -jar ./Cfg/EtherSolve.jar -c -d -o " + self.outputPath + self.srcName + "_cfg.gv " + self.srcPath
         p = subprocess.Popen(cmd)
         if p.wait() == 0:
             pass
 
+        # 读取构建函数的gv文件，生成png图片
+        with open(self.outputPath + self.srcName + "_constructor_cfg.gv ") as f:
+            g = f.read()
+        dot = graphviz.Source(g)
+        dot.render(outfile=self.outputPath + self.srcName + "_constructor_cfg.png", format='png')
+
+        # 读取运行时的gv文件，生成png图片
         with open(self.outputPath + self.srcName + "_cfg.gv ") as f:
-            g = f.read()  # 读取已经生成的gv文件
-        f.close()
+            g = f.read()
         dot = graphviz.Source(g)
         dot.render(outfile=self.outputPath + self.srcName + "_cfg.png", format='png')
+
+
         self.log.info("EtherSolve处理完毕")
 
     def __buildCfg(self):
         self.log.info("正在构建CFG")
+        # 读入原文件
         with open(self.outputPath + self.srcName + "_cfg.json ", 'r', encoding='UTF-8') as f:
             json_dict = json.load(f)
         f.close()
+        # 读取构建信息
+        for b in json_dict["constructorCfg"]["nodes"]:  # 读取基本块
+            block = BasicBlock(b)
+            self.constructorCfg.addBasicBlock(block)
+        for e in json_dict["constructorCfg"]["successors"]:  # 读取边
+            self.constructorCfg.addEdge(e)
+
+        # 读取运行时信息
         for b in json_dict["runtimeCfg"]["nodes"]:  # 读取基本块
             block = BasicBlock(b)
             self.cfg.addBasicBlock(block)
@@ -82,17 +107,12 @@ class CfgBuilder:
                 b.jumpiDest[False] = fallBlockOff
                 # b.printBlockInfo()
 
-        # 添加函数头信息
-        # for offset, node in self.cfg.blocks.items():
-        #     if node.cfgType == "dispatcher":  # dispatcher->common
-        #         for out in self.cfg.edges[offset]:
-        #             if self.cfg.blocks[out].cfgType == "common":
-        #                 self.cfg.blocks[out].isFuncBegin = True
-        #     elif node.cfgType == "common" and node.blockType == "unconditional":  # common-(unconditional)->common
-        #         for out in self.cfg.edges[offset]:
-        #             if self.cfg.blocks[out].cfgType == "common":
-        #                 self.cfg.blocks[out].isFuncBegin = True
         self.log.info("CFG构建完毕")
+        # self.cfg.output()
+        # self.constructorCfg.output()
+
+    def getConstructorCfg(self):
+        return self.constructorCfg
 
     def getCfg(self):
         return self.cfg
