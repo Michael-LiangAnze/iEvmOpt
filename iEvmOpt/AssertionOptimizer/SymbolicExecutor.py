@@ -15,6 +15,10 @@ class SymbolicExecutor:
         self.memory = dict()  # 使用字典存储，格式为  addr:data
         self.gasOpcCnt = 0  # 统计gas指令被调用的次数
         self.mSizeCnt = 0  # 统计msize指令被调用的次数
+        self.callCnt = 0  # call指令调用计数
+        self.sha3Cnt = 0  # sha指令调用计数
+        self.createCnt = 0  # create指令调用计数
+        self.returnDataSize = None  # 最新一次函数调用的返回数据大小
 
         # 辅助信息
         self.lastInstrAddrOfBlock = 0  # block内最后一个指令的地址
@@ -198,6 +202,8 @@ class SymbolicExecutor:
                 self.__execExtCodeSize()
             case 0x3c:
                 self.__execExtCodeCopy()
+            case 0x3d:
+                self.__execReturnDataSize()
             case 0x3e:
                 self.__execReturnDataCopy()
             case 0x3f:
@@ -252,8 +258,20 @@ class SymbolicExecutor:
                 self.__execSwap(opCode)
             case i if 0xa0 <= opCode <= 0xa4:  # log
                 self.__execLog(opCode)
+            case 0xf0:
+                self.__execCreate()
+            case 0xf1:
+                self.__execCall()
+            case 0xf2:
+                self.__execCallCode()
             case 0xf3:
                 self.__execReturn()
+            case 0xf4:
+                self.__execDelegateCall()
+            case 0xf5:
+                self.__execCreate2()
+            case 0xfa:
+                self.__execStaticCall()
             case 0xfd:
                 self.__execRevert()
             case 0xfe:
@@ -462,7 +480,32 @@ class SymbolicExecutor:
         pass
 
     def __execSha3(self):  # 0x20
-        assert 0
+        # _offset, _size = self.stack.pop(), self.stack.pop()
+        # if _size.__str__().isdigit() and int(_size.__str__()) != 0:  # size是数据，而且不是0
+        #     _size = int(_size.__str__())
+        #     content = BitVecVal(0, 1)
+        #     for i in range(0, _size, 32):
+        #         startAddr = simplify(_offset + i)
+        #         endAddr = min(i + 32, _size)
+        #         startAddr, endAddr = startAddr.__str__(), endAddr.__str__()
+        #         addr = startAddr + "$" + endAddr
+        #         if addr in self.memory.keys():
+        #             content = Concat(content, self.memory[addr])
+        #         else:
+        #             tmp = BitVec("mem_" + addr, 256)
+        #             content = Concat(content, tmp)
+        #     content = simplify(Extract(_size * 8 - 1, 0, content))
+        #     tmp = BitVec(content.__str__(), 256)
+        #     self.stack.push(tmp)
+        # else:  # 对于string类型的keccak操作
+        #     tmp = BitVec("sha3_" + self.sha3Cnt, 256)
+        #     self.stack.push(tmp)
+        #     self.sha3Cnt += 1
+
+        # 有必要搞这个复杂？
+        a, b = self.stack.pop(), self.stack.pop()
+        tmp = BitVec("sha3_" + a.__str__() + "_" + b.__str__(), 256)
+        self.stack.push(tmp)
 
     def __execAddress(self):  # 0x30
         tmp = BitVec("ADDRESS", 256)
@@ -524,7 +567,7 @@ class SymbolicExecutor:
         self.stack.pop()
 
     def __execReturnDataSize(self):  # 0x3d
-        assert 0
+        self.stack.push(self.returnDataSize)
 
     def __execReturnDataCopy(self):  # 0x3e
         self.stack.pop()
@@ -676,13 +719,39 @@ class SymbolicExecutor:
             self.stack.pop()
 
     def __execCreate(self):  # 0xf0
-        assert 0
+        self.stack.pop()
+        self.stack.pop()
+        self.stack.pop()
+        self.returnDataSize = BitVecVal(0, 256)
+        tmp = BitVec("create_" + str(self.createCnt), 256)
+        self.stack.push(tmp)
+        self.createCnt += 1
 
     def __execCall(self):  # 0xf1
-        assert 0
+        self.stack.pop()
+        self.stack.pop()
+        self.stack.pop()
+        self.stack.pop()
+        self.stack.pop()
+        retOffset = self.stack.pop()
+        retSize = self.stack.pop()
+        self.__processReturnData(retOffset, retSize)
+        tmp = Bool("call_" + str(self.callCnt))
+        self.stack.push(tmp)
+        self.callCnt += 1
 
     def __execCallCode(self):  # 0xf2
-        assert 0
+        self.stack.pop()
+        self.stack.pop()
+        self.stack.pop()
+        self.stack.pop()
+        self.stack.pop()
+        retOffset = self.stack.pop()
+        retSize = self.stack.pop()
+        self.__processReturnData(retOffset, retSize)
+        tmp = Bool("call_" + str(self.callCnt))
+        self.stack.push(tmp)
+        self.callCnt += 1
 
     def __execReturn(self):  # 0xf3
         # 不分析合约间的跳转关系
@@ -690,13 +759,38 @@ class SymbolicExecutor:
         self.stack.pop()
 
     def __execDelegateCall(self):  # 0xf4
-        assert 0
+        self.stack.pop()
+        self.stack.pop()
+        self.stack.pop()
+        self.stack.pop()
+        retOffset = self.stack.pop()
+        retSize = self.stack.pop()
+        self.__processReturnData(retOffset, retSize)
+        tmp = Bool("call_" + str(self.callCnt))
+        self.stack.push(tmp)
+        self.callCnt += 1
 
     def __execCreate2(self):  # 0xf5
-        assert 0
+        self.stack.pop()
+        self.stack.pop()
+        self.stack.pop()
+        self.stack.pop()
+        self.returnDataSize = BitVecVal(0, 256)
+        tmp = BitVec("create_" + str(self.createCnt), 256)
+        self.stack.push(tmp)
+        self.createCnt += 1
 
     def __execStaticCall(self):  # 0xfa
-        assert 0
+        self.stack.pop()
+        self.stack.pop()
+        self.stack.pop()
+        self.stack.pop()
+        retOffset = self.stack.pop()
+        retSize = self.stack.pop()
+        self.__processReturnData(retOffset, retSize)
+        tmp = Bool("call_" + str(self.callCnt))
+        self.stack.push(tmp)
+        self.callCnt += 1
 
     def __execRevert(self):  # 0xfd
         self.stack.pop()
@@ -707,3 +801,41 @@ class SymbolicExecutor:
 
     def __execSelfDestruct(self):  # 0xff
         self.stack.pop()
+
+    def __processReturnData(self, retOffset, retSize):
+        '''
+        处理返回信息。即在调用的时候，根据返回内容的内存偏移量、字节码偏移量修改内存
+        用于会产生返回内容的指令：CALL | CALLCODE | DELEGATECALL | STATICCALL
+        :param retOffset: 返回内容在内存中的起始偏移量
+        :param retSize: 返回内容的字节数
+        :return:None
+        '''
+        assert retOffset.__str__().isdigit()  # 应当为数字
+        assert retSize.__str__().isdigit()
+
+        memStart = int(simplify(retOffset).__str__())
+        memEnd = int(simplify(retOffset + retSize).__str__())  # 终止偏移量
+        tmpSize = int(retSize.__str__())  # size的值
+
+        # 删除原位置上的内容
+        removedItem = []
+        for addr, _ in self.memory.items():
+            begin, end = addr.split("$")
+            begin, end = int(begin), int(end)
+            if begin <= memStart < end or begin < memEnd <= end or (memStart <= begin and end <= memEnd):
+                # 位于返回内容的区间之内，需要删除
+                removedItem.append(addr)
+        for addr in removedItem:
+            self.memory.pop(addr)
+
+        # 添加新内容
+        for i in range(0, tmpSize, 32):
+            segSize = min(32, tmpSize - i)
+            startAddr = simplify(retOffset + i)
+            endAddr = simplify(startAddr + segSize)
+            addr = startAddr.__str__() + "$" + endAddr.__str__()
+            data = "return_" + str(self.callCnt) + "_data_" + startAddr.__str__() + "$" + endAddr.__str__()
+            self.memory[addr] = data
+
+        # 记录返回数据的size
+        self.returnDataSize = BitVecVal(tmpSize, 256)

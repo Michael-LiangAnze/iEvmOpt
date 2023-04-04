@@ -100,6 +100,8 @@ class OpcodeTranslator:
                     addrToContent[tempPc] = "EXTCODESIZE"
                 case 0x3c:
                     addrToContent[tempPc] = "EXTCODECOPY"
+                case 0x3d:
+                    addrToContent[tempPc] = "RETURNDATASIZE"
                 case 0x3e:
                     addrToContent[tempPc] = "RETURNDATACOPY"
                 case 0x3f:
@@ -162,8 +164,20 @@ class OpcodeTranslator:
                 case i if 0xa0 <= opcode <= 0xa4:  # log
                     x = opcode - 0xa0
                     addrToContent[tempPc] = "LOG" + str(x)
+                case 0xf0:
+                    addrToContent[tempPc] = "CREATE"
+                case 0xf1:
+                    addrToContent[tempPc] = "CALL"
+                case 0xf2:
+                    addrToContent[tempPc] = "CALLCODE"
                 case 0xf3:
                     addrToContent[tempPc] = "RETURN"
+                case 0xf4:
+                    addrToContent[tempPc] = "DELEGATECALL"
+                case 0xf5:
+                    addrToContent[tempPc] = "CREATE2"
+                case 0xfa:
+                    addrToContent[tempPc] = "STATICCALL"
                 case 0xfd:
                     addrToContent[tempPc] = "REVERT"
                 case 0xfe:

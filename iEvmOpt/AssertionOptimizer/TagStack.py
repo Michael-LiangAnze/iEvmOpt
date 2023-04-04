@@ -118,6 +118,8 @@ class TagStack:
                 self.__execXor()
             case 0x19:
                 self.__execNot()
+            case 0x20:
+                self.__execSha3()
             case 0x1a:
                 self.__execByte()
             case 0x1b:
@@ -154,6 +156,8 @@ class TagStack:
                 self.__execExtCodeSize()
             case 0x3c:
                 self.__execExtCodeCopy()
+            case 0x3d:
+                self.__execReturnDataSize()
             case 0x3e:
                 self.__execReturnDataCopy()
             case 0x3f:
@@ -208,8 +212,20 @@ class TagStack:
                 self.__execSwap(opCode)
             case i if 0xa0 <= opCode <= 0xa4:  # log
                 self.__execLog(opCode)
+            case 0xf0:
+                self.__execCreate()
+            case 0xf1:
+                self.__execCall()
+            case 0xf2:
+                self.__execCallCode()
             case 0xf3:
                 self.__execReturn()
+            case 0xf4:
+                self.__execDelegateCall()
+            case 0xf5:
+                self.__execCreate2()
+            case 0xfa:
+                self.__execStaticCall()
             case 0xfd:
                 self.__execRevert()
             case 0xfe:
@@ -350,7 +366,9 @@ class TagStack:
         pass
 
     def __execSha3(self):  # 0x20
-        assert 0
+        self.tagStack.pop()
+        self.tagStack.pop()
+        self.tagStack.push(None)
 
     def __execAddress(self):  # 0x30
         self.tagStack.push(None)
@@ -401,7 +419,7 @@ class TagStack:
         self.tagStack.pop()
 
     def __execReturnDataSize(self):  # 0x3d
-        assert 0
+        self.tagStack.push(None)
 
     def __execReturnDataCopy(self):  # 0x3e
         self.tagStack.pop()
@@ -514,13 +532,20 @@ class TagStack:
             self.tagStack.pop()
 
     def __execCreate(self):  # 0xf0
-        assert 0
+        self.tagStack.pop()
+        self.tagStack.pop()
+        self.tagStack.pop()
+        self.tagStack.push(None)
 
     def __execCall(self):  # 0xf1
-        assert 0
+        for i in range(7):
+            self.tagStack.pop()
+        self.tagStack.push(None)
 
     def __execCallCode(self):  # 0xf2
-        assert 0
+        for i in range(7):
+            self.tagStack.pop()
+        self.tagStack.push(None)
 
     def __execReturn(self):  # 0xf3
         # 不分析合约间的跳转关系
@@ -528,13 +553,21 @@ class TagStack:
         self.tagStack.pop()
 
     def __execDelegateCall(self):  # 0xf4
-        assert 0
+        for i in range(6):
+            self.tagStack.pop()
+        self.tagStack.push(None)
 
     def __execCreate2(self):  # 0xf5
-        assert 0
+        self.tagStack.pop()
+        self.tagStack.pop()
+        self.tagStack.pop()
+        self.tagStack.pop()
+        self.tagStack.push(None)
 
     def __execStaticCall(self):  # 0xfa
-        assert 0
+        for i in range(6):
+            self.tagStack.pop()
+        self.tagStack.push(None)
 
     def __execRevert(self):  # 0xfd
 
