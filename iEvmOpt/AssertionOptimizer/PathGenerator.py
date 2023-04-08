@@ -83,6 +83,7 @@ class PathGenerator:
         路径记录：每访问一个新节点，则将其加入到路径栈，离开时pop一次(其实就是pop自己)
         访问控制：每访问一个新节点，则将其设置为true状态，退出时设置为false
         """
+        # print(curNode)
         self.pathRecorder.push(curNode)
         if self.isLoopRelated[curNode]:  # 当前访问的是一个scc，需要将其标记为true，防止死循环
             self.sccVisiting[curNode] = True
@@ -152,6 +153,8 @@ class PathGenerator:
                         # 程序已经结束了
                     self.returnAddrStack.push(e.tetrad[1])  # push返回地址
                     self.__dfs(node, curTagStack)
+                    # 已经走完了，返回信息栈需要pop掉这一个返回信息
+                    self.returnAddrStack.pop()
                 elif e.isReturnEdge:  # 是一条返回边
                     if self.returnAddrStack.empty():  # 栈里必须还有地址
                         continue

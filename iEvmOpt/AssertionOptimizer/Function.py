@@ -15,12 +15,12 @@ class Function:
 
     def __genSubGraphEdges(self, graphEdges: dict):
         # 生成函数子图的边
-        checkDict = dict(zip(self.funcBodyNodes, [None for i in range(0, len(self.funcBodyNodes))]))  # 增加查找速度
+        checkSet = set(self.funcBodyNodes)
         for i in self.funcBodyNodes:
             self.funcSubGraphEdges[i] = []
         for node in self.funcBodyNodes:
             for out in graphEdges[node]:
-                if out in checkDict.keys():  # 找到一个指向内部节点的边
+                if out in checkSet:  # 找到一个指向内部节点的边
                     self.funcSubGraphEdges[node].append(out)
 
     def addInvalidNode(self, invNode: int):

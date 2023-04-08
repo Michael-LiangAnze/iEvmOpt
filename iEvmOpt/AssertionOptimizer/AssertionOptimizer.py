@@ -190,7 +190,10 @@ class AssertionOptimizer:
                 _from = n.offset
                 for _to in self.edges[_from]:  # 可能有几个出边
                     # 这里做一个assert，防止出现匹配到两个节点都在dispatcher里面的情况，但是真的有吗？先不处理
-                    assert not (n.blockType == "dispatcher" and self.cfg.blocks[_to].blockType == "dispatcher")
+                    # 真的有，见test12
+                    # assert not (n.blockType == "dispatcher" and self.cfg.blocks[_to].blockType == "dispatcher")
+                    # if n.blockType == "dispatcher" and self.cfg.blocks[_to].blockType == "dispatcher": # 两个点都在dispatcher里，不认为是函数
+                    #     continue
                     e = JumpEdge(n, self.cfg.blocks[_to])
                     self.uncondJumpEdge.append(e)
         # for e in self.uncondJumpEdge:
@@ -270,14 +273,45 @@ class AssertionOptimizer:
                         if self.isFuncBodyHeadNode[node]:  # 函数头存在于scc，出现了递归的情况
                             self.log.fail("检测到函数递归调用的情况，该字节码无法被优化!")
         # 这里再做一个检查，看是否所有的common节点都被标记为了函数相关的节点
-        for node in self.nodes:
-            if self.cfg.blocks[node].blockType == "common":
-                if self.node2FuncId[node] == None:  # 没有标记
+        for offset, block in self.blocks.items():
+            if block.blockType == "common":
+                if self.node2FuncId[offset] == None:  # 没有标记
                     self.log.fail("未能找全所有的函数节点，放弃优化")
                 else:
                     continue
 
-        # 第七步，去除之前添加的边，因为下面要做路径搜索，新加入的边并不是原来cfg中应该出现的边
+        # 第七步，因为dispatcher中也有可能存在scc，因此需要将它们也标记出来
+        # 先生成子图
+        dispatcherNodes = []
+        subGraphEdges = {}  # 子图的边
+        for offset, block in self.blocks.items():
+            if block.blockType == "dispatcher":
+                dispatcherNodes.append(offset)
+                subGraphEdges[offset] = []
+        checkSet = set(dispatcherNodes)
+        for node in dispatcherNodes:
+            for out in self.edges[node]:
+                if out in checkSet:  # 找到一个指向内部节点的边
+                    subGraphEdges[node].append(out)
+        tarjan = TarjanAlgorithm(dispatcherNodes, subGraphEdges)
+        tarjan.tarjan(0)
+        for node in dispatcherNodes:
+            if not tarjan.visited[node]:
+                tarjan.tarjan(node)
+        sccList = tarjan.getSccList()
+        for scc in sccList:
+            if len(scc) > 1:  # 找到函数内的一个强连通分量
+                for node in scc:  # 将这些点标记为loop-related
+                    self.isLoopRelated[node] = True
+                    if self.isFuncBodyHeadNode[node]:  # 函数头存在于scc，出现了递归的情况
+                        self.log.fail("检测到函数递归调用的情况，该字节码无法被优化!")
+
+        # 第八步，处理可能出现的“自环”，见test12
+        for node in self.nodes:
+            if node in self.edges[node]:  # 出边指向自己
+                self.isLoopRelated[node] = True
+
+        # 第九步，去除之前添加的边，因为下面要做路径搜索，新加入的边并不是原来cfg中应该出现的边
         for pairs in funcRange2Calls.values():
             for pair in pairs:
                 self.edges[pair[0]].remove(pair[1])
@@ -988,7 +1022,7 @@ class AssertionOptimizer:
         # 因为运行时的函数体只会变短不会加长，因此offset只会变小，不会存在无法填入的情况
         # 格式: [[offset push的值，offset push的字节数，offset push指令的地址， offset push指令所在的block,
         #          size push的值，size push的字节数，size push指令的地址， size push指令所在的block]]
-        # for info in self.codeCopyInfo:
+        for info in self.codeCopyInfo:
 
 
         # 第六步，尝试将这些字节码拼成一个整体
