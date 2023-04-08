@@ -26,8 +26,17 @@ nonRedundant = "nonRedundant"
 
 
 class AssertionOptimizer:
-    def __init__(self, cfg: Cfg, inputFile: str, outputFile: str, outputProcessInfo: bool = False):
+    def __init__(self, cfg: Cfg, dataSegStr: str, inputFile: str, outputFile: str, outputProcessInfo: bool = False):
+        '''
+        对部分冗余和完全冗余进行优化，并重新生成字节码
+        :param cfg:运行时函数体的cfg
+        :param dataSegStr:数据段字符串
+        :param inputFile:
+        :param outputFile: 输出文件的路径
+        :param outputProcessInfo:是否输出处理过程信息，默认为不输出
+        '''
         self.cfg = cfg
+        self.dataSegStr = dataSegStr
         self.blocks = self.cfg.blocks  # 存储基本块，格式为 起始offset:BasicBlock
         self.inputFile = inputFile  # 处理前的文件
         self.outputFile = outputFile  # 处理后的新文件
@@ -40,7 +49,7 @@ class AssertionOptimizer:
         self.edges = self.cfg.edges  # 存储出边表，格式为 from:[to1,to2...]
         self.inEdges = self.cfg.inEdges  # 存储入边表，格式为 to:[from1,from2...]
         self.funcCnt = 0  # 函数计数
-        self.funcBodyDict = {}  # 记录找到的所有函数，格式为：  funcId:function
+        self.funcDict = {}  # 记录找到的所有函数，格式为：  funcId:function
         self.node2FuncId = dict(
             zip(self.nodes, [None for i in range(0, self.nodes.__len__())]))  # 记录节点属于哪个函数，格式为：  node：funcId
         self.isFuncBodyHeadNode = dict(
@@ -98,6 +107,10 @@ class AssertionOptimizer:
         self.newBytecode1 = None  # 第一段字节码，即原函数体相关的字节码
         self.newBytecode2 = None  # 第二段字节码，即新构造函数体相关的字节码
 
+        # copdcopy信息，格式: [[offset push的值，offset push的字节数，offset push指令的地址， offset push指令所在的block,
+        #                       size push的值，size push的字节数，size push指令的地址， size push指令所在的block]]
+        self.codeCopyInfo = None
+
     def optimize(self):
         self.log.info("开始进行字节码分析")
 
@@ -152,7 +165,6 @@ class AssertionOptimizer:
         self.log.info("正在将优化后的字节码写入到文件: {}".format(self.outputFile))
         self.__outputFile()
         self.log.info("写入完毕")
-
 
     def __identifyAndCheckFunctions(self):
         '''
@@ -235,7 +247,7 @@ class AssertionOptimizer:
             self.funcCnt += 1
             offsetRange[1] -= 1
             f = Function(self.funcCnt, offsetRange[0], offsetRange[1], funcBody, self.edges)
-            self.funcBodyDict[self.funcCnt] = f
+            self.funcDict[self.funcCnt] = f
             for node in funcBody:
                 self.node2FuncId[node] = self.funcCnt
             # 这里做一个检查，看看所有找到的同一个函数的节点的长度拼起来，是否是其应有的长度，防止漏掉一些顶点
@@ -247,7 +259,7 @@ class AssertionOptimizer:
             # f.printFunc()
 
         # 第六步，检查一个函数内的节点是否存在环，存在则将其标记出来
-        for func in self.funcBodyDict.values():  # 取出一个函数
+        for func in self.funcDict.values():  # 取出一个函数
             tarjan = TarjanAlgorithm(func.funcBodyNodes, func.funcSubGraphEdges)
             tarjan.tarjan(func.firstBodyBlockOffset)
             sccList = tarjan.getSccList()
@@ -277,6 +289,7 @@ class AssertionOptimizer:
         1.找出所有从init节点到所有invalid节点的路径
         2.寻路过程中，同时进行tagStack的记录，从而找到所有jump/jumpi的边的地址是何处被push的
         3.在寻路过程中，找出是否存在环形函数调用链的情况。路径中包含相关节点的assertion同样不会被优化
+        4.在寻路过程中，使用tagstack记录所有codecopy的参数在何处被push
         '''
         # 第一步，找出所有的invalid节点
         for node in self.blocks.values():
@@ -285,11 +298,12 @@ class AssertionOptimizer:
         # print(self.invalidList)
 
         # 第二步，从起点开始做dfs遍历，完成提到的三个任务
-        generator = PathGenerator(self.cfg, self.invalidNodeList, self.uncondJumpEdge, self.isLoopRelated,
-                                  self.node2FuncId, self.funcBodyDict)
+        generator = PathGenerator(self.cfg, self.uncondJumpEdge, self.isLoopRelated,
+                                  self.node2FuncId, self.funcDict)
         generator.genPath()
         paths = generator.getPath()
         self.jumpEdgeInfo = generator.getJumpEdgeInfo()
+        self.codeCopyInfo = generator.getCodecopyInfo()
 
         # 第三步，将这些路径根据invalid节点进行归类
         for invNode in self.invalidNodeList:
@@ -429,7 +443,7 @@ class AssertionOptimizer:
             if not hasReachable:  # 没有一条路径可达，是完全冗余
                 self.redundantType[invNode] = fullyRedundant
                 self.fullyRedundantInvNodes.append(invNode)
-            else:  # 有可达的路径
+            else:  # 有可达的路径，不是完全冗余
                 if hasRedundantCallChain:  # 有冗余的函数调用链
                     self.redundantType[invNode] = partiallyRedundant
                     self.partiallyRedundantInvNodes.append(invNode)
@@ -517,7 +531,7 @@ class AssertionOptimizer:
             if self.outputProcessInfo:  # 需要输出处理信息
                 self.log.processing("找到和节点{}程序状态相同的地址:{}，对应的节点为:{}".format(invNode, targetAddr, targetNode))
 
-            # 第三步，将这一段序列置为空指令
+            # 第三步，将这一段序列置为空指令，并且记录删除序列信息
             for node in self.nodes:
                 if targetNode <= node <= invNode:  # invNode后的block暂时不处理
                     beginAddr = max(targetAddr, node)
@@ -547,13 +561,12 @@ class AssertionOptimizer:
             tempByteCode.append(0x1f)  # 指令置为空指令
         self.blocks[curLastNode].bytecode = tempByteCode
 
+        # 第二步，使用符号执行，找到程序状态与Invalid执行完之后相同的targetNode和targetAddr
         executor = SymbolicExecutor(self.cfg)
         for invNode in self.partiallyRedundantInvNodes:  # 在可达性分析中已经确认该节点是部分冗余的
             # 首先做一个检查，检查是否为jumpi的失败边走向Invalid，且该invalid节点只有一个入边
             assert self.cfg.inEdges[invNode].__len__() == 1
             assert invNode == self.cfg.blocks[self.cfg.inEdges[invNode][0]].jumpiDest[False]
-
-            # 第二步，使用符号执行，找到程序状态与Invalid执行完之后相同的targetNode和targetAddr
             pathIds = self.invNodeToRedundantCallChain[invNode][0]  # 随意取出一条调用链
             pathNodes = self.invalidPaths[pathIds[0]].pathNodes  # 随意取出一条路径
             stateMap = {}  # 状态map，实际存储的是，地址处的指令在执行前的程序状态
@@ -584,17 +597,24 @@ class AssertionOptimizer:
             if self.outputProcessInfo:  # 需要输出处理信息
                 self.log.processing("找到和节点{}程序状态相同的地址:{}，对应的节点为:{}".format(invNode, targetAddr, targetNode))
 
-            # 第四步，构造一个新函数体，其中去除了assertion相关的字节码
-            # 新函数体不包括的部分为： targetAddr <= addr <= invNode之间的字节码
-            invNodeFuncId = self.node2FuncId[invNode]  # 找出invalid节点所在的函数的id
-            funcBodyNodes = self.funcBodyDict[invNodeFuncId].funcBodyNodes
-            # print(funcBodyNodes)
-            newFuncBodyNodes = []
+            # 第四步，暂时不构造新的函数体，只是将invNode添加到对应函数，并记录冗余的地址区间
+            targetFuncId = self.node2FuncId[invNode]
+            self.funcDict[targetFuncId].addInvalidNode(invNode)
+            if self.inEdges[invNode + 1].__len__() == 1:  # jumpdest只有一个入边，要把它也删除掉
+                self.funcDict[targetFuncId].addRemovedRangeInfo(invNode, [targetAddr, targetNode, invNode + 2])
+            else:  # 不止一个入边，不删jumpdest
+                self.funcDict[targetFuncId].addRemovedRangeInfo(invNode, [targetAddr, targetNode, invNode + 1])
+
+        # 第五步，对每一个包含部分冗余的函数体，都构造一个新函数体，其中去除了assertion相关的字节码
+        # 同时，将旧函数体节点的对应信息，添加到新函数体中去
+        for funcId, func in self.funcDict.items():  # 取出一个函数
+            invNodes = func.getInvalidNodes()
+            if invNodes.__len__() == 0:
+                continue
+            # 添加一个新函数体到数据段后面
+            funcBodyNodes = func.funcBodyNodes
             funcBodyNodes.sort()  # 从小到大一个个加
             offset = curLastNode + self.blocks[curLastNode].length - funcBodyNodes[0]  # 两个函数体之间的偏移量
-            # print(curLastNode,self.blocks[curLastNode].length,funcBodyNodes[0])
-            # print(offset)
-            translator = OpcodeTranslator(self.cfg.exitBlockId)
             for node in funcBodyNodes:  # 对每一个原有的block，都新建一个相同的block
                 originalBlock = self.blocks[node]
                 beginOffset = node + offset
@@ -606,46 +626,42 @@ class AssertionOptimizer:
                 newBlockInfo["bytecodeHex"] = originalBlock.bytecodeStr
                 newBlockInfo["parsedOpcodes"] = originalBlock.instrsStr
                 newBlock = BasicBlock(newBlockInfo)  # 新建一个block
-                # 添加删除序列信息，并将被删除序列置为空指令
+                self.nodes.append(beginOffset)
+                self.blocks[beginOffset] = newBlock
                 self.removedRange[beginOffset] = []
-                if targetNode <= node <= invNode:  # 是要删除字节码的block
-                    beginAddr = max(targetAddr, node)
-                    endAddr = node + originalBlock.length
-                    for i in range(beginAddr - node, endAddr - node):
-                        newBlock.bytecode[i] = 0x1f  # 置为空指令
-                    beginAddr += offset
-                    endAddr += offset
-                    self.removedRange[beginOffset].append([beginAddr, endAddr])
-                elif node == invNode + 1 and self.inEdges[invNode + 1].__len__() == 1:
-                    # invalid的下一个block，只有一条入边，说明这个jumpdest也可以删除
-                    self.removedRange[invNode + 1 + offset].append([invNode + 1 + offset, invNode + 2 + offset])
-                    newBlock.bytecode[0] = 0x1f
-                # 将原函数体中已经存在的删除序列信息，添加到新函数体中
+                self.edges[beginOffset] = []
+                curLastNode = beginOffset
+
+            # 添加部分冗余删除序列信息
+            for invNode in invNodes:
+                info = func.getRemovedRangeInfo(invNode)
+                for node in funcBodyNodes:
+                    if info[1] <= node < info[2]:  # 节点中存在要删除的序列
+                        beginAddr = max(node, info[0]) + offset
+                        endAddr = min(node + self.blocks[node].length, info[2]) + offset
+                        self.removedRange[node + offset].append([beginAddr, endAddr])
+            # 将原函数体中已经存在的完全冗余删除序列信息，添加到新函数体中
+            for node in funcBodyNodes:
                 for info in self.removedRange[node]:
                     newInfo = list(info)
                     newInfo[0] += offset
                     newInfo[1] += offset
-                    self.removedRange[beginOffset].append(newInfo)
-                newBlock.instrs = translator.translate(newBlock)
-                # 放入到cfg中
-                self.blocks[beginOffset] = newBlock  # 添加到原图中
-                self.nodes.append(beginOffset)  # 添加到原图中
-                self.edges[beginOffset] = []
-                newFuncBodyNodes.append(beginOffset)
+                    self.removedRange[node + offset].append(newInfo)
 
-            # 第六步，找出各个函数调用链的，新函数体的调用节点
+            # 找出各个冗余函数调用链的，新函数体的调用节点
             callerNodes = []
-            for callChain in self.invNodeToRedundantCallChain[invNode]:
-                pathId = callChain[0]  # 在调用链上随意取出一条路径
-                pathNodes = self.invalidPaths[pathId].pathNodes
-                for node in reversed(pathNodes):
-                    curNodeFuncId = self.node2FuncId[node]
-                    if curNodeFuncId != invNodeFuncId:  # 出了invalid的函数
-                        callerNodes.append(node)
-                        break
+            for invNode in invNodes:  # 取出一个Invalid
+                for callChain in self.invNodeToRedundantCallChain[invNode]:  # 取出相关的调用链路径
+                    pathId = callChain[0]  # 在调用链上随意取出一条路径
+                    pathNodes = self.invalidPaths[pathId].pathNodes
+                    for node in reversed(pathNodes):
+                        curNodeFuncId = self.node2FuncId[node]
+                        if curNodeFuncId != funcId:  # 出了invalid的函数
+                            callerNodes.append(node)
+                            break
             returnedNodes = [node + self.blocks[node].length for node in callerNodes]  # 应当返回的节点
 
-            # 第七步，添加跳转边信息
+            # 添加跳转边信息，注意，这些边中有需要被移除的，只是暂时不处理，后面生成字节码的时候，会把出现在删除序列中的跳转信息删除掉
             # [[push的值，push的字节数，push指令的地址，push指令所在的block，jump所在的block，跳转的type(可选),新老函数体之间的offset(可选)]]
             # 这里给一个设定：
             # 在重定位时，一旦出现了第六个和第七个参数，即说明这是新构造函数体的相关跳转信息
@@ -700,23 +716,28 @@ class AssertionOptimizer:
                     # 否则，不需要修改这条边信息
             for info in newJumpEdgeInfo:
                 self.jumpEdgeInfo.append(info)
-            for node in funcBodyNodes:  # 将不需要重定位，而且不在删除序列中的边添加到edges中
-                tempType = self.blocks[node].jumpType
-                if tempType == "fall":
-                    if targetNode <= node <= invNode:
-                        continue
-                    _from = node + offset
-                    _to = node + offset + self.blocks[node].length
-                    self.edges[_from].append(_to)
-                elif tempType == "terminal":
-                    if targetNode <= node <= invNode:
-                        continue
-                    _from = node + offset
-                    self.edges[_from].append(self.cfg.exitBlockId)
-                elif tempType == "conditional":  # 添加其中的fall边
-                    _from = node + offset
-                    _to = _to = node + offset + self.blocks[node].length
-                    self.edges[_from].append(_to)
+
+            # 将不需要重定位，而且不在删除序列中的边添加到edges中
+            for invNode in invNodes:  # 取出一个Invalid
+                info = func.getRemovedRangeInfo(invNode)
+                targetNode = info[1]
+                for node in funcBodyNodes:
+                    tempType = self.blocks[node].jumpType
+                    if tempType == "fall":
+                        if targetNode <= node <= invNode:
+                            continue
+                        _from = node + offset
+                        _to = node + offset + self.blocks[node].length
+                        self.edges[_from].append(_to)
+                    elif tempType == "terminal":
+                        if targetNode <= node <= invNode:
+                            continue
+                        _from = node + offset
+                        self.edges[_from].append(self.cfg.exitBlockId)
+                    elif tempType == "conditional":  # 添加其中的fall边
+                        _from = node + offset
+                        _to = _to = node + offset + self.blocks[node].length
+                        self.edges[_from].append(_to)
 
     def __regenerateBytecode(self):
         '''
@@ -727,7 +748,7 @@ class AssertionOptimizer:
         #     b.printBlockInfo()
         # print(self.jumpEdgeInfo)
         # print(self.removedRange)
-        # 第一步，对删除区间信息去重
+        # 第一步，对删除区间信息和codecopy信息去重
         for node in self.nodes:
             if self.removedRange[node].__len__() == 0:
                 continue
@@ -737,6 +758,12 @@ class AssertionOptimizer:
             self.removedRange[node] = []  # 置空
             for rangeStr in tempSet:
                 self.removedRange[node].append(json.loads(rangeStr))  # 再还原为list
+        tempSet = set()
+        for info in self.codeCopyInfo:
+            tempSet.add(info.__str__())
+        self.codeCopyInfo = []
+        for infoStr in tempSet:
+            self.codeCopyInfo.append(json.loads(infoStr))
 
         # 第二步，将出现在已被删除字节码序列中的跳转信息删除
         # [[push的值，push的字节数，push指令的地址，push指令所在的block，jump所在的block，跳转的type(可选),新老函数体之间的offset(可选)]]
@@ -845,7 +872,7 @@ class AssertionOptimizer:
         #   跳转的type为3，说明push不在但jump在新函数体,而且callerNodeJumpAddr+1==push的值（新函数体返回），此时需要将4号位加上offset即可
         #   跳转的type为4，说明push在但jump不在新函数体（新函数体对其他函数的调用后返回），此时需要将0、2、3号位信息加上offset，并重新计算字节数
 
-        # 首先要根据push指令所在的地址，对这些进行进行一个排序(在路径生成器中已去重)
+        # 首先要根据push指令所在的地址，对这些信息进行一个排序(在路径生成器中已去重)
         pushAddrToInfo = {}
         for info in self.jumpEdgeInfo:
             if info.__len__() == 7:
@@ -957,7 +984,14 @@ class AssertionOptimizer:
                     finishFilling = False  # 本次试填入失败
                     break  # 不再查看其他的跳转信息，重新开始再做试填入
 
-        # 第五步，尝试将这些字节码拼成一个整体
+        # 第五步，将codecopy的新的offset进行填入
+        # 因为运行时的函数体只会变短不会加长，因此offset只会变小，不会存在无法填入的情况
+        # 格式: [[offset push的值，offset push的字节数，offset push指令的地址， offset push指令所在的block,
+        #          size push的值，size push的字节数，size push指令的地址， size push指令所在的block]]
+        # for info in self.codeCopyInfo:
+
+
+        # 第六步，尝试将这些字节码拼成一个整体
         self.newBytecode1 = deque()  # 效率更高
         self.newBytecode2 = deque()
         for node in self.nodes:  # 有序的

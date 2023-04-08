@@ -10,7 +10,7 @@ from Utils import DotGraphGenerator
 from Utils.Logger import Logger
 
 
-class CfgBuilder:
+class EtherSolver:
 
     def __init__(self, srcPath: str, isParseBefore: bool = False):
         """ 使用EtherSolve工具分析字节码文件，得到对应的json、html、gv文件
@@ -22,6 +22,7 @@ class CfgBuilder:
         self.outputPath = "Cfg/CfgOutput/"  # 输出的目录名
         self.constructorCfg = Cfg()
         self.cfg = Cfg()
+        self.dataSeg = None # 数据段
         self.log = Logger()
         if not isParseBefore:
             self.__etherSolve()
@@ -72,20 +73,20 @@ class CfgBuilder:
         self.log.info("正在构建CFG")
         # 读入原文件
         with open(self.outputPath + self.srcName + "_cfg.json ", 'r', encoding='UTF-8') as f:
-            json_dict = json.load(f)
+            jsonInfo = json.load(f)
         f.close()
         # 读取构建信息
-        for b in json_dict["constructorCfg"]["nodes"]:  # 读取基本块
+        for b in jsonInfo["constructorCfg"]["nodes"]:  # 读取基本块
             block = BasicBlock(b)
             self.constructorCfg.addBasicBlock(block)
-        for e in json_dict["constructorCfg"]["successors"]:  # 读取边
+        for e in jsonInfo["constructorCfg"]["successors"]:  # 读取边
             self.constructorCfg.addEdge(e)
 
         # 读取运行时信息
-        for b in json_dict["runtimeCfg"]["nodes"]:  # 读取基本块
+        for b in jsonInfo["runtimeCfg"]["nodes"]:  # 读取基本块
             block = BasicBlock(b)
             self.cfg.addBasicBlock(block)
-        for e in json_dict["runtimeCfg"]["successors"]:  # 读取边
+        for e in jsonInfo["runtimeCfg"]["successors"]:  # 读取边
             self.cfg.addEdge(e)
 
         # 获取起始基本块和终止基本块
@@ -107,6 +108,8 @@ class CfgBuilder:
                 b.jumpiDest[False] = fallBlockOff
                 # b.printBlockInfo()
 
+        self.dataSeg = jsonInfo["metadata"]
+
         self.log.info("CFG构建完毕")
         # self.cfg.output()
         # self.constructorCfg.output()
@@ -116,3 +119,6 @@ class CfgBuilder:
 
     def getCfg(self):
         return self.cfg
+
+    def getDataSeg(self):
+        return self.dataSeg

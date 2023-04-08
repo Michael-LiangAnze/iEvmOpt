@@ -271,5 +271,14 @@ contract test7 {
 
 试填入阶段，一旦字节数发生了变化，则整个过程都需要重新进行计算。
 
+### 关于codecopy
 
+#### 前提
+
+只能对两种类型的codecopy进行优化：
+
+* 在constructor中的，用于将运行时字节码复制到memory中的codecopy
+* 在任意地方的，但是只是用于获取数据段的codecopy
+
+对于其他用法的codecopy，一旦被检测到，就会拒绝优化该字节码。 
 

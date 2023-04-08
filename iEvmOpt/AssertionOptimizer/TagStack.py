@@ -16,8 +16,6 @@ class TagStack:
         self.lastInstrAddrOfBlock = 0  # block内最后一个指令的地址
         self.jumpCond = None  # 如果当前的Block为无条件Jump，记录跳转的条件
 
-
-
     def clearExecutor(self):
         '''
         清空符号执行器
@@ -55,6 +53,16 @@ class TagStack:
         else:
             return list(temp)
 
+    def getTagStackItem(self, depth: int):
+        tmpSize = self.tagStack.size()
+        if depth >= tmpSize:  # 不能超出栈深度
+            return None
+        tmp = self.tagStack.getItem(tmpSize - 1 - depth)
+        if tmp is None:
+            return None
+        else:
+            return list(tmp)
+
     def printState(self, printBlock: bool = True):
         """ 输出当前程序状态
         :param printBlock:是否输出基本块信息
@@ -63,6 +71,14 @@ class TagStack:
             self.curBlock.printBlockInfo()
         print("Current PC is:{}".format(self.PC))
         print("Current tag stack:{}<-top".format(list(self.tagStack.getStack())))
+
+    def getOpcode(self):
+        '''
+        获取当前PC处的操作码
+        :return:opcode
+        '''
+        index = self.PC - self.curBlock.offset
+        return self.curBlock.bytecode[index]
 
     def execNextOpCode(self):
         ''' 从当前PC开始，执行下一条指令

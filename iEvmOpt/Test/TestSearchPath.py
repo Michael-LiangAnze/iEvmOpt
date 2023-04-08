@@ -8,7 +8,7 @@ if __name__ == '__main__':
         exit(-1)
 
     # builder = CfgBuilder(sys.argv[1])
-    builder = CfgBuilder(sys.argv[1],True)
+    builder = EtherSolver(sys.argv[1], True)
     cfg = builder.getCfg()
     # cfg.output()
 
