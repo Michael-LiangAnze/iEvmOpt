@@ -22,7 +22,8 @@ class EtherSolver:
         self.outputPath = "Cfg/CfgOutput/"  # 输出的目录名
         self.constructorCfg = Cfg()
         self.cfg = Cfg()
-        self.dataSeg = None # 数据段
+        self.constructorDataSeg = None  # 构建函数体后的数据段
+        self.dataSeg = None  # 函数体后的数据段
         self.log = Logger()
         if not isParseBefore:
             self.__etherSolve()
@@ -66,12 +67,11 @@ class EtherSolver:
         dot = graphviz.Source(g)
         dot.render(outfile=self.outputPath + self.srcName + "_cfg.png", format='png')
 
-
         self.log.info("EtherSolve处理完毕")
 
     def __buildCfg(self):
         self.log.info("正在构建CFG")
-        # 读入原文件
+        # 读入json文件
         with open(self.outputPath + self.srcName + "_cfg.json ", 'r', encoding='UTF-8') as f:
             jsonInfo = json.load(f)
         f.close()
@@ -81,6 +81,7 @@ class EtherSolver:
             self.constructorCfg.addBasicBlock(block)
         for e in jsonInfo["constructorCfg"]["successors"]:  # 读取边
             self.constructorCfg.addEdge(e)
+        self.constructorCfg.genBytecodeStr()
 
         # 读取运行时信息
         for b in jsonInfo["runtimeCfg"]["nodes"]:  # 读取基本块
@@ -88,12 +89,18 @@ class EtherSolver:
             self.cfg.addBasicBlock(block)
         for e in jsonInfo["runtimeCfg"]["successors"]:  # 读取边
             self.cfg.addEdge(e)
+        self.cfg.genBytecodeStr()
 
         # 获取起始基本块和终止基本块
         self.cfg.initBlockId = min(self.cfg.blocks.keys())
         assert self.cfg.initBlockId == 0
         self.cfg.exitBlockId = max(self.cfg.blocks.keys())
         assert len(self.cfg.edges[self.cfg.exitBlockId]) == 0
+
+        self.constructorCfg.initBlockId = min(self.constructorCfg.blocks.keys())
+        assert self.constructorCfg.initBlockId == 0
+        self.constructorCfg.exitBlockId = max(self.constructorCfg.blocks.keys())
+        assert len(self.constructorCfg.edges[self.constructorCfg.exitBlockId]) == 0
 
         # 添加unconditional、conditional跳转目标块的信息
         for offset, b in self.cfg.blocks.items():
@@ -108,7 +115,16 @@ class EtherSolver:
                 b.jumpiDest[False] = fallBlockOff
                 # b.printBlockInfo()
 
-        self.dataSeg = jsonInfo["metadata"]
+        with open(self.srcPath, "r") as f:
+            originalStr = f.read()  # 将原字符串读入
+        funcBodyBeginIndex = originalStr.find(self.cfg.bytecodeStr)
+        assert funcBodyBeginIndex != -1
+        assert originalStr.count(self.cfg.bytecodeStr) == 1
+        self.constructorCfg.setBeginIndex(0)
+        self.cfg.setBeginIndex(funcBodyBeginIndex // 2)  # 因为是字符串的偏移量，因此要除以2
+
+        self.constructorDataSeg = originalStr[self.constructorCfg.getBytecodeLen():funcBodyBeginIndex]
+        self.dataSeg = originalStr[funcBodyBeginIndex + self.cfg.bytecodeLength * 2:]
 
         self.log.info("CFG构建完毕")
         # self.cfg.output()
@@ -119,6 +135,9 @@ class EtherSolver:
 
     def getCfg(self):
         return self.cfg
+
+    def getConstructorDataSegStr(self):
+        return self.constructorDataSeg
 
     def getDataSeg(self):
         return self.dataSeg

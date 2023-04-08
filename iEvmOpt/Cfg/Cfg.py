@@ -10,6 +10,38 @@ class Cfg:
         self.initBlockId = 0
         self.exitBlockId = 0
 
+        self.bytecodeLength = 0  # cfg的字节码长度，单位为字节
+        self.bytecodeStr = ""
+
+        self.beginIndexInBytecode = 0  # cfg在原字节码中的起始偏移量
+
+    def genBytecodeStr(self):
+        # 已经读入了所有的block，将它们拼接为一个长字符串，并设置长度
+        nodes = list(self.blocks.keys())
+        nodes.sort()
+        for node in nodes:
+            self.bytecodeStr += self.blocks[node].bytecodeStr
+        self.bytecodeStr += "00"  # 结尾的00
+        assert self.bytecodeStr.__len__() % 2 == 0
+        self.bytecodeLength = self.bytecodeStr.__len__() // 2
+
+    def getBytecodeLen(self):
+        return self.bytecodeLength
+
+    def setBeginIndex(self, index: int):
+        '''
+        设置cfg在原字节码中的起始偏移量
+        :param index:cfg在原字节码中的起始偏移量
+        :return:None
+        '''
+        self.beginIndexInBytecode = index
+
+    def getBeginIndex(self):
+        '''
+        获取cfg在原字节码中的起始偏移量
+        :return:cfg在原字节码中的起始偏移量
+        '''
+        return self.beginIndexInBytecode
 
     def addBasicBlock(self, block: BasicBlock):
         self.blocks[int(block.offset)] = block

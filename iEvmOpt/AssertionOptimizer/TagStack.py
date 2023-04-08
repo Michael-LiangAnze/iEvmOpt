@@ -162,6 +162,8 @@ class TagStack:
                 self.__execCallDataLoad()
             case 0x36:
                 self.__execCallDataSize()
+            case 0x37:
+                self.__execCallDataCopy()
             case 0x38:
                 self.__execCodesize()
             case 0x39:

@@ -26,19 +26,22 @@ nonRedundant = "nonRedundant"
 
 
 class AssertionOptimizer:
-    def __init__(self, cfg: Cfg, dataSegStr: str, inputFile: str, outputFile: str, outputProcessInfo: bool = False):
-        '''
+    def __init__(self, constructorCfg: Cfg, cfg: Cfg, constructorDataSegStr: str, dataSegStr: str, outputFile: str,
+                 outputProcessInfo: bool = False):
+        """
         对部分冗余和完全冗余进行优化，并重新生成字节码
+        :param constructorCfg:构造部分cfg
         :param cfg:运行时函数体的cfg
+        :param constructorDataSegStr:构造部分数据段字符串
         :param dataSegStr:数据段字符串
-        :param inputFile:
         :param outputFile: 输出文件的路径
         :param outputProcessInfo:是否输出处理过程信息，默认为不输出
-        '''
+        """
+        self.constructorCfg = constructorCfg
         self.cfg = cfg
+        self.constructorDataSegStr = constructorDataSegStr
         self.dataSegStr = dataSegStr
         self.blocks = self.cfg.blocks  # 存储基本块，格式为 起始offset:BasicBlock
-        self.inputFile = inputFile  # 处理前的文件
         self.outputFile = outputFile  # 处理后的新文件
         self.log = Logger()
         self.outputProcessInfo = outputProcessInfo
@@ -89,23 +92,15 @@ class AssertionOptimizer:
         #   跳转的type为3，说明push不在但jump在新函数体,而且callerNodeJumpAddr+1==push的值（新函数体返回），此时需要将4号位加上offset即可
         #   跳转的type为4，说明push在但jump不在新函数体（新函数体对其他函数的调用后返回），此时需要将0、2、3号位信息加上offset，并重新计算字节数
 
-        # 将原文件读入一个字符串，然后让其和原函数体字符串做匹配，找到offset为0对应的下标
-        with open(self.inputFile, "r") as f:
-            self.originalBytecodeStr = f.read()
-            f.close()
-        sortedKeys = list(self.cfg.blocks.keys())
-        sortedKeys.sort()
-        funcBodyStr = "".join([self.cfg.blocks[k].bytecodeStr if k <= self.cfg.exitBlockId else "" for k in sortedKeys])
-        assert self.originalBytecodeStr.count(funcBodyStr) == 1  # 应该只出现一次
-        self.funcBodyStrBeginIndex = self.originalBytecodeStr.find(funcBodyStr)  # 找出的是字符串的偏移量，需要除2变为字节偏移量
-        self.originalLength = 0  # 原来的字节码函数体的总长度
-        for b in self.blocks.values():
-            self.originalLength += b.length
-        self.originalToNewAddr = {}  # 一个映射，格式为： 旧addr:新addr
-
         # 重新生成函数体代码的信息
-        self.newBytecode1 = None  # 第一段字节码，即原函数体相关的字节码
-        self.newBytecode2 = None  # 第二段字节码，即新构造函数体相关的字节码
+        self.originalToNewAddr = {}  # 一个映射，格式为： 旧addr:新addr
+        self.constructorOpcode = None  # constructor的字节码
+        self.newFuncBodyOpcode = None  # 原函数体相关的字节码
+        self.appendedFuncBodyOpcode = None  # 新构造函数体相关的字节码
+
+        self.constructorFuncBodyLength = self.constructorCfg.bytecodeLength
+        self.funcBodyLength = self.cfg.bytecodeLength
+        self.dataSegLength = self.dataSegStr.__len__() // 2
 
         # copdcopy信息，格式: [[offset push的值，offset push的字节数，offset push指令的地址， offset push指令所在的block,
         #                       size push的值，size push的字节数，size push指令的地址， size push指令所在的block]]
@@ -156,12 +151,19 @@ class AssertionOptimizer:
             self.__optimizePartiallyRedundantAssertion()
             self.log.info("部分冗余Assertion优化完毕")
 
-        # 重新生成字节码序列
-        self.log.info("正在重新生成字节码序列")
-        self.__regenerateBytecode()
-        self.log.info("字节码序列生成完毕")
+        # 重新生成运行时的字节码序列
+        self.log.info("正在重新生成运行时字节码序列")
+        self.__regenerateRuntimeBytecode()
+        self.log.info("运行时字节码序列生成完毕")
 
-        # 将优化后的字节码写入文件
+        self.__outputNewCfgPic()  # 生成新cfg的图片
+
+        # 重新生成构造函数的字节码序列
+        self.log.info("正在重新生成构造函数字节码序列")
+        self.__regenerateConstructorBytecode()
+        self.log.info("构造函数字节码序列生成完毕")
+
+        # 将优化后的运行时字节码写入文件
         self.log.info("正在将优化后的字节码写入到文件: {}".format(self.outputFile))
         self.__outputFile()
         self.log.info("写入完毕")
@@ -339,7 +341,23 @@ class AssertionOptimizer:
         self.jumpEdgeInfo = generator.getJumpEdgeInfo()
         self.codeCopyInfo = generator.getCodecopyInfo()
 
-        # 第三步，将这些路径根据invalid节点进行归类
+        # 第三步，做一个检查信息，看codecopy指令是否只是用于复制运行时的代码，或者是用于访问数据段的信息
+        # copdcopy信息，格式: [[offset push的值，offset push的字节数，offset push指令的地址， offset push指令所在的block,
+        #                       size push的值，size push的字节数，size push指令的地址， size push指令所在的block]]
+        for info in self.codeCopyInfo:
+            if info[0] == self.cfg.getBeginIndex():  # 从runtime的起始位置开始复制，则size应为函数体+数据段
+                if info[4] == self.funcBodyLength + self.dataSegLength:
+                    continue
+                else:
+                    self.log.fail("codecopy无法进行分析: offset为运行时字节码的开始偏移量，但是长度不为运行时字节码长度+数据段长度")
+            else:  # 是其他的起始偏移量，只能是数据段，不能为代码段
+                if info[0] in range(self.funcBodyLength, self.funcBodyLength + self.dataSegLength):
+                    # 以数据段的偏移量为开头，且长度不能超出数据段
+                    continue
+                else:
+                    self.log.fail("codecopy无法进行分析: offset不在数据段内")
+
+        # 第四步，将这些路径根据invalid节点进行归类
         for invNode in self.invalidNodeList:
             self.invalidNode2PathIds[invNode] = []
         for path in paths:
@@ -352,7 +370,7 @@ class AssertionOptimizer:
         #     for pathId in v:
         #         self.invalidPaths[pathId].printPath()
 
-        # 第四步，对于一个Invalid节点，检查它的所有路径中，是否存在scc相关的节点
+        # 第五步，对于一个Invalid节点，检查它的所有路径中，是否存在scc相关的节点
         # 若有，则这些路径对应的invalid将不会被分析
         removedInvPaths = []
         removedInvNodes = []
@@ -381,7 +399,7 @@ class AssertionOptimizer:
         #         self.invalidPaths[pathId].printPath()
         # print(self.isFuncCallLoopRelated)
 
-        # 第五步，对于每个可优化的invalid节点，将其所有路径根据函数调用链进行划分
+        # 第六步，对于每个可优化的invalid节点，将其所有路径根据函数调用链进行划分
         for invNode in self.invalidNodeList:  # 取出一个invalid节点
             callChain2PathIds = {}  # 记录调用链内所有的点,格式： 调用链 : [pathId1,pathId2]
             for pathId in self.invalidNode2PathIds[invNode]:  # 取出他所有路径的id
@@ -587,11 +605,9 @@ class AssertionOptimizer:
         # 第一步，修改原来exit block的长度以及内容，它的作用是替代合约字节码中的数据段，
         # 方便在后面插入新构造的函数体
         curLastNode = self.cfg.exitBlockId
-        postStr = self.originalBytecodeStr[self.funcBodyStrBeginIndex + self.originalLength * 2:]
-        assert postStr.__len__() % 2 == 0
-        self.blocks[curLastNode].length = postStr.__len__() // 2  # 直接改exit block的长度
+        self.blocks[curLastNode].length = 1 + self.dataSegLength  # 直接改exit block的长度，+1是因为00
         tempByteCode = bytearray()
-        for i in range(postStr.__len__() // 2):
+        for i in range(1 + self.dataSegLength):
             tempByteCode.append(0x1f)  # 指令置为空指令
         self.blocks[curLastNode].bytecode = tempByteCode
 
@@ -773,10 +789,10 @@ class AssertionOptimizer:
                         _to = _to = node + offset + self.blocks[node].length
                         self.edges[_from].append(_to)
 
-    def __regenerateBytecode(self):
+    def __regenerateRuntimeBytecode(self):
         '''
-        重新生成字节码，同时完成重定位
-        :return:
+        重新生成运行时的字节码，同时完成重定位
+        :return:None
         '''
         # for b in self.blocks.values():
         #     b.printBlockInfo()
@@ -1023,18 +1039,19 @@ class AssertionOptimizer:
         # 格式: [[offset push的值，offset push的字节数，offset push指令的地址， offset push指令所在的block,
         #          size push的值，size push的字节数，size push指令的地址， size push指令所在的block]]
         for info in self.codeCopyInfo:
+            pass
 
-
-        # 第六步，尝试将这些字节码拼成一个整体
-        self.newBytecode1 = deque()  # 效率更高
-        self.newBytecode2 = deque()
+        # 第六步，将这些字节码拼成一个整体
+        self.newFuncBodyOpcode = deque()  # 效率更高
+        self.appendedFuncBodyOpcode = deque()
         for node in self.nodes:  # 有序的
             if node < self.cfg.exitBlockId:
                 for bc in self.blocks[node].bytecode:
-                    self.newBytecode1.append(bc)
+                    self.newFuncBodyOpcode.append(bc)
             elif node > self.cfg.exitBlockId:
                 for bc in self.blocks[node].bytecode:
-                    self.newBytecode2.append(bc)
+                    self.appendedFuncBodyOpcode.append(bc)
+        self.newFuncBodyOpcode.append(0x00)
         # print(sortedJumpEdgeInfo)
 
         # 第六步，修改各个block的偏移量，添加新的边信息
@@ -1127,26 +1144,33 @@ class AssertionOptimizer:
             self.blocks.pop(node)
         # self.blocks[299].printBlockInfo()
 
+    def __regenerateConstructorBytecode(self):
+        '''
+        重新生成构建函数的字节码序列
+        :return:None
+        '''
+        self.constructorOpcode = deque()  # 效率更高
+        self.nodes = list(self.constructorCfg.blocks.keys())
+        self.blocks = self.constructorCfg.blocks
+        self.nodes.sort()
+        for node in self.nodes:  # 有序的
+            for bc in self.blocks[node].bytecode:
+                self.constructorOpcode.append(bc)
+        self.constructorOpcode.append(0x00)
+
     def __outputFile(self):
         '''
         将修改后的cfg写回到文件中
         :return:
         '''
-        # for b in self.blocks.values():
-        #     b.printBlockInfo()
-
-        # 第二步，获取原文件中，在函数体之前的以及之后的字符串，同时将其与新函数体的字符串拼接起来
-        preStr = self.originalBytecodeStr[:self.funcBodyStrBeginIndex]
-        postStr = self.originalBytecodeStr[self.funcBodyStrBeginIndex + self.originalLength * 2:]
-        newFuncBodyStr1 = "".join(['{:02x}'.format(num) for num in self.newBytecode1])  # 再转换回字符串
-        newFuncBodyStr2 = "".join(['{:02x}'.format(num) for num in self.newBytecode2])  # 再转换回字符串
-        newBytecodeStr = preStr + newFuncBodyStr1 + postStr + newFuncBodyStr2
-
-        # 第三步，将结果写入文件
+        constructorStr = "".join(['{:02x}'.format(num) for num in self.constructorOpcode])
+        newFuncBodyStr = "".join(['{:02x}'.format(num) for num in self.newFuncBodyOpcode])
+        appendedFuncBodyStr = "".join(['{:02x}'.format(num) for num in self.appendedFuncBodyOpcode])
         with open(self.outputFile, "w+") as f:
-            f.write(newBytecodeStr)
+            f.write(
+                constructorStr + self.constructorDataSegStr + newFuncBodyStr + self.dataSegStr + appendedFuncBodyStr)
 
-    def outputNewCfgPic(self):
+    def __outputNewCfgPic(self):
         # 测试使用，将新的cfg输出为图片，方便检查
         self.blocks[self.cfg.exitBlockId].bytecode = bytearray()
         self.blocks[self.cfg.exitBlockId].length = 0

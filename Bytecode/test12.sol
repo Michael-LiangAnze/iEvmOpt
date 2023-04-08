@@ -4,12 +4,12 @@ pragma solidity ^0.4.0;
 contract test12{
     string name;
 
-    function setName()public{
-        name = "0x1324654684486544656654204464465489498635156546498618555849651238974561849561986531246354125454545463351";
+    function setName(string _name)public{
+        name = _name;
     }
 
-    function getName()public returns(string){
-        return name;
+    function f()public{
+        setName("0x1324654684486544656654204464465489498635156546498618555849651238974561849561986531246354125454545463351aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
     }
 
 }

@@ -108,8 +108,8 @@ class PathGenerator:
                 tmpSize = curTagStack.getTagStackItem(2)
                 assert tmpOffset is not None
                 assert tmpSize is not None
-                tmpInfo = tmpOffset.extend(tmpSize)
-                self.codecopyInfo.append(tmpInfo)
+                tmpOffset.extend(tmpSize)
+                self.codecopyInfo.append(tmpOffset)
             if curTagStack.isLastInstr():
                 pushInfo = curTagStack.getTagStackTop()  # [push的值，push指令的地址，push指令所在的block]
             curTagStack.execNextOpCode()

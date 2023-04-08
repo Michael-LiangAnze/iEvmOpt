@@ -90,6 +90,8 @@ class OpcodeTranslator:
                     addrToContent[tempPc] = "CALLDATALOAD"
                 case 0x36:
                     addrToContent[tempPc] = "CALLDATASIZE"
+                case 0x37:
+                    addrToContent[tempPc] = "CALLDATACOPY"
                 case 0x38:
                     addrToContent[tempPc] = "CODESIZE"
                 case 0x39:
