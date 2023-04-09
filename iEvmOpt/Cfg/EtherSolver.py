@@ -81,7 +81,10 @@ class EtherSolver:
             self.constructorCfg.addBasicBlock(block)
         for e in jsonInfo["constructorCfg"]["successors"]:  # 读取边
             self.constructorCfg.addEdge(e)
-        self.constructorCfg.genBytecodeStr()
+        # 结尾可能是00，也可能是fe
+        tailOpcodeStr = jsonInfo["constructorCfg"]["remainingData"][:2]
+        assert tailOpcodeStr in ["00", "fe"]
+        self.constructorCfg.genBytecodeStr(tailOpcodeStr)
 
         # 读取运行时信息
         for b in jsonInfo["runtimeCfg"]["nodes"]:  # 读取基本块
@@ -89,7 +92,9 @@ class EtherSolver:
             self.cfg.addBasicBlock(block)
         for e in jsonInfo["runtimeCfg"]["successors"]:  # 读取边
             self.cfg.addEdge(e)
-        self.cfg.genBytecodeStr()
+        tailOpcodeStr = jsonInfo["runtimeCfg"]["remainingData"][:2]
+        assert tailOpcodeStr in ["00", "fe"]
+        self.cfg.genBytecodeStr(tailOpcodeStr)
 
         # 获取起始基本块和终止基本块
         self.cfg.initBlockId = min(self.cfg.blocks.keys())

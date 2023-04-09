@@ -1062,7 +1062,7 @@ class AssertionOptimizer:
             elif node > self.cfg.exitBlockId:
                 for bc in self.blocks[node].bytecode:
                     self.appendedFuncBodyOpcode.append(bc)
-        self.newFuncBodyOpcode.append(0x00)
+        self.newFuncBodyOpcode.append(self.cfg.getTailOpcode())
         tempFuncBodyLen += 1 # 结尾的00
         self.runtimeDataSegOffset = tempFuncBodyLen - self.funcBodyLength
         self.funcBodyLength = tempFuncBodyLen
@@ -1173,7 +1173,7 @@ class AssertionOptimizer:
         for node in self.nodes:  # 有序的
             for bc in self.blocks[node].bytecode:
                 self.constructorOpcode.append(bc)
-        self.constructorOpcode.append(0x00)
+        self.constructorOpcode.append(self.constructorCfg.getTailOpcode())
 
     def __outputFile(self):
         '''
