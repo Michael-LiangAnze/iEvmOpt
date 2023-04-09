@@ -128,7 +128,7 @@ class EtherSolver:
         self.constructorCfg.setBeginIndex(0)
         self.cfg.setBeginIndex(funcBodyBeginIndex // 2)  # 因为是字符串的偏移量，因此要除以2
 
-        self.constructorDataSeg = originalStr[self.constructorCfg.getBytecodeLen():funcBodyBeginIndex]
+        self.constructorDataSeg = originalStr[self.constructorCfg.getBytecodeLen() * 2:funcBodyBeginIndex]
         self.dataSeg = originalStr[funcBodyBeginIndex + self.cfg.bytecodeLength * 2:]
 
         self.log.info("CFG构建完毕")

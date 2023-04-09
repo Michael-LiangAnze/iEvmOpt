@@ -159,7 +159,7 @@ class AssertionOptimizer:
         self.__regenerateRuntimeBytecode()
         self.log.info("运行时字节码序列生成完毕")
 
-        self.__outputNewCfgPic()  # 生成新cfg的图片
+        self.__outputNewCfgPic()  # 生成新cfg的图片，这一步必须在重新生成构造函数字节码序列之前完成，否则cfg的信息会被覆盖掉
 
         # 重新生成构造函数的字节码序列
         self.log.info("正在重新生成构造函数字节码序列")
@@ -172,7 +172,7 @@ class AssertionOptimizer:
         self.log.info("写入完毕")
 
     def __identifyAndCheckFunctions(self):
-        '''
+        """
         识别所有的函数
         给出三个基本假设：
         1. 同一个函数内的指令的地址都是从小到大连续的
@@ -180,7 +180,7 @@ class AssertionOptimizer:
         3. 任何函数调用的返回边，必然不是这样的结构：PUSH 返回地址;JUMP
         给出一个求解前提：
            我们不关心函数调用关系产生的“错误的环”，因为这种错误的环我们可以在搜索路径时，可以通过符号执行或者返回地址栈解决掉
-        '''
+        """
 
         # 第一步，检查是否除了0号offset节点之外，是否还有节点没有入边,若有，则存在返回边错误，一般为递归情况
         for _to, _from in self.inEdges.items():
@@ -323,13 +323,13 @@ class AssertionOptimizer:
                 self.inEdges[pair[1]].remove(pair[0])
 
     def __searchPaths(self):
-        '''
+        """
         从cfg的起始节点开始做dfs，完成以下几项任务（注意，这个dfs是经过修改的）：
         1.找出所有从init节点到所有invalid节点的路径
         2.寻路过程中，同时进行tagStack的记录，从而找到所有jump/jumpi的边的地址是何处被push的
         3.在寻路过程中，找出是否存在环形函数调用链的情况。路径中包含相关节点的assertion同样不会被优化
         4.在寻路过程中，使用tagstack记录所有codecopy的参数在何处被push
-        '''
+        """
         # 第一步，找出所有的invalid节点
         for node in self.blocks.values():
             if node.isInvalid:
@@ -431,10 +431,10 @@ class AssertionOptimizer:
         # print(self.invalidNode2CallChain)
 
     def __reachabilityAnalysis(self):
-        '''
+        """
         可达性分析：对于一个invalid节点，检查它的所有路径是否可达，并根据这些可达性信息判断冗余类型
         :return:None
-        '''
+        """
         # 第一步，使用求解器判断各条路径是否是可达的
         self.invNodeReachable = dict(zip(self.invalidNodeList, [False for i in range(self.invalidNodeList.__len__())]))
         executor = SymbolicExecutor(self.cfg)
@@ -541,10 +541,10 @@ class AssertionOptimizer:
         # g3.genDotGraph(sys.argv[0], "_dom_tree")
 
     def __optimizeFullyRedundantAssertion(self):
-        '''
+        """
         对字节码中完全冗余的assertion进行优化
         :return:
-        '''
+        """
         # for pid, t in self.redundantType.items():
         #     print(pid, t)
         executor = SymbolicExecutor(self.cfg)
@@ -601,10 +601,10 @@ class AssertionOptimizer:
             # print(self.removedRange)
 
     def __optimizePartiallyRedundantAssertion(self):
-        '''
+        """
         对字节码中部分冗余的assertion进行优化
         :return:
-        '''
+        """
         # 第一步，修改原来exit block的长度以及内容，它的作用是替代合约字节码中的数据段，
         # 方便在后面插入新构造的函数体
         curLastNode = self.cfg.exitBlockId
@@ -793,10 +793,10 @@ class AssertionOptimizer:
                         self.edges[_from].append(_to)
 
     def __regenerateRuntimeBytecode(self):
-        '''
+        """
         重新生成运行时的字节码，同时完成重定位
         :return:None
-        '''
+        """
         # for b in self.blocks.values():
         #     b.printBlockInfo()
         # print(self.jumpEdgeInfo)
@@ -1162,10 +1162,15 @@ class AssertionOptimizer:
         # self.blocks[299].printBlockInfo()
 
     def __regenerateConstructorBytecode(self):
-        '''
-        重新生成构建函数的字节码序列
+        """
+        重新生成构建函数的字节码序列，任务有以下几个：
+        1.进行函数识别和路径搜索，得到其中的跳转信息和codecopy信息
+        2.根据获取到的信息进行重定位即可
+        为了重用之前写过的代码，直接将当前的cfg信息改成constructorcfg的信息，并初始化相关数据结构即可
         :return:None
-        '''
+        """
+
+        # 第一步，做函数识别和路径搜索
         self.constructorOpcode = deque()  # 效率更高
         self.nodes = list(self.constructorCfg.blocks.keys())
         self.blocks = self.constructorCfg.blocks
