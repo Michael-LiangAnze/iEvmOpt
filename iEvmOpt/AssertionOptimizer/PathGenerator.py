@@ -41,7 +41,7 @@ class PathGenerator:
         self.paths = []  # 记录寻找到的路径，格式为路径对象
 
         # copdcopy信息，格式: [[offset push的值，offset push的字节数，offset push指令的地址， offset push指令所在的block,
-        #                       size push的值，size push的字节数，size push指令的地址， size push指令所在的block]]
+        #                       size push的值，size push的字节数，size push指令的地址， size push指令所在的block，codecopy所在的block]]
 
         self.codecopyInfo = []
         self.log = Logger()
@@ -109,6 +109,7 @@ class PathGenerator:
                 assert tmpOffset is not None
                 assert tmpSize is not None
                 tmpOffset.extend(tmpSize)
+                tmpOffset.append(curNode)
                 self.codecopyInfo.append(tmpOffset)
             if curTagStack.isLastInstr():
                 pushInfo = curTagStack.getTagStackTop()  # [push的值，push指令的地址，push指令所在的block]

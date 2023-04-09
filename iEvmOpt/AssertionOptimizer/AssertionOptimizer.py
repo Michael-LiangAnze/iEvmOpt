@@ -103,8 +103,11 @@ class AssertionOptimizer:
         self.dataSegLength = self.dataSegStr.__len__() // 2
 
         # copdcopy信息，格式: [[offset push的值，offset push的字节数，offset push指令的地址， offset push指令所在的block,
-        #                       size push的值，size push的字节数，size push指令的地址， size push指令所在的block]]
+        #                       size push的值，size push的字节数，size push指令的地址， size push指令所在的block，codecopy所在的block]]
         self.codeCopyInfo = None
+
+        # 构造函数重定位需要用到的信息
+        self.runtimeDataSegOffset = 0 # 运行时的数据段的偏移量，即运行时的函数体总长度的偏移量
 
     def optimize(self):
         self.log.info("开始进行字节码分析")
@@ -815,7 +818,18 @@ class AssertionOptimizer:
         for infoStr in tempSet:
             self.codeCopyInfo.append(json.loads(infoStr))
 
-        # 第二步，将出现在已被删除字节码序列中的跳转信息删除
+        # 第二步，将codecopy信息转换成jump的信息，方便统一处理
+        # 格式: [[offset push的值，offset push的字节数，offset push指令的地址， offset push指令所在的block,
+        #          size push的值，size push的字节数，size push指令的地址， size push指令所在的block，codecopy所在的block]]
+        # 转换的方式为：将前四个信息变成jump信息中的前四个，最后将codecopy指令的地址变成jump信息的第五个（即jump所在的block）
+        # 注意，为了在第三步、第七步区分出跳转信息和codecopy信息，暂时在该信息的后面插上一个none
+        for info in self.codeCopyInfo:
+            newInfo = list(info[:4])
+            newInfo.append(info[8])
+            newInfo.append(None)
+            self.jumpEdgeInfo.append(newInfo)
+
+        # 第三步，将出现在已被删除字节码序列中的跳转信息删除
         # [[push的值，push的字节数，push指令的地址，push指令所在的block，jump所在的block，跳转的type(可选),新老函数体之间的offset(可选)]]
         # 这里给一个设定：
         # 在重定位时，一旦出现了第六个和第七个参数，即说明这是新构造函数体的相关跳转信息
@@ -862,7 +876,7 @@ class AssertionOptimizer:
                     delPush = True
                     break
             for _range in self.removedRange[jumpBlock]:
-                if _range[0] <= jumpAddr < _range[1]:  # jump/jumpi语句位于删除序列内
+                if _range[0] <= jumpAddr < _range[1]:  # jump/jumpi/codecopy语句位于删除序列内
                     delJump = True
                     break
             # 解释一下为什么要做这个assert:因为这一个跳转信息是根据返回地址栈得出的
@@ -871,14 +885,16 @@ class AssertionOptimizer:
             assert delPush == delJump
             if delPush:  # 确定要删除
                 removedInfo.append(info)
-                self.edges[jumpBlock].remove(addr)
-                if self.blocks[jumpBlock].jumpType == "conditional":  # 删除其中的fall边
-                    self.edges[jumpBlock].remove(jumpBlock + self.blocks[jumpBlock].length)
+                # 下面删除info造成的边，需要先确定该信息是否为jump信息，因为这个信息有可能是codecopy转换过来的
+                if info.__len__() != 6:
+                    self.edges[jumpBlock].remove(addr)
+                    if self.blocks[jumpBlock].jumpType == "conditional":  # 删除其中的fall边
+                        self.edges[jumpBlock].remove(jumpBlock + self.blocks[jumpBlock].length)
         for info in removedInfo:
             self.jumpEdgeInfo.remove(info)  # 删除对应的信息
         # print(self.jumpEdgeInfo)
 
-        # 第三步，对每一个block，删除空指令，同时还要记录旧地址到新地址的映射
+        # 第四步，对每一个block，删除空指令，同时还要记录旧地址到新地址的映射
         self.nodes.sort()  # 确保是从小到大排序的
         mappedAddr = 0  # 映射后的新地址
         for node in self.nodes:
@@ -908,7 +924,7 @@ class AssertionOptimizer:
         # for b in self.blocks.values():
         #     b.printBlockInfo()
 
-        # 第四步，尝试将跳转地址填入
+        # 第五步，尝试将跳转地址填入
         # 每一次都是做试填入，不能保证一定可以填入成功，地址可能会过长或者过短
         # 这两种情况都需要改地址映射，并重新生成所有地址映射
         # [[push的值，push的字节数，push指令的地址，push指令所在的block，jump所在的block，跳转的type(可选),新老函数体之间的offset(可选)]]
@@ -1034,27 +1050,26 @@ class AssertionOptimizer:
                     finishFilling = False  # 本次试填入失败
                     break  # 不再查看其他的跳转信息，重新开始再做试填入
 
-        # 第五步，将codecopy的新的offset进行填入
-        # 因为运行时的函数体只会变短不会加长，因此offset只会变小，不会存在无法填入的情况
-        # 格式: [[offset push的值，offset push的字节数，offset push指令的地址， offset push指令所在的block,
-        #          size push的值，size push的字节数，size push指令的地址， size push指令所在的block]]
-        for info in self.codeCopyInfo:
-            pass
-
-        # 第六步，将这些字节码拼成一个整体
+        # 第六步，将这些字节码拼成一个整体，同时记录数据段的偏移量，用于构造函数中对数据段访问的重定位
+        tempFuncBodyLen = 0
         self.newFuncBodyOpcode = deque()  # 效率更高
         self.appendedFuncBodyOpcode = deque()
         for node in self.nodes:  # 有序的
             if node < self.cfg.exitBlockId:
                 for bc in self.blocks[node].bytecode:
                     self.newFuncBodyOpcode.append(bc)
+                tempFuncBodyLen += self.blocks[node].length
             elif node > self.cfg.exitBlockId:
                 for bc in self.blocks[node].bytecode:
                     self.appendedFuncBodyOpcode.append(bc)
         self.newFuncBodyOpcode.append(0x00)
+        tempFuncBodyLen += 1 # 结尾的00
+        self.runtimeDataSegOffset = tempFuncBodyLen - self.funcBodyLength
+        self.funcBodyLength = tempFuncBodyLen
+        # print(self.runtimeDataSegOffset,self.funcBodyLength)
         # print(sortedJumpEdgeInfo)
 
-        # 第六步，修改各个block的偏移量，添加新的边信息
+        # 第七步，修改各个block的偏移量，添加新的边信息
         # 这些修改都是用于输出新的cfg的图片
         newOffset = 0
         newToOriginal = {}
@@ -1076,6 +1091,8 @@ class AssertionOptimizer:
 
         # 对于需要重定位的边
         for info in sortedJumpEdgeInfo:
+            if info.__len__() == 6:
+                continue
             _from = originalToNew[info[4]]
             _to = originalToNew[info[0]]
             if self.blocks[_from].jumpType == "unconditional":
@@ -1100,7 +1117,7 @@ class AssertionOptimizer:
         #     self.blocks[node].instrs = translator.translate(self.blocks[node])
         # self.blocks[299].printBlockInfo()
         # self.blocks[308].printBlockInfo()
-        # 第七步，将相邻的，本应该连在一起的block合成一个大的block
+        # 第八步，将相邻的，本应该连在一起的block合成一个大的block
         self.nodes.sort()
         removedNode = []
         index = 0
