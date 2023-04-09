@@ -29,8 +29,8 @@ class Cfg:
             self.tailOpcode = 0xfe
         else:
             assert 0
-        self.bytecodeStr += tailOpcodeStr  # 结尾的00或者fe
         self.tailOpcodeStr = tailOpcodeStr
+        self.bytecodeStr += tailOpcodeStr  # 结尾的00或者fe
         assert self.bytecodeStr.__len__() % 2 == 0
         self.bytecodeLength = self.bytecodeStr.__len__() // 2
 

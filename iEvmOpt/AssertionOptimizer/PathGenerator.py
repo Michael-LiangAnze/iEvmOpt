@@ -117,7 +117,8 @@ class PathGenerator:
 
         # 第二步，根据跳转的类型，记录跳转边的信息
         if self.blocks[curNode].jumpType in ["unconditional", "conditional"]:  # 是一条跳转边
-            assert pushInfo is not None  # 不应该经过计算
+            if pushInfo is None:
+                self.log.fail("跳转地址经过了计算，拒绝优化")
             assert pushInfo[0] in self.nodes  # 必须是一个block的offset
             pushInfo.append(curNode)  # 添加一条信息，就是jump所在的block
             self.jumpEdgeInfo.append(pushInfo)
