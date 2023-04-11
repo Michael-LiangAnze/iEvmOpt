@@ -14,31 +14,18 @@ class Cfg:
         self.bytecodeStr = ""
 
         self.beginIndexInBytecode = 0  # cfg在原字节码中的起始偏移量
-        self.tailOpcodeStr = None  # 结尾的操作码，可能是00，也可能是fe
-        self.tailOpcode = 0
 
-    def genBytecodeStr(self, tailOpcodeStr: str):
+
+    def genBytecodeStr(self):
         # 已经读入了所有的block，将它们拼接为一个长字符串，并设置长度
         nodes = list(self.blocks.keys())
         nodes.sort()
         for node in nodes:
             self.bytecodeStr += self.blocks[node].bytecodeStr
-        if tailOpcodeStr == "00":
-            self.tailOpcode = 0x00
-        elif tailOpcodeStr == "fe":
-            self.tailOpcode = 0xfe
-        else:
-            assert 0
-        self.tailOpcodeStr = tailOpcodeStr
-        self.bytecodeStr += tailOpcodeStr  # 结尾的00或者fe
+
+        # 注意，exit block的长度为，实际上并不需要考虑它的长度
         assert self.bytecodeStr.__len__() % 2 == 0
         self.bytecodeLength = self.bytecodeStr.__len__() // 2
-
-    def getTailOpcodeStr(self):
-        return self.tailOpcodeStr
-
-    def getTailOpcode(self):
-        return self.tailOpcode
 
     def getBytecodeLen(self):
         return self.bytecodeLength

@@ -58,25 +58,25 @@ class PathGenerator:
 
         self.__dfs(self.beginNode, TagStack(self.cfg))
 
-        # 因为得到的跳转信息有可能是重复的，这里需要做一个去重处理
+        # 因为得到的跳转信息和codecopy信息有可能是重复的，这里需要做一个去重处理
         tempDict = {}
         for info in self.jumpEdgeInfo:
             tempDict[info.__str__()] = info
         self.jumpEdgeInfo = list(tempDict.values())
+        tempDict = {}
+        for info in self.codecopyInfo:
+            tempDict[info.__str__()] = info
+        self.codecopyInfo = list(tempDict.values())
+
         # 再检查一下得到的跳转边信息是否有漏缺
         infoNum = 0
         for block in self.blocks.values():
+            # block.printBlockInfo()
             if block.jumpType == "unconditional":  # 可能有多个出边，每一个出边都应该由一个push和一个jump来组成
                 infoNum += block.jumpDest.__len__()
             elif block.jumpType == "conditional":  # 只有两个出边
                 infoNum += 1  # 一次push即可
-
-        # for info in self.jumpEdgeInfo:
-        #     print(info)
-        # for path in self.paths:
-        #     path.printPath()
-        # self.uncondJumpEdges[[142,198].__str__()].output()
-        assert infoNum == self.jumpEdgeInfo.__len__()
+        assert infoNum == self.jumpEdgeInfo.__len__(), "{},{}".format(infoNum, self.jumpEdgeInfo.__len__())
 
     def __dfs(self, curNode: int, parentTagStack: TagStack):
         """

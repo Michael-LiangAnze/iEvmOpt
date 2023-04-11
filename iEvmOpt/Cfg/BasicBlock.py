@@ -52,5 +52,6 @@ class BasicBlock:
         print("Block'instrutions:{}".format(self.instrs))
         print("Block'instruction number:{}".format(self.instrNum))
         print("Block is INVALID:{}".format(self.isInvalid))
+        print("Block jumpDest offset:{}".format(self.jumpDest))
         print("Block jumpiDest offset:{}".format(self.jumpiDest))
         print("Block isModified:{}\n".format(self.isModified))

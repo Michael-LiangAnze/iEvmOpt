@@ -81,10 +81,7 @@ class EtherSolver:
             self.constructorCfg.addBasicBlock(block)
         for e in jsonInfo["constructorCfg"]["successors"]:  # 读取边
             self.constructorCfg.addEdge(e)
-        # 结尾可能是00，也可能是fe
-        tailOpcodeStr = jsonInfo["constructorCfg"]["remainingData"][:2]
-        assert tailOpcodeStr in ["00", "fe"]
-        self.constructorCfg.genBytecodeStr(tailOpcodeStr)
+        self.constructorCfg.genBytecodeStr()
 
         # 读取运行时信息
         for b in jsonInfo["runtimeCfg"]["nodes"]:  # 读取基本块
@@ -92,9 +89,7 @@ class EtherSolver:
             self.cfg.addBasicBlock(block)
         for e in jsonInfo["runtimeCfg"]["successors"]:  # 读取边
             self.cfg.addEdge(e)
-        tailOpcodeStr = jsonInfo["runtimeCfg"]["remainingData"][:2]
-        assert tailOpcodeStr in ["00", "fe"]
-        self.cfg.genBytecodeStr(tailOpcodeStr)
+        self.cfg.genBytecodeStr()
 
         # 获取起始基本块和终止基本块
         self.cfg.initBlockId = min(self.cfg.blocks.keys())
@@ -113,22 +108,37 @@ class EtherSolver:
                 b.jumpDest = list(self.cfg.edges[offset])
                 # b.printBlockInfo()
             elif b.jumpType == "conditional":
-                fallBlockOff = b.offset + b.length
+                fallBlockOffset = b.offset + b.length
                 dests = list(self.cfg.edges[offset])
-                jumpiTrueOff = dests[0] if dests[0] != fallBlockOff else dests[1]
-                b.jumpiDest[True] = jumpiTrueOff
-                b.jumpiDest[False] = fallBlockOff
+                jumpiTrueOffset = dests[0] if dests[0] != fallBlockOffset else dests[1]
+                b.jumpiDest[True] = jumpiTrueOffset
+                b.jumpiDest[False] = fallBlockOffset
                 # b.printBlockInfo()
 
+        for offset, b in self.constructorCfg.blocks.items():
+            if b.jumpType == "unconditional":
+                b.jumpDest = list(self.constructorCfg.edges[offset])
+                # b.printBlockInfo()
+            elif b.jumpType == "conditional":
+                fallBlockOffset = b.offset + b.length
+                dests = list(self.constructorCfg.edges[offset])
+                jumpiTrueOffset = dests[0] if dests[0] != fallBlockOffset else dests[1]
+                b.jumpiDest[True] = jumpiTrueOffset
+                b.jumpiDest[False] = fallBlockOffset
+                # b.printBlockInfo()
+
+        # 设置起始偏移量
         with open(self.srcPath, "r") as f:
             originalStr = f.read()  # 将原字符串读入
         funcBodyBeginIndex = originalStr.find(self.cfg.bytecodeStr)
         assert funcBodyBeginIndex != -1
         assert originalStr.count(self.cfg.bytecodeStr) == 1
-        self.constructorCfg.setBeginIndex(0)
         self.cfg.setBeginIndex(funcBodyBeginIndex // 2)  # 因为是字符串的偏移量，因此要除以2
+        self.constructorCfg.setBeginIndex(0) # 构造函数的起始偏移量是0
 
+        # 注意，这里的构造函数数据段是指，构造函数函数字节码之后，运行时函数字节码之前的字符串
         self.constructorDataSeg = originalStr[self.constructorCfg.getBytecodeLen() * 2:funcBodyBeginIndex]
+        # 这里的运行时数据段，不仅仅指运行时函数后面的data，还包括metadata
         self.dataSeg = originalStr[funcBodyBeginIndex + self.cfg.bytecodeLength * 2:]
 
         self.log.info("CFG构建完毕")
