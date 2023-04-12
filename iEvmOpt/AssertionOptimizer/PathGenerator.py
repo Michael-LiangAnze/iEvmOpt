@@ -151,7 +151,7 @@ class PathGenerator:
                                 isStop = True
                             callLoopRelatedFuncId[self.node2FuncId[n]] = None
                         self.log.fail(
-                            "检测到环形函数调用链的情况，涉及的函数id有：{}".format([i for i in callLoopRelatedFuncId.keys()]))
+                            "检测到环形函数调用链的情况，涉及的函数id有：{}，字节码无法被优化".format([i for i in callLoopRelatedFuncId.keys()]))
                         # 程序已经结束了
                     self.returnAddrStack.push(e.tetrad[1])  # push返回地址
                     self.__dfs(node, curTagStack)
