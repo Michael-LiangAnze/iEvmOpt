@@ -1,17 +1,18 @@
 import sys
 
 from Cfg import *
+from AssertionOptimizer.AssertionOptimizer import AssertionOptimizer
 
 if __name__ == '__main__':
-    if len(sys.argv) < 2:
+    if len(sys.argv) < 3:
         exit(-1)
 
-    builder = EtherSolver(sys.argv[1])
-    cfg = builder.getCfg()
-    cfg.output()
+    # es = EtherSolver(sys.argv[1])
+    es = EtherSolver(sys.argv[1], True)
+    constructorCfg = es.getConstructorCfg()
+    cfg = es.getCfg()
+    constructorDataSegStr = es.getConstructorDataSegStr()
+    dataSegStr = es.getDataSeg()
 
-    # 测试计算有向环
-    # tarjanAlg = TarjanAlgorithm(cfg.blocks.keys(), cfg.edges)
-    # tarjanAlg.tarjan(cfg.initBlockId)
-    # print(tarjanAlg.sccList)
-
+    ao = AssertionOptimizer(constructorCfg, cfg, constructorDataSegStr, dataSegStr, sys.argv[2], True)
+    ao.optimize()
