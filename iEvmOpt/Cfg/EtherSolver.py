@@ -1,6 +1,7 @@
 import os
 import subprocess
 import json
+import sys
 
 import graphviz
 
@@ -19,7 +20,7 @@ class EtherSolver:
         """
         self.srcPath = srcPath  # 原bin文件的路径
         self.srcName = os.path.basename(srcPath).split(".")[0]  # 原bin文件的文件名
-        self.outputPath = "Cfg/CfgOutput/"  # 输出的目录名
+        self.outputPath = "Cfg\CfgOutput\\"  # 输出的目录名
         self.constructorCfg = Cfg()
         self.cfg = Cfg()
         self.constructorDataSeg = None  # 构建函数体后的数据段
@@ -28,29 +29,34 @@ class EtherSolver:
         if not isParseBefore:
             self.__etherSolve()
         self.__buildCfg()
-        if not isParseBefore:
-            dg = DotGraphGenerator(self.cfg.blocks.keys(), self.cfg.edges)
-            dg.genDotGraph(self.outputPath, self.srcName)
+        # if not isParseBefore:
+        #     dg = DotGraphGenerator(self.cfg.blocks.keys(), self.cfg.edges)
+        #     dg.genDotGraph(self.outputPath, self.srcName)
 
     def __etherSolve(self):
+        jarPath = os.path.dirname(__file__)+"\EtherSolve.jar"
         self.log.info("正在使用EtherSolve处理字节码")
-        cmd = "java -jar ./Cfg/EtherSolve.jar -c -H -o " + self.outputPath + self.srcName + "_cfg.html " + self.srcPath
+        cmd = "java -jar " + jarPath + " -c -H -o " + self.outputPath + self.srcName + "_cfg.html " + self.srcPath
+        # print(cmd)
+        # print(os.listdir())
         p = subprocess.Popen(cmd)
         if p.wait() == 0:
             pass
-        cmd = "java -jar ./Cfg/EtherSolve.jar -c -j -o " + self.outputPath + self.srcName + "_cfg.json " + self.srcPath
+        if p.returncode != 0:
+            exit(-1)
+        cmd = "java -jar " + jarPath + " -c -j -o " + self.outputPath + self.srcName + "_cfg.json " + self.srcPath
         p = subprocess.Popen(cmd)
         if p.wait() == 0:
             pass
 
         # 生成构建时cfg
-        cmd = "java -jar ./Cfg/EtherSolve.jar -r -d -o " + self.outputPath + self.srcName + "_constructor_cfg.gv " + self.srcPath
+        cmd = "java -jar " + jarPath + " -r -d -o " + self.outputPath + self.srcName + "_constructor_cfg.gv " + self.srcPath
         p = subprocess.Popen(cmd)
         if p.wait() == 0:
             pass
 
         # 生成运行时cfg
-        cmd = "java -jar ./Cfg/EtherSolve.jar -c -d -o " + self.outputPath + self.srcName + "_cfg.gv " + self.srcPath
+        cmd = "java -jar " + jarPath + " -c -d -o " + self.outputPath + self.srcName + "_cfg.gv " + self.srcPath
         p = subprocess.Popen(cmd)
         if p.wait() == 0:
             pass
@@ -134,7 +140,7 @@ class EtherSolver:
         assert funcBodyBeginIndex != -1
         assert originalStr.count(self.cfg.bytecodeStr) == 1
         self.cfg.setBeginIndex(funcBodyBeginIndex // 2)  # 因为是字符串的偏移量，因此要除以2
-        self.constructorCfg.setBeginIndex(0) # 构造函数的起始偏移量是0
+        self.constructorCfg.setBeginIndex(0)  # 构造函数的起始偏移量是0
 
         # 注意，这里的构造函数数据段是指，构造函数函数字节码之后，运行时函数字节码之前的字符串
         self.constructorDataSeg = originalStr[self.constructorCfg.getBytecodeLen() * 2:funcBodyBeginIndex]

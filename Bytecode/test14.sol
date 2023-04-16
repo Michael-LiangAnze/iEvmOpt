@@ -10,7 +10,7 @@ contract test14 {
         );
     }
 
-    function setName(string _name) public {
+    function setName(string memory _name) public {
         name = _name;
     }
 

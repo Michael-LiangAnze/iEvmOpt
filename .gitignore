@@ -129,3 +129,6 @@ dmypy.json
 .pyre/
 
 /iEvmOpt/Cfg/CfgOutput/*
+/contracts
+/test.py
+/testOptimized

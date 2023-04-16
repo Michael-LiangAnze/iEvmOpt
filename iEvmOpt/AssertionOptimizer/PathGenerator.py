@@ -29,10 +29,12 @@ class PathGenerator:
             key = [e.beginNode, e.targetNode].__str__()
             self.uncondJumpEdges[key] = e
         self.isLoopRelated = isLoopRelated  # 函数内scc信息
-        self.node2FuncId = node2FuncId  # 用于检测递归调用
+        self.node2FuncId = node2FuncId  # 用于检测递归调用和scc访问控制，注意，不是函数的节点会被标成None
         self.funcBodyDict = funcBodyDict  # 用于检测递归调用
         self.isInvalidNode = dict(zip(self.nodes, [False for i in range(self.nodes.__len__())]))  # 某个节点是否是invalid
-        self.sccVisiting = dict(zip(self.nodes, [False for i in range(0, len(self.nodes))]))  # 记录某个函数内scc是否正在被访问
+        # self.sccVisiting = dict(zip(self.nodes, [False for i in range(0, len(self.nodes))]))  # 记录某个函数内scc是否正在被访问
+        self.sccVisiting = {}  # 基于返回地址栈的访问控制，格式： 返回地址栈字符串:访问控制dict
+        # 解释一下，不能使用基于函数调用链的scc访问控制，否则当出现循环内调用函数的时候，会出现死循环
 
         self.jumpEdgeInfo = []  # 跳转边信息，格式为:[[push的值，push的字节数，push指令的地址，push指令所在的block,jump所在的block]]
         self.pathRecorder = Stack()
@@ -45,6 +47,8 @@ class PathGenerator:
 
         self.codecopyInfo = []
         self.log = Logger()
+        # print(self.node2FuncId)
+        # print(self.isLoopRelated)
 
     def genPath(self):
         '''
@@ -67,7 +71,10 @@ class PathGenerator:
         for info in self.codecopyInfo:
             tempDict[info.__str__()] = info
         self.codecopyInfo = list(tempDict.values())
-
+        # for b in self.blocks.values():
+        #     b.printBlockInfo()
+        # for e in self.uncondJumpEdges.values():
+        #     e.output()
         # 再检查一下得到的跳转边信息是否有漏缺
         infoNum = 0
         for block in self.blocks.values():
@@ -85,10 +92,15 @@ class PathGenerator:
         """
         # print(curNode)
         self.pathRecorder.push(curNode)
-        if self.isLoopRelated[curNode]:  # 当前访问的是一个scc，需要将其标记为true，防止死循环
-            self.sccVisiting[curNode] = True
 
-        # 第一步，进行tagstack执行，这一步需要复制父节点的tagstack信息
+        # 第一步，检查当前是否进入了scc，若是，则要修改访问控制
+        curReturnAddrStackStr = self.returnAddrStack.getStack().__str__()  # 返回地址栈的字符串
+        if self.isLoopRelated[curNode]:  # 当前访问的是一个scc，需要将其标记为true，防止死循环
+            if curReturnAddrStackStr not in self.sccVisiting.keys():  # 还没有建立访问控制
+                self.sccVisiting[curReturnAddrStackStr] = dict(zip(self.nodes, [False for i in range(0, len(self.nodes))]))
+            self.sccVisiting[curReturnAddrStackStr][curNode] = True
+
+        # 第二步，进行tagstack执行，这一步需要复制父节点的tagstack信息
         curTagStack = TagStack(self.cfg)
         curTagStack.setTagStack(parentTagStack.getTagStack())
         curTagStack.setBeginBlock(curNode)
@@ -101,7 +113,8 @@ class PathGenerator:
                 self.pathId += 1
                 # 不必往下走，直接返回
                 self.pathRecorder.pop()
-                self.sccVisiting[curNode] = False
+                if self.isLoopRelated[curNode]:
+                    self.sccVisiting[curReturnAddrStackStr][curNode] = False
                 return
             elif opcode == 0x39:  # codecopy
                 tmpOffset = curTagStack.getTagStackItem(1)
@@ -115,20 +128,24 @@ class PathGenerator:
                 pushInfo = curTagStack.getTagStackTop()  # [push的值，push指令的地址，push指令所在的block]
             curTagStack.execNextOpCode()
 
-        # 第二步，根据跳转的类型，记录跳转边的信息
+        # 第三步，根据跳转的类型，记录跳转边的信息
         if self.blocks[curNode].jumpType in ["unconditional", "conditional"]:  # 是一条跳转边
             if pushInfo is None:
                 self.log.fail("跳转地址经过了计算，拒绝优化")
             assert pushInfo[0] in self.nodes  # 必须是一个block的offset
             pushInfo.append(curNode)  # 添加一条信息，就是jump所在的block
             self.jumpEdgeInfo.append(pushInfo)
+            # if curNode == 636:
+            #     print(pushInfo)
 
-        # 第三步，查看每一条出边
+        # 第四步，查看每一条出边
         # 如果出边会造成环形函数调用，或者是函数内scc死循环，则不走这些出边
         # 否则，需要进行出边遍历
         for node in self.edges[curNode]:  # 查看每一个出边
-            if self.sccVisiting[node]:  # 防止循环内调用函数造成死循环
-                continue
+            if self.isLoopRelated[node]: # 是一个环相关节点
+                if curReturnAddrStackStr in self.sccVisiting.keys():
+                    if self.sccVisiting[curReturnAddrStackStr][node]:  # 这个点已经访问过
+                        continue
             key = [curNode, node].__str__()
             if key in self.uncondJumpEdges.keys():  # 这是一条uncondjump边，但是不确定是调用边还是返回边
                 e = self.uncondJumpEdges[key]
@@ -172,7 +189,8 @@ class PathGenerator:
                 self.__dfs(node, curTagStack)
 
         self.pathRecorder.pop()
-        self.sccVisiting[curNode] = False
+        if self.isLoopRelated[curNode]:
+            self.sccVisiting[curReturnAddrStackStr][curNode] = False
 
     def getPath(self):
         return self.paths

@@ -357,6 +357,8 @@ class AssertionOptimizer:
         paths = generator.getPath()
         self.jumpEdgeInfo = generator.getJumpEdgeInfo()
         self.codeCopyInfo = generator.getCodecopyInfo()
+        # for p in paths:
+        #     p.printPath()
         # for info in self.codeCopyInfo:
         #     print(info)
 
