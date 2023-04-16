@@ -348,11 +348,21 @@ D:\Projects\iEvmOpt\contracts\0x208bbb6bcea22ef2011789331405347394ebaa51\optimiz
 
 ### TODO
 
-scc基于函数调用链的访问控制
-
 调整脚本，只输出合约的bin文件，或者删除不正确的bin文件
 
 使用evmOpt，分析成功的合约，作为数据集的一部分
 
-去除dot生成png，生成html用于观察即可
+
+
+### 一些合约
+
+##### 时间长但是evmopt可以算出的合约
+
+ORACLEPSYCHOLIFE
+
+##### ethersolve处理时间很长的合约
+
+Exchange
+
+
 

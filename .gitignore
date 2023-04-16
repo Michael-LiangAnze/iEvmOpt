@@ -130,5 +130,9 @@ dmypy.json
 
 /iEvmOpt/Cfg/CfgOutput/*
 /contracts
+contracts.zip
 /test.py
 /testOptimized
+processInfo.*
+Statistics.py
+report.json
