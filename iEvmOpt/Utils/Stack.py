@@ -3,8 +3,9 @@ from z3 import *
 
 
 class Stack:
-    def __init__(self):
+    def __init__(self, enableUnderFlow=False):
         self.__stack = deque()
+        self.enableUnderFlow = enableUnderFlow
 
     def push(self, a):
         self.__stack.append(a)
@@ -13,8 +14,12 @@ class Stack:
         if len(self.__stack) > 0:
             return self.__stack.pop()
         else:
-            raise Exception("栈为空")
-            assert 0, "stack is empty!"
+            # 不能再pop了
+            if self.enableUnderFlow:
+                return None
+            else:
+                raise Exception("栈为空")
+                assert 0, "stack is empty!"
 
     def size(self):
         return self.__stack.__len__()
@@ -38,14 +43,14 @@ class Stack:
 
     def getTop(self):
         if self.__stack.__len__() != 0:
-            return self.__stack[self.__stack.__len__()-1]
+            return self.__stack[self.__stack.__len__() - 1]
         else:
             return None
 
-    def hasItem(self,item):
+    def hasItem(self, item):
         return self.__stack.__contains__(item)
 
-    def setStack(self,stackItems:list):
+    def setStack(self, stackItems: list):
         self.__stack = deque(stackItems)
 
     def getStack(self, isHex: bool = False):

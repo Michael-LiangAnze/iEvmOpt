@@ -46,23 +46,24 @@ class Cfg:
         return self.beginIndexInBytecode
 
     def addBasicBlock(self, block: BasicBlock):
-        self.blocks[int(block.offset)] = block
+        offset = int(block.offset)
+        self.blocks[offset] = block
         if block.length > 0:  # exit的是0
             if block.bytecode[0] == 0x5b:  # jumpdest 开头
                 self.jumpDests.add(block.offset)
+        if offset not in self.edges.keys():
+            self.edges[offset] = []
+        if offset not in self.inEdges.keys():
+            self.inEdges[offset] = []
 
     def addEdge(self, edge: dict):
+        # 必须先添加完block再添加edge
         _from = int(edge["from"])
-        if _from not in self.inEdges.keys():  # 起始块可能会不在入边表
-            self.inEdges[_from] = []
-        self.edges[_from] = []
         # 可能存在重复的出边
         _toBlocks = list(set(edge["to"]))
         for t in _toBlocks:
             _to = int(t)
             self.edges[_from].append(_to)
-            if _to not in self.inEdges.keys():
-                self.inEdges[_to] = []
             self.inEdges[_to].append(_from)
 
     def output(self):

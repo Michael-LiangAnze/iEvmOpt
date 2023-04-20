@@ -4,9 +4,8 @@
 from AssertionOptimizer.Path import Path
 from Cfg.Cfg import Cfg
 from Utils import Stack
-from AssertionOptimizer.JumpEdge import JumpEdge
 from Utils.Logger import Logger
-from AssertionOptimizer.TagStack import TagStack
+from AssertionOptimizer.TagStacks.TagStack import TagStack
 
 
 class PathGenerator:

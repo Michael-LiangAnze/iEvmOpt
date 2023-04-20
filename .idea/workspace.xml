@@ -2,21 +2,21 @@
 <project version="4">
   <component name="ChangeListManager">
     <list default="true" id="26761b8b-d032-4bbd-8113-13d1181eb69a" name="变更" comment="">
-      <change afterPath="$PROJECT_DIR$/Bytecode/KuaiWechatBusiness_optimize_on.bin" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/Bytecode/SpyceToken.bin" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.gitignore" beforeDir="false" afterPath="$PROJECT_DIR$/.gitignore" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/iEvmOpt/AssertionOptimizer/TagStacks/TagStackForCfgRepairKit.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgRepairKit.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/iEvmOpt/AssertionOptimizer/AssertionOptimizer.py" beforeDir="false" afterPath="$PROJECT_DIR$/iEvmOpt/AssertionOptimizer/AssertionOptimizer.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/iEvmOpt/AssertionOptimizer/PathGenerator.py" beforeDir="false" afterPath="$PROJECT_DIR$/iEvmOpt/AssertionOptimizer/PathGenerator.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/AssertionOptimizer/TagStack.py" beforeDir="false" afterPath="$PROJECT_DIR$/iEvmOpt/AssertionOptimizer/TagStack.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/iEvmOpt/AssertionOptimizer/TagStack.py" beforeDir="false" afterPath="$PROJECT_DIR$/iEvmOpt/AssertionOptimizer/TagStacks/TagStack.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/Cfg.py" beforeDir="false" afterPath="$PROJECT_DIR$/iEvmOpt/Cfg/Cfg.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test16_cfg.html" beforeDir="false" afterPath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test16_cfg.html" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test16_cfg.json" beforeDir="false" afterPath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test16_cfg.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test14_cfg.html" beforeDir="false" afterPath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test14_cfg.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test14_cfg.json" beforeDir="false" afterPath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test14_cfg.json" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/EtherSolver.py" beforeDir="false" afterPath="$PROJECT_DIR$/iEvmOpt/Cfg/EtherSolver.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/iEvmOpt/Main.py" beforeDir="false" afterPath="$PROJECT_DIR$/iEvmOpt/Main.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Utils/DotGraphGenerator.py" beforeDir="false" afterPath="$PROJECT_DIR$/iEvmOpt/Utils/DotGraphGenerator.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/iEvmOpt/Test/TestOpCode.py" beforeDir="false" afterPath="$PROJECT_DIR$/iEvmOpt/Test/TestOpCode.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/iEvmOpt/Utils/Stack.py" beforeDir="false" afterPath="$PROJECT_DIR$/iEvmOpt/Utils/Stack.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/test1.py" beforeDir="false" afterPath="$PROJECT_DIR$/test1.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -48,7 +48,7 @@
     <property name="RunOnceActivity.ShowReadmeOnStart" value="true" />
     <property name="last_opened_file_path" value="$PROJECT_DIR$/test1.py" />
   </component>
-  <component name="RunManager" selected="Python.test">
+  <component name="RunManager" selected="Python.test1">
     <configuration name="Statistics" type="PythonConfigurationType" factoryName="Python">
       <module name="iEvmOpt" />
       <option name="INTERPRETER_OPTIONS" value="" />

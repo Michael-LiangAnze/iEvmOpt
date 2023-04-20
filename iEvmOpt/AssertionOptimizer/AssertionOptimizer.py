@@ -300,7 +300,7 @@ class AssertionOptimizer:
             tempLen = 0
             for n in funcBody:
                 tempLen += self.cfg.blocks[n].length
-            assert funcLen == tempLen, funcBody.__str__()
+            assert funcLen == tempLen, funcBody.__str__()+self.edges.__str__()
             # f.printFunc()
         # 这里再做一个检查，是否所有的common节点都被标记为了函数
 

@@ -1,20 +1,20 @@
 import os
 import subprocess
 import json
-import sys
 
 import graphviz
 
-from AssertionOptimizer.TagStack import TagStack
+from AssertionOptimizer.TagStacks.TagStack import TagStack
 from Cfg.BasicBlock import BasicBlock
 from Cfg.Cfg import Cfg
+from Cfg.CfgRepairKit import CfgRepairKit
 from Utils import DotGraphGenerator
 from Utils.Logger import Logger
 
 
 class EtherSolver:
 
-    def __init__(self, srcPath: str, isParseBefore: bool = False,genPng = False):
+    def __init__(self, srcPath: str, isParseBefore: bool = False, genPng=False):
         """ 使用EtherSolve工具分析字节码文件，得到对应的json、html、gv文件
             并通过json文件构造cfg
         :param isParseBefore:之前是否已经得到过了输出文件，若为False则不再对字节码使用EtherSolve分析，而是直接读取对应的输出文件
@@ -117,6 +117,28 @@ class EtherSolver:
         self.constructorCfg.exitBlockId = max(self.constructorCfg.blocks.keys())
         assert len(self.constructorCfg.edges[self.constructorCfg.exitBlockId]) == 0
 
+        #############               使用CfgRepairKit进行检测和修复              #############
+        constructorKit = CfgRepairKit(self.constructorCfg)
+        constructorKit.fix()
+        if not constructorKit.isFixed():  # 修复失败
+            self.log.error("构造函数边修复失败")
+            assert 0
+        else:
+            self.log.info("构造函数边修复成功")
+            self.constructorCfg.edges, self.constructorCfg.inEdges = constructorKit.getRepairedEdges()
+
+        runtimeKit = CfgRepairKit(self.cfg)
+        runtimeKit.fix()
+        if not runtimeKit.isFixed():  # 修复失败
+            self.log.error("运行时函数边修复失败")
+        else:
+            self.log.info("运行时函数边修复成功")
+            self.cfg.edges, self.cfg.inEdges = runtimeKit.getRepairedEdges()
+
+        ##############              修复结束                   ################
+
+
+
         # 添加unconditional、conditional跳转目标块的信息
         for offset, b in self.cfg.blocks.items():
             if b.jumpType == "unconditional":
@@ -146,7 +168,7 @@ class EtherSolver:
         #   jump的地址是在block内部计算得到的
         # 这种情况下，这个block也有可能是调用节点
         # 因为不知道栈中原有的内容，因此在做执行之前，先往栈中压入16个None
-        preInfo = [None for i in range(64)] # 64个总够用了吧
+        preInfo = [None for i in range(64)]  # 64个总够用了吧
         pushInfo = None
         tagStack = TagStack(self.cfg)
         for offset, b in self.cfg.blocks.items():

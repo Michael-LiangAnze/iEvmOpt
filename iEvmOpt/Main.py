@@ -18,8 +18,8 @@ if __name__ == '__main__':
         exit(-1)
 
     # es = EtherSolver(srcPath)
-    es = EtherSolver(srcPath, genPng=True)
-    # es = EtherSolver(srcPath, True)
+    # es = EtherSolver(srcPath, genPng=True)
+    es = EtherSolver(srcPath, isParseBefore=True)
     constructorCfg = es.getConstructorCfg()
     cfg = es.getCfg()
     constructorDataSegStr = es.getConstructorDataSegStr()

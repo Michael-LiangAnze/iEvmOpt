@@ -15,7 +15,7 @@ if __name__ == "__main__":
     dataFileList = os.listdir(dataPath)
     targetFile = []
     sizeList = []
-    limit = 15000
+    limit = 12000
 
     for dataDir in dataFileList:
         # 读取info，获取对应的bin文件
