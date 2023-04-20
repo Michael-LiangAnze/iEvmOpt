@@ -3,6 +3,7 @@ from z3 import *
 
 from Cfg.Cfg import Cfg
 from Utils import Stack
+from Utils.Logger import Logger
 
 
 class TagStack:
@@ -10,13 +11,18 @@ class TagStack:
         self.cfg = cfg
         self.curBlock: BasicBlock = None  # 当前执行的基本块
         self.PC = 0  # 当前执行指令的指针
-        self.tagStack = Stack()  # tag栈，记录的格式为：[push的值，push的字节数，push指令的地址，push指令所在的block]，一旦该元素参与了运算，则将运算结果置为none
+        # tag栈，记录的格式为：[push的值，push的字节数，push指令的地址，push指令所在的block，push的值是否有可能是地址]，
+        # 一旦该元素参与了运算，则要根据不同情况进行处理
+        self.tagStack = Stack()
+        self.log = Logger()
 
         # 辅助信息
         self.lastInstrAddrOfBlock = 0  # block内最后一个指令的地址
         self.jumpCond = None  # 如果当前的Block为无条件Jump，记录跳转的条件
 
-    def clearExecutor(self):
+        self.jumpDests = cfg.jumpDests
+
+    def clear(self):
         '''
         清空符号执行器
         :return: None
@@ -51,7 +57,7 @@ class TagStack:
         if temp is None:
             return None
         else:
-            return list(temp)
+            return list(temp[:4])
 
     def getTagStackItem(self, depth: int):
         tmpSize = self.tagStack.size()
@@ -61,7 +67,7 @@ class TagStack:
         if tmp is None:
             return None
         else:
-            return list(tmp)
+            return list(tmp[:4])
 
     def printState(self, printBlock: bool = True):
         """ 输出当前程序状态
@@ -92,14 +98,14 @@ class TagStack:
         match opCode:
             case 0x00:  # stop
                 pass
-            case 0x01:  # add
-                self.__execAdd()
-            case 0x02:  # mul
-                self.__execMul()
-            case 0x03:
-                self.__execSub()
-            case 0x04:
-                self.__execDiv()
+            case 0x01:  # ADD
+                self.__execOp2()
+            case 0x02:  # MUL
+                self.__execOp2()
+            case 0x03:  # SUB
+                self.__execOp1()
+            case 0x04:  # DIV
+                self.__execOp1()
             case 0x05:
                 self.__execSDiv()
             case 0x06:
@@ -126,22 +132,22 @@ class TagStack:
                 self.__execEq()
             case 0x15:
                 self.__execIsZero()
-            case 0x16:
-                self.__execAnd()
-            case 0x17:
-                self.__execOr()
-            case 0x18:
-                self.__execXor()
+            case 0x16:  # AND
+                self.__execOp1()
+            case 0x17:  # OR
+                self.__execOp1()
+            case 0x18:  # XOR
+                self.__execOp1()
             case 0x19:
                 self.__execNot()
             case 0x20:
                 self.__execSha3()
             case 0x1a:
                 self.__execByte()
-            case 0x1b:
-                self.__execShl()
-            case 0x1c:
-                self.__execShr()
+            case 0x1b:  # SHL
+                self.__execOp1()
+            case 0x1c:  # SHR
+                self.__execOp1()
             case 0x1d:
                 self.__execSar()
             case 0x1f:
@@ -526,12 +532,9 @@ class TagStack:
             num <<= 8
             self.PC += 1  # 指向最高位的字节
             num |= self.curBlock.bytecode[self.PC - self.curBlock.offset]  # 低位加上相应的字节
-        # print("push num:{},byte num:{}".format(hex(num), byteNum))
 
-        # 注意这里不能push一个比特向量，而是一个具体的数
-        # num = BitVecVal(num, 256)
-
-        self.tagStack.push([num, byteNum, jumpOpcodeAddr, self.curBlock.offset])
+        couldBeJumpdest = num in self.jumpDests
+        self.tagStack.push([num, byteNum, jumpOpcodeAddr, self.curBlock.offset, couldBeJumpdest])
 
     def __execDup(self, opCode):  # 0x80
         pos = opCode - 0x80
@@ -597,3 +600,57 @@ class TagStack:
 
     def __execSelfDestruct(self):  # 0xff
         self.tagStack.pop()
+
+    def __execOp1(self):
+        # 模仿evmopt中的stackOp1
+        # 涉及的指令有：AND OR XOR SUB DIV SHL SHR
+        first, second = self.tagStack.pop(), self.tagStack.pop()
+        if first is None and second is None:  # 两个都是None，不计算
+            self.tagStack.push(None)
+        elif first is None and second is not None:  # first 是None
+            # 检查不是None的那个，是否可能是跳转地址
+            # 如果是，则要进行保留。若否，则置为None。下同
+            if second[4]:  # 可能是跳转地址
+                self.tagStack.push(second)
+            else:
+                self.tagStack.push(None)
+        elif first is not None and second is None:  # second 是None
+            if first[4]:  # 可能是跳转地址
+                self.tagStack.push(first)
+            else:
+                self.tagStack.push(None)
+        else:  # 两个都不是None
+            assert not (first[4] and second[4])  # 不能两个都是跳转地址
+            # 如果其中有一个可能是跳转地址，则进行保留，否则置为None
+            if first[4]:
+                self.tagStack.push(first)
+            elif second[4]:
+                self.tagStack.push(second)
+            else:
+                self.tagStack.push(None)
+
+    def __execOp2(self):
+        # 模仿evmopt中的stackOp2
+        # 涉及的指令有：ADD MUL
+        first, second = self.tagStack.pop(), self.tagStack.pop()
+        if first is None and second is None:  # 两个都是None，不计算
+            self.tagStack.push(None)
+        elif first is None and second is not None:  # first 是None
+            # 检查不是None的那个，是否可能是跳转地址
+            # 如果是，则还是要置为None，因为跳转地址不与None进行计算。下同
+            if second[4]:  # 可能是跳转地址
+                self.log.warning("可疑的跳转地址与未知值之间出现了运算")
+            self.tagStack.push(None)
+        elif first is not None and second is None:  # second 是None
+            if first[4]:  # 可能是跳转地址
+                self.log.warning("可疑的跳转地址与未知值之间出现了运算")
+            self.tagStack.push(None)
+        else:  # 两个都不是None
+            assert not (first[4] and second[4] and first[0] == second[0])  # 不能两个都是跳转地址，也不能两个值相等
+            # 如果其中有一个可能是跳转地址，则进行保留，否则置为None
+            if first[4]:
+                self.tagStack.push(first)
+            elif second[4]:
+                self.tagStack.push(second)
+            else:
+                self.tagStack.push(None)

@@ -11,14 +11,14 @@ if __name__ == '__main__':
     argv[2]: 输出目录
     """
 
-
     srcPath = sys.argv[1]
     os.chdir(os.path.dirname(__file__))
 
     if len(sys.argv) < 3:
         exit(-1)
 
-    es = EtherSolver(srcPath)
+    # es = EtherSolver(srcPath)
+    es = EtherSolver(srcPath, genPng=True)
     # es = EtherSolver(srcPath, True)
     constructorCfg = es.getConstructorCfg()
     cfg = es.getCfg()

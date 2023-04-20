@@ -97,7 +97,8 @@ class PathGenerator:
         curReturnAddrStackStr = self.returnAddrStack.getStack().__str__()  # 返回地址栈的字符串
         if self.isLoopRelated[curNode]:  # 当前访问的是一个scc，需要将其标记为true，防止死循环
             if curReturnAddrStackStr not in self.sccVisiting.keys():  # 还没有建立访问控制
-                self.sccVisiting[curReturnAddrStackStr] = dict(zip(self.nodes, [False for i in range(0, len(self.nodes))]))
+                self.sccVisiting[curReturnAddrStackStr] = dict(
+                    zip(self.nodes, [False for i in range(0, len(self.nodes))]))
             self.sccVisiting[curReturnAddrStackStr][curNode] = True
 
         # 第二步，进行tagstack执行，这一步需要复制父节点的tagstack信息
@@ -119,8 +120,8 @@ class PathGenerator:
             elif opcode == 0x39:  # codecopy
                 tmpOffset = curTagStack.getTagStackItem(1)
                 tmpSize = curTagStack.getTagStackItem(2)
-                assert tmpOffset is not None
-                assert tmpSize is not None
+                assert tmpOffset is not None, "cur PC:{},path:{}".format(curTagStack.PC, self.pathRecorder.getStack())
+                assert tmpSize is not None, "cur PC:{},path:{}".format(curTagStack.PC, self.pathRecorder.getStack())
                 tmpOffset.extend(tmpSize)
                 tmpOffset.append(curNode)
                 self.codecopyInfo.append(tmpOffset)
@@ -142,7 +143,7 @@ class PathGenerator:
         # 如果出边会造成环形函数调用，或者是函数内scc死循环，则不走这些出边
         # 否则，需要进行出边遍历
         for node in self.edges[curNode]:  # 查看每一个出边
-            if self.isLoopRelated[node]: # 是一个环相关节点
+            if self.isLoopRelated[node]:  # 是一个环相关节点
                 if curReturnAddrStackStr in self.sccVisiting.keys():
                     if self.sccVisiting[curReturnAddrStackStr][node]:  # 这个点已经访问过
                         continue

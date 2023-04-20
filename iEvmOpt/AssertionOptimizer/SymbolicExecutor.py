@@ -106,8 +106,8 @@ class SymbolicExecutor:
         if printBlock:
             self.curBlock.printBlockInfo()
         print("Current PC is:{}".format(self.PC))
-        # print("Current stack:{}<-top".format(list(self.stack.getStack())))
-        print("Current stack:{}<-top".format(list(self.stack.getStack(isHex=True))))
+        print("Current stack:{}<-top".format(list(self.stack.getStack())))
+        # print("Current stack:{}<-top".format(list(self.stack.getStack(isHex=True))))
         print("Current storage:{}".format(self.storage))
         print("Current memory:{}\n".format(self.memory))
 

@@ -5,6 +5,7 @@ import sys
 
 import graphviz
 
+from AssertionOptimizer.TagStack import TagStack
 from Cfg.BasicBlock import BasicBlock
 from Cfg.Cfg import Cfg
 from Utils import DotGraphGenerator
@@ -13,12 +14,14 @@ from Utils.Logger import Logger
 
 class EtherSolver:
 
-    def __init__(self, srcPath: str, isParseBefore: bool = False):
+    def __init__(self, srcPath: str, isParseBefore: bool = False,genPng = False):
         """ 使用EtherSolve工具分析字节码文件，得到对应的json、html、gv文件
             并通过json文件构造cfg
         :param isParseBefore:之前是否已经得到过了输出文件，若为False则不再对字节码使用EtherSolve分析，而是直接读取对应的输出文件
+        :param genPng:生成png图片
         """
         self.srcPath = srcPath  # 原bin文件的路径
+        self.genPng = genPng
         self.srcName = os.path.basename(srcPath).split(".")[0]  # 原bin文件的文件名
         self.outputPath = "Cfg\CfgOutput\\"  # 输出的目录名
         self.constructorCfg = Cfg()
@@ -29,12 +32,12 @@ class EtherSolver:
         if not isParseBefore:
             self.__etherSolve()
         self.__buildCfg()
-        # if not isParseBefore:
-        #     dg = DotGraphGenerator(self.cfg.blocks.keys(), self.cfg.edges)
-        #     dg.genDotGraph(self.outputPath, self.srcName)
+        if not isParseBefore:
+            dg = DotGraphGenerator(self.cfg.blocks.keys(), self.cfg.edges)
+            dg.genDotGraph(self.outputPath, self.srcName)
 
     def __etherSolve(self):
-        jarPath = os.path.dirname(__file__)+"\EtherSolve.jar"
+        jarPath = os.path.dirname(__file__) + "\EtherSolve.jar"
         self.log.info("正在使用EtherSolve处理字节码")
 
         cmd = "java -jar " + jarPath + " -c -H -o " + self.outputPath + self.srcName + "_cfg.html " + self.srcPath
@@ -54,30 +57,30 @@ class EtherSolver:
         if p.wait() == 0:
             pass
 
-        # 因为读取较大.gv文件进行rander时会出错，因此不在使用该方法生成图片，而是生成html进行分析
-        # # 生成构建时cfg
-        # cmd = "java -jar " + jarPath + " -r -d -o " + self.outputPath + self.srcName + "_constructor_cfg.gv " + self.srcPath
-        # p = subprocess.Popen(cmd)
-        # if p.wait() == 0:
-        #     pass
-        #
-        # # 生成运行时cfg
-        # cmd = "java -jar " + jarPath + " -c -d -o " + self.outputPath + self.srcName + "_cfg.gv " + self.srcPath
-        # p = subprocess.Popen(cmd)
-        # if p.wait() == 0:
-        #     pass
-        #
-        # # 读取构建函数的gv文件，生成png图片
-        # with open(self.outputPath + self.srcName + "_constructor_cfg.gv ") as f:
-        #     g = f.read()
-        # dot = graphviz.Source(g)
-        # dot.render(outfile=self.outputPath + self.srcName + "_constructor_cfg.png", format='png')
-        #
-        # # 读取运行时的gv文件，生成png图片
-        # with open(self.outputPath + self.srcName + "_cfg.gv ") as f:
-        #     g = f.read()
-        # dot = graphviz.Source(g)
-        # dot.render(outfile=self.outputPath + self.srcName + "_cfg.png", format='png')
+        if self.genPng:
+            # 生成构建时cfg
+            cmd = "java -jar " + jarPath + " -r -d -o " + self.outputPath + self.srcName + "_constructor_cfg.gv " + self.srcPath
+            p = subprocess.Popen(cmd)
+            if p.wait() == 0:
+                pass
+
+            # 生成运行时cfg
+            cmd = "java -jar " + jarPath + " -c -d -o " + self.outputPath + self.srcName + "_cfg.gv " + self.srcPath
+            p = subprocess.Popen(cmd)
+            if p.wait() == 0:
+                pass
+
+            # 读取构建函数的gv文件，生成png图片
+            with open(self.outputPath + self.srcName + "_constructor_cfg.gv ") as f:
+                g = f.read()
+            dot = graphviz.Source(g)
+            dot.render(outfile=self.outputPath + self.srcName + "_constructor_cfg.png", format='png')
+
+            # 读取运行时的gv文件，生成png图片
+            with open(self.outputPath + self.srcName + "_cfg.gv ") as f:
+                g = f.read()
+            dot = graphviz.Source(g)
+            dot.render(outfile=self.outputPath + self.srcName + "_cfg.png", format='png')
 
         self.log.info("EtherSolve处理完毕")
 
@@ -138,6 +141,50 @@ class EtherSolver:
                 b.jumpiDest[True] = jumpiTrueOffset
                 b.jumpiDest[False] = fallBlockOffset
                 # b.printBlockInfo()
+
+        # 对每一个unconditional jump的block，进行tagStack执行，看是否有可能出现：
+        #   jump的地址是在block内部计算得到的
+        # 这种情况下，这个block也有可能是调用节点
+        # 因为不知道栈中原有的内容，因此在做执行之前，先往栈中压入16个None
+        preInfo = [None for i in range(64)] # 64个总够用了吧
+        pushInfo = None
+        tagStack = TagStack(self.cfg)
+        for offset, b in self.cfg.blocks.items():
+            if b.jumpType != "unconditional":
+                continue
+            tagStack.clear()
+            tagStack.setTagStack(preInfo)
+            tagStack.setBeginBlock(offset)
+            while not tagStack.allInstrsExecuted():
+                if tagStack.isLastInstr():
+                    pushInfo = tagStack.getTagStackTop()
+                tagStack.execNextOpCode()
+            if pushInfo is None:
+                continue
+            # 检查pushinfo是否与可能的跳转边一致
+            # 如果一致，则这个跳转边可能是调用边
+            # 如果一致，则这个跳转边一定不是返回边
+            if pushInfo[0] in self.cfg.jumpDests:  # and self.cfg.inEdges[pushInfo[0]].__len__() > 1错误的
+                b.couldBeCaller = True
+
+        tagStack = TagStack(self.constructorCfg)
+        for offset, b in self.constructorCfg.blocks.items():
+            if b.jumpType != "unconditional":
+                continue
+            tagStack.clear()
+            tagStack.setTagStack(preInfo)
+            tagStack.setBeginBlock(offset)
+            while not tagStack.allInstrsExecuted():
+                if tagStack.isLastInstr():
+                    pushInfo = tagStack.getTagStackTop()
+                tagStack.execNextOpCode()
+            if pushInfo is None:
+                continue
+            # 检查pushinfo是否与可能的跳转边一致
+            # 如果一致，则这个跳转边可能是调用边
+            # 如果一致，则这个跳转边一定不是返回边
+            if pushInfo[0] in self.constructorCfg.jumpDests:  # and self.cfg.inEdges[pushInfo[0]].__len__() > 1错误的
+                b.couldBeCaller = True
 
         # 设置起始偏移量
         with open(self.srcPath, "r") as f:

@@ -13,6 +13,7 @@ class Stack:
         if len(self.__stack) > 0:
             return self.__stack.pop()
         else:
+            raise Exception("栈为空")
             assert 0, "stack is empty!"
 
     def size(self):

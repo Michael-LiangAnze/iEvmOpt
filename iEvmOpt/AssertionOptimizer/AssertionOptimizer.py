@@ -13,7 +13,7 @@ from Cfg.BasicBlock import BasicBlock
 from GraphTools import DominatorTreeBuilder
 from GraphTools.GraphMapper import GraphMapper
 from GraphTools.TarjanAlgorithm import TarjanAlgorithm
-from Utils import Stack
+from Utils import Stack, DotGraphGenerator
 import json
 from Utils.Logger import Logger
 
@@ -216,7 +216,7 @@ class AssertionOptimizer:
                     e = JumpEdge(n, self.cfg.blocks[_to])
                     self.uncondJumpEdge.append(e)
         # for e in self.uncondJumpEdge:
-        #     print(e.tetrad)
+        #     print(e.output())
 
         # 第三步，两两之间进行匹配
         funcRange2Calls = {}  # 一个映射，格式为:
@@ -240,14 +240,35 @@ class AssertionOptimizer:
                     if key not in funcRange2Calls.keys():
                         funcRange2Calls[key] = []
                     funcRange2Calls[key].append(value)
-        # for i in funcRange2Calls.items():
-        #     print(i)
+        # for k, v in funcRange2Calls.items():
+        #     print(k, v)
 
+        # oldEdge = dict(self.edges)
         # 第四步，在caller的jump和返回的jumpdest节点之间加边
         for pairs in funcRange2Calls.values():
             for pair in pairs:
                 self.edges[pair[0]].append(pair[1])
                 self.inEdges[pair[1]].append(pair[0])
+
+        # # 按组赋颜色
+        # groupId = 0
+        # groups = dict(zip(self.nodes, [0 for i in range(0, len(self.nodes))]))
+        # for rangeInfo in funcRange2Calls.keys():
+        #     offsetRange = json.loads(rangeInfo)
+        #     groupId += 1
+        #     for node in self.nodes:
+        #         if node in range(offsetRange[0], offsetRange[1] + 1):
+        #             # assert groups[node] == 0  # 不能是赋值过的
+        #             groups[node] = groupId
+        # # 不是common节点，赋上其他颜色。这样，没有和函数关联的节点，便是透明的
+        # groupId += 1
+        # for node in self.nodes:
+        #     if self.blocks[node].blockType != 'common':
+        #         groups[node] = groupId
+        # length = dict(zip(self.nodes, [b.length for b in self.blocks.values()]))
+        # # g3 = DotGraphGenerator(self.nodes, self.edges, groups, length)
+        # g3 = DotGraphGenerator(self.nodes, oldEdge, groups, length)
+        # g3.genDotGraph(sys.argv[0], "tmp")
 
         # 第五步，从一个函数的funcbody的起始block开始dfs遍历，只走offset范围在 [第一条指令所在的block的offset,最后一条指令所在的block的offset]之间的节点，尝试寻找出所有的函数节点
         for rangeInfo in funcRange2Calls.keys():  # 找到一个函数
@@ -271,14 +292,17 @@ class AssertionOptimizer:
             f = Function(self.funcCnt, offsetRange[0], offsetRange[1], funcBody, self.edges)
             self.funcDict[self.funcCnt] = f
             for node in funcBody:
+                assert self.node2FuncId[node] is None # 一个点只能被赋值一次
                 self.node2FuncId[node] = self.funcCnt
+
             # 这里做一个检查，看看所有找到的同一个函数的节点的长度拼起来，是否是其应有的长度，防止漏掉一些顶点
             funcLen = offsetRange[1] + self.cfg.blocks[offsetRange[1]].length - offsetRange[0]
             tempLen = 0
             for n in funcBody:
                 tempLen += self.cfg.blocks[n].length
-            assert funcLen == tempLen
+            assert funcLen == tempLen, funcBody.__str__()
             # f.printFunc()
+        # 这里再做一个检查，是否所有的common节点都被标记为了函数
 
         # 第六步，检查一个函数内的节点是否存在环，存在则将其标记出来
         for func in self.funcDict.values():  # 取出一个函数
@@ -651,7 +675,7 @@ class AssertionOptimizer:
         # 4.11新方法：
         # 第一步，直接删除原来的exitblock，新构建的函数体从exitblock的位置开始放置
         self.nodes.remove(self.cfg.exitBlockId)  # 弹出exitblock
-        tempExitBlock = self.blocks[self.cfg.exitBlockId] # 暂时存下来，后面不需要重新构架
+        tempExitBlock = self.blocks[self.cfg.exitBlockId]  # 暂时存下来，后面不需要重新构架
         self.blocks.pop(self.cfg.exitBlockId)
         curLastNode = max(self.nodes)
 
@@ -723,7 +747,7 @@ class AssertionOptimizer:
                 self.nodes.append(beginOffset)
                 self.blocks[beginOffset] = newBlock
                 self.removedRange[beginOffset] = []
-                self.runtimeDataSegOffset += originalBlock.length # 数据段后移
+                self.runtimeDataSegOffset += originalBlock.length  # 数据段后移
                 curLastNode = beginOffset
 
             # 添加部分冗余删除序列信息
@@ -814,10 +838,10 @@ class AssertionOptimizer:
         tempExitBlock.offset = newBlockOffset
         tempBytecode = bytearray()
         for i in range(self.dataSegLength):
-            tempBytecode.append(0x1f) # 空指令
+            tempBytecode.append(0x1f)  # 空指令
         tempExitBlock.bytecode = tempBytecode
         self.cfg.exitBlockId = newBlockOffset
-        self.blocks[newBlockOffset] = tempExitBlock # 复用之前的exit block
+        self.blocks[newBlockOffset] = tempExitBlock  # 复用之前的exit block
         self.removedRange[newBlockOffset] = []
 
     def __regenerateRuntimeBytecode(self):
@@ -1138,7 +1162,7 @@ class AssertionOptimizer:
         # 第六步，将这些字节码拼成一个整体
         tempFuncBodyLen = 0
         if not self.isProcessingConstructor:  # 当前处理的是runtime的部分
-            self.blocks[self.cfg.exitBlockId].length = 0 # 此时exitblock不再代表数据段
+            self.blocks[self.cfg.exitBlockId].length = 0  # 此时exitblock不再代表数据段
             self.blocks[self.cfg.exitBlockId].bytecode = bytearray()
             self.newFuncBodyOpcode = deque()  # 效率更高
             for node in self.nodes:  # 有序的
@@ -1152,7 +1176,7 @@ class AssertionOptimizer:
         else:  # 当前处理的是构造函数部分
             self.constructorOpcode = deque()  # 效率更高
             for node in self.nodes:  # 有序的
-                if node < self.cfg.exitBlockId: #  不是构造函数的函数字节码不要
+                if node < self.cfg.exitBlockId:  # 不是构造函数的函数字节码不要
                     for bc in self.blocks[node].bytecode:
                         self.constructorOpcode.append(bc)
 
@@ -1208,7 +1232,6 @@ class AssertionOptimizer:
             zip(self.nodes, [[] for i in range(0, len(self.nodes))]))  # 记录每个block中被移除的区间，每个区间的格式为:[from,to)
         self.originalToNewAddr = {}  # 一个映射，格式为： 旧addr:新addr
         self.__regenerateRuntimeBytecode()
-
 
     def __outputFile(self):
         '''

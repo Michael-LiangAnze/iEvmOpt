@@ -2,128 +2,21 @@
 <project version="4">
   <component name="ChangeListManager">
     <list default="true" id="26761b8b-d032-4bbd-8113-13d1181eb69a" name="变更" comment="">
+      <change afterPath="$PROJECT_DIR$/Bytecode/KuaiWechatBusiness_optimize_on.bin" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/Bytecode/SpyceToken.bin" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.gitignore" beforeDir="false" afterPath="$PROJECT_DIR$/.gitignore" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/FullRedundant_cfg.gv" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/FullRedundant_cfg.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/FullRedundant_graph.gv" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/FullRedundant_graph.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/assertExample1_cfg.gv" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/assertExample1_cfg.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/assertExample1_constructor_cfg.gv" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/assertExample1_constructor_cfg.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/assertExample1_graph.gv" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/assertExample1_graph.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/assertExample_cfg.gv" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/assertExample_cfg.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/assertExample_constructor_cfg.gv" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/assertExample_constructor_cfg.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/assertExample_graph.gv" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/assertExample_graph.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test10_cfg.gv" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test10_cfg.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test10_constructor_cfg.gv" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test10_constructor_cfg.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test10_graph.gv" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test10_graph.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test11_cfg.gv" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test11_cfg.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test11_constructor_cfg.gv" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test11_constructor_cfg.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test11_graph.gv" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test11_graph.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test12_cfg.gv" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test12_cfg.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test12_constructor_cfg.gv" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test12_constructor_cfg.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test12_graph.gv" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test12_graph.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test13_cfg.gv" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test13_cfg.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test13_constructor_cfg.gv" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test13_constructor_cfg.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test13_graph.gv" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test13_graph.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test14_cfg.gv" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test14_cfg.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test14_constructor_cfg.gv" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test14_constructor_cfg.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test14_graph.gv" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test14_graph.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test15_cfg.gv" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test15_cfg.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test15_constructor_cfg.gv" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test15_constructor_cfg.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test15_graph.gv" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test15_graph.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test16_cfg.gv" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test16_cfg.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test16_constructor_cfg.gv" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test16_constructor_cfg.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test16_graph.gv" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test16_graph.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test1_cfg.gv" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test1_cfg.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test1_constructor_cfg.gv" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test1_constructor_cfg.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test1_graph.gv" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test1_graph.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test2_cfg.gv" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test2_cfg.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test2_constructor_cfg.gv" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test2_constructor_cfg.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test2_graph.gv" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test2_graph.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test3_cfg.gv" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test3_cfg.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test3_constructor_cfg.gv" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test3_constructor_cfg.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test3_graph.gv" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test3_graph.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test4_cfg.gv" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test4_cfg.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test4_constructor_cfg.gv" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test4_constructor_cfg.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test4_graph.gv" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test4_graph.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test5_cfg.gv" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test5_cfg.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test5_constructor_cfg.gv" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test5_constructor_cfg.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test5_graph.gv" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test5_graph.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test6_cfg.gv" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test6_cfg.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test6_constructor_cfg.gv" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test6_constructor_cfg.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test6_graph.gv" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test6_graph.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test7_cfg.gv" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test7_cfg.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test7_constructor_cfg.gv" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test7_constructor_cfg.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test7_graph.gv" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test7_graph.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test8_cfg.gv" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test8_cfg.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test8_constructor_cfg.gv" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test8_constructor_cfg.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test8_graph.gv" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test8_graph.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test9_cfg.gv" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test9_cfg.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test9_constructor_cfg.gv" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test9_constructor_cfg.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test9_graph.gv" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test9_graph.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test_cfg.gv" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test_cfg.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test_constructor_cfg.gv" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test_constructor_cfg.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test_graph.gv" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test_graph.png" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/iEvmOpt/AssertionOptimizer/AssertionOptimizer.py" beforeDir="false" afterPath="$PROJECT_DIR$/iEvmOpt/AssertionOptimizer/AssertionOptimizer.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/iEvmOpt/AssertionOptimizer/PathGenerator.py" beforeDir="false" afterPath="$PROJECT_DIR$/iEvmOpt/AssertionOptimizer/PathGenerator.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/iEvmOpt/AssertionOptimizer/TagStack.py" beforeDir="false" afterPath="$PROJECT_DIR$/iEvmOpt/AssertionOptimizer/TagStack.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/Cfg.py" beforeDir="false" afterPath="$PROJECT_DIR$/iEvmOpt/Cfg/Cfg.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test16_cfg.html" beforeDir="false" afterPath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test16_cfg.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test16_cfg.json" beforeDir="false" afterPath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test16_cfg.json" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/EtherSolver.py" beforeDir="false" afterPath="$PROJECT_DIR$/iEvmOpt/Cfg/EtherSolver.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/iEvmOpt/Main.py" beforeDir="false" afterPath="$PROJECT_DIR$/iEvmOpt/Main.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/iEvmOpt/Utils/DotGraphGenerator.py" beforeDir="false" afterPath="$PROJECT_DIR$/iEvmOpt/Utils/DotGraphGenerator.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/iEvmOpt/Utils/Stack.py" beforeDir="false" afterPath="$PROJECT_DIR$/iEvmOpt/Utils/Stack.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -153,9 +46,9 @@
     <property name="ASKED_ADD_EXTERNAL_FILES" value="true" />
     <property name="RunOnceActivity.OpenProjectViewOnStart" value="true" />
     <property name="RunOnceActivity.ShowReadmeOnStart" value="true" />
-    <property name="last_opened_file_path" value="$PROJECT_DIR$/Statistics.py" />
+    <property name="last_opened_file_path" value="$PROJECT_DIR$/test1.py" />
   </component>
-  <component name="RunManager" selected="Python.Statistics">
+  <component name="RunManager" selected="Python.test">
     <configuration name="Statistics" type="PythonConfigurationType" factoryName="Python">
       <module name="iEvmOpt" />
       <option name="INTERPRETER_OPTIONS" value="" />
@@ -198,9 +91,31 @@
       <option name="INPUT_FILE" value="" />
       <method v="2" />
     </configuration>
+    <configuration name="test1" type="PythonConfigurationType" factoryName="Python" nameIsGenerated="true">
+      <module name="iEvmOpt" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
+      <option name="SDK_HOME" value="D:\Environment\Python310\python.exe" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$" />
+      <option name="IS_MODULE_SDK" value="false" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/test1.py" />
+      <option name="PARAMETERS" value="" />
+      <option name="SHOW_COMMAND_LINE" value="false" />
+      <option name="EMULATE_TERMINAL" value="false" />
+      <option name="MODULE_MODE" value="false" />
+      <option name="REDIRECT_INPUT" value="false" />
+      <option name="INPUT_FILE" value="" />
+      <method v="2" />
+    </configuration>
     <list>
-      <item itemvalue="Python.test" />
       <item itemvalue="Python.Statistics" />
+      <item itemvalue="Python.test1" />
+      <item itemvalue="Python.test" />
     </list>
   </component>
   <component name="SpellCheckerSettings" RuntimeDictionaries="0" Folders="0" CustomDictionaries="0" DefaultDictionary="应用程序级" UseSingleDictionary="true" transferred="true" />
