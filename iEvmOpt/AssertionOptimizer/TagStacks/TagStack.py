@@ -13,6 +13,7 @@ class TagStack:
         self.PC = 0  # 当前执行指令的指针
         # tag栈，记录的格式为：[push的值，push的字节数，push指令的地址，push指令所在的block，push的值是否有可能是地址]，
         # 一旦该元素参与了运算，则要根据不同情况进行处理
+        # 置为untag时，将前两个字段置为None
         self.tagStack = Stack()
         self.log = Logger()
 
@@ -54,20 +55,14 @@ class TagStack:
 
     def getTagStackTop(self):
         temp = self.tagStack.getTop()
-        if temp is None:
-            return None
-        else:
-            return list(temp[:4])
+        return list(temp[:4])
 
     def getTagStackItem(self, depth: int):
         tmpSize = self.tagStack.size()
         if depth >= tmpSize:  # 不能超出栈深度
-            return None
+            assert 0
         tmp = self.tagStack.getItem(tmpSize - 1 - depth)
-        if tmp is None:
-            return None
-        else:
-            return list(tmp[:4])
+        return list(tmp[:4])
 
     def printState(self, printBlock: bool = True):
         """ 输出当前程序状态
@@ -261,130 +256,130 @@ class TagStack:
                 assert 0, err
         self.PC += 1
 
-    def __execAdd(self):  # 0x01
-        self.tagStack.pop()
-        self.tagStack.pop()
-        self.tagStack.push(None)
-
-    def __execMul(self):  # 0x02
-        self.tagStack.pop()
-        self.tagStack.pop()
-        self.tagStack.push(None)
-
-    def __execSub(self):  # 0x03
-        self.tagStack.pop()
-        self.tagStack.pop()
-        self.tagStack.push(None)
-
-    def __execDiv(self):  # 0x04
-        self.tagStack.pop()
-        self.tagStack.pop()
-        self.tagStack.push(None)
+    # def __execAdd(self):  # 0x01
+    #     self.tagStack.pop()
+    #     self.tagStack.pop()
+    #     self.tagStack.push(None)
+    #
+    # def __execMul(self):  # 0x02
+    #     self.tagStack.pop()
+    #     self.tagStack.pop()
+    #     self.tagStack.push(None)
+    #
+    # def __execSub(self):  # 0x03
+    #     self.tagStack.pop()
+    #     self.tagStack.pop()
+    #     self.tagStack.push(None)
+    #
+    # def __execDiv(self):  # 0x04
+    #     self.tagStack.pop()
+    #     self.tagStack.pop()
+    #     self.tagStack.push(None)
 
     def __execSDiv(self):  # 0x05
         self.tagStack.pop()
         self.tagStack.pop()
-        self.tagStack.push(None)
+        self.tagStack.push([None, None, self.PC, self.curBlock.offset, False])
 
     def __execMod(self):  # 0x06
         self.tagStack.pop()
         self.tagStack.pop()
-        self.tagStack.push(None)
+        self.tagStack.push([None, None, self.PC, self.curBlock.offset, False])
 
     def __execSMod(self):  # 0x07
         self.tagStack.pop()
         self.tagStack.pop()
-        self.tagStack.push(None)
+        self.tagStack.push([None, None, self.PC, self.curBlock.offset, False])
 
     def __execAddMod(self):  # 0x08
         self.tagStack.pop()
         self.tagStack.pop()
         self.tagStack.pop()
-        self.tagStack.push(None)
+        self.tagStack.push([None, None, self.PC, self.curBlock.offset, False])
 
     def __execMulMod(self):  # 0x09
         self.tagStack.pop()
         self.tagStack.pop()
         self.tagStack.pop()
-        self.tagStack.push(None)
+        self.tagStack.push([None, None, self.PC, self.curBlock.offset, False])
 
     def __execExp(self):  # 0x0a
         self.tagStack.pop()
         self.tagStack.pop()
-        self.tagStack.push(None)
+        self.tagStack.push([None, None, self.PC, self.curBlock.offset, False])
 
     def __execSignExtend(self):  # 0x0b
         self.tagStack.pop()
         self.tagStack.pop()
-        self.tagStack.push(None)
+        self.tagStack.push([None, None, self.PC, self.curBlock.offset, False])
 
     def __execLT(self):  # 0x10
         self.tagStack.pop()
         self.tagStack.pop()
-        self.tagStack.push(None)
+        self.tagStack.push([None, None, self.PC, self.curBlock.offset, False])
 
     def __execGt(self):  # 0x11
         self.tagStack.pop()
         self.tagStack.pop()
-        self.tagStack.push(None)
+        self.tagStack.push([None, None, self.PC, self.curBlock.offset, False])
 
     def __execSlt(self):  # 0x12
         self.tagStack.pop()
         self.tagStack.pop()
-        self.tagStack.push(None)
+        self.tagStack.push([None, None, self.PC, self.curBlock.offset, False])
 
     def __execSgt(self):  # 0x13
         self.tagStack.pop()
         self.tagStack.pop()
-        self.tagStack.push(None)
+        self.tagStack.push([None, None, self.PC, self.curBlock.offset, False])
 
     def __execEq(self):  # 0x14
         self.tagStack.pop()
         self.tagStack.pop()
-        self.tagStack.push(None)
+        self.tagStack.push([None, None, self.PC, self.curBlock.offset, False])
 
     def __execIsZero(self):  # 0x15
         self.tagStack.pop()
-        self.tagStack.push(None)
+        self.tagStack.push([None, None, self.PC, self.curBlock.offset, False])
 
-    def __execAnd(self):  # 0x16
-        self.tagStack.pop()
-        self.tagStack.pop()
-        self.tagStack.push(None)
-
-    def __execOr(self):  # 0x17
-        self.tagStack.pop()
-        self.tagStack.pop()
-        self.tagStack.push(None)
-
-    def __execXor(self):  # 0x18
-        self.tagStack.pop()
-        self.tagStack.pop()
-        self.tagStack.push(None)
+    # def __execAnd(self):  # 0x16
+    #     self.tagStack.pop()
+    #     self.tagStack.pop()
+    #     self.tagStack.push(None)
+    #
+    # def __execOr(self):  # 0x17
+    #     self.tagStack.pop()
+    #     self.tagStack.pop()
+    #     self.tagStack.push(None)
+    #
+    # def __execXor(self):  # 0x18
+    #     self.tagStack.pop()
+    #     self.tagStack.pop()
+    #     self.tagStack.push(None)
 
     def __execNot(self):  # 0x19
         self.tagStack.pop()
-        self.tagStack.push(None)
+        self.tagStack.push([None, None, self.PC, self.curBlock.offset, False])
 
     def __execByte(self):  # 0x1a
         self.tagStack.pop()
         self.tagStack.pop()
-        self.tagStack.push(None)
+        self.tagStack.push([None, None, self.PC, self.curBlock.offset, False])
 
-    def __execShl(self):  # 0x1b
-        self.tagStack.pop()
-        self.tagStack.pop()
-        self.tagStack.push(None)
-
-    def __execShr(self):  # 0x1c
-        self.tagStack.pop()
-        self.tagStack.pop()
-        self.tagStack.push(None)
+    # def __execShl(self):  # 0x1b
+    #     self.tagStack.pop()
+    #     self.tagStack.pop()
+    #     self.tagStack.push(None)
+    #
+    # def __execShr(self):  # 0x1c
+    #     self.tagStack.pop()
+    #     self.tagStack.pop()
+    #     self.tagStack.push(None)
 
     def __execSar(self):  # 0x1d
         self.tagStack.pop()
         self.tagStack.pop()
-        self.tagStack.push(None)
+        self.tagStack.push([None, None, self.PC, self.curBlock.offset, False])
 
     def __execNonOp(self):  # 0x1f 空指令
         pass
@@ -392,37 +387,37 @@ class TagStack:
     def __execSha3(self):  # 0x20
         self.tagStack.pop()
         self.tagStack.pop()
-        self.tagStack.push(None)
+        self.tagStack.push([None, None, self.PC, self.curBlock.offset, False])
 
     def __execAddress(self):  # 0x30
-        self.tagStack.push(None)
+        self.tagStack.push([None, None, self.PC, self.curBlock.offset, False])
 
     def __execBalance(self):  # 0x31
         self.tagStack.pop()
-        self.tagStack.push(None)
+        self.tagStack.push([None, None, self.PC, self.curBlock.offset, False])
 
     def __execOrigin(self):  # 0x32
-        self.tagStack.push(None)
+        self.tagStack.push([None, None, self.PC, self.curBlock.offset, False])
 
     def __execCaller(self):  # 0x33
-        self.tagStack.push(None)
+        self.tagStack.push([None, None, self.PC, self.curBlock.offset, False])
 
     def __execCallValue(self):  # 0x34
-        self.tagStack.push(None)
+        self.tagStack.push([None, None, self.PC, self.curBlock.offset, False])
 
     def __execCallDataLoad(self):  # 0x35
         self.tagStack.pop()
-        self.tagStack.push(None)
+        self.tagStack.push([None, None, self.PC, self.curBlock.offset, False])
 
     def __execCallDataSize(self):  # 0x36
-        self.tagStack.push(None)
+        self.tagStack.push([None, None, self.PC, self.curBlock.offset, False])
 
     def __execCallDataCopy(self):  # 0x37
         for i in range(3):
             self.tagStack.pop()
 
     def __execCodesize(self):  # 0x38
-        self.tagStack.push(None)
+        self.tagStack.push([None, None, self.PC, self.curBlock.offset, False])
 
     def __execCodecopy(self):  # 0x39
         self.tagStack.pop()
@@ -430,11 +425,11 @@ class TagStack:
         self.tagStack.pop()
 
     def __execGasPrice(self):  # 0x3a
-        self.tagStack.push(None)
+        self.tagStack.push([None, None, self.PC, self.curBlock.offset, False])
 
     def __execExtCodeSize(self):  # 0x3b
         self.tagStack.pop()
-        self.tagStack.push(None)
+        self.tagStack.push([None, None, self.PC, self.curBlock.offset, False])
 
     def __execExtCodeCopy(self):  # 0x3c
         self.tagStack.pop()
@@ -443,7 +438,7 @@ class TagStack:
         self.tagStack.pop()
 
     def __execReturnDataSize(self):  # 0x3d
-        self.tagStack.push(None)
+        self.tagStack.push([None, None, self.PC, self.curBlock.offset, False])
 
     def __execReturnDataCopy(self):  # 0x3e
         self.tagStack.pop()
@@ -452,42 +447,42 @@ class TagStack:
 
     def __execExtCodeHash(self):  # 0x3f
         self.tagStack.pop()
-        self.tagStack.push(None)
+        self.tagStack.push([None, None, self.PC, self.curBlock.offset, False])
 
     def __execBlockHash(self):  # 0x40
         self.tagStack.pop()
-        self.tagStack.push(None)
+        self.tagStack.push([None, None, self.PC, self.curBlock.offset, False])
 
     def __execCoinBase(self):  # 0x41
-        self.tagStack.push(None)
+        self.tagStack.push([None, None, self.PC, self.curBlock.offset, False])
 
     def __execTimeStamp(self):  # 0x42
-        self.tagStack.push(None)
+        self.tagStack.push([None, None, self.PC, self.curBlock.offset, False])
 
     def __execNumber(self):  # 0x43
-        self.tagStack.push(None)
+        self.tagStack.push([None, None, self.PC, self.curBlock.offset, False])
 
     def __execPrevrandao(self):  # 0x44
-        self.tagStack.push(None)
+        self.tagStack.push([None, None, self.PC, self.curBlock.offset, False])
 
     def __execGasLimit(self):  # 0x45
-        self.tagStack.push(None)
+        self.tagStack.push([None, None, self.PC, self.curBlock.offset, False])
 
     def __execChainId(self):  # 0x46
-        self.tagStack.push(None)
+        self.tagStack.push([None, None, self.PC, self.curBlock.offset, False])
 
     def __execSelfBalance(self):  # 0x47
-        self.tagStack.push(None)
+        self.tagStack.push([None, None, self.PC, self.curBlock.offset, False])
 
     def __execBaseFee(self):  # 0x48
-        self.tagStack.push(None)
+        self.tagStack.push([None, None, self.PC, self.curBlock.offset, False])
 
     def __execPop(self):  # 0x50
         self.tagStack.pop()
 
     def __execMLoad(self):  # 0x51
         self.tagStack.pop()
-        self.tagStack.push(None)
+        self.tagStack.push([None, None, self.PC, self.curBlock.offset, False])
 
     def __execMStore(self):  # 0x52
         self.tagStack.pop()
@@ -499,7 +494,7 @@ class TagStack:
 
     def __execSLoad(self):  # 0x54
         self.tagStack.pop()
-        self.tagStack.push(None)
+        self.tagStack.push([None, None, self.PC, self.curBlock.offset, False])
 
     def __execSStore(self):  # 0x55
         self.tagStack.pop()
@@ -513,13 +508,13 @@ class TagStack:
         self.tagStack.pop()
 
     def __execPc(self):  # 0x58
-        self.tagStack.push(None)
+        self.tagStack.push([None, None, self.PC, self.curBlock.offset, False])
 
     def __execMSize(self):  # 0x59
-        self.tagStack.push(None)
+        self.tagStack.push([None, None, self.PC, self.curBlock.offset, False])
 
     def __execGas(self):  # 0x5a
-        self.tagStack.push(None)
+        self.tagStack.push([None, None, self.PC, self.curBlock.offset, False])
 
     def __execJumpDest(self):  # 0x5b
         pass
@@ -556,17 +551,17 @@ class TagStack:
         self.tagStack.pop()
         self.tagStack.pop()
         self.tagStack.pop()
-        self.tagStack.push(None)
+        self.tagStack.push([None, None, self.PC, self.curBlock.offset, False])
 
     def __execCall(self):  # 0xf1
         for i in range(7):
             self.tagStack.pop()
-        self.tagStack.push(None)
+        self.tagStack.push([None, None, self.PC, self.curBlock.offset, False])
 
     def __execCallCode(self):  # 0xf2
         for i in range(7):
             self.tagStack.pop()
-        self.tagStack.push(None)
+        self.tagStack.push([None, None, self.PC, self.curBlock.offset, False])
 
     def __execReturn(self):  # 0xf3
         # 不分析合约间的跳转关系
@@ -576,22 +571,21 @@ class TagStack:
     def __execDelegateCall(self):  # 0xf4
         for i in range(6):
             self.tagStack.pop()
-        self.tagStack.push(None)
+        self.tagStack.push([None, None, self.PC, self.curBlock.offset, False])
 
     def __execCreate2(self):  # 0xf5
         self.tagStack.pop()
         self.tagStack.pop()
         self.tagStack.pop()
         self.tagStack.pop()
-        self.tagStack.push(None)
+        self.tagStack.push([None, None, self.PC, self.curBlock.offset, False])
 
     def __execStaticCall(self):  # 0xfa
         for i in range(6):
             self.tagStack.pop()
-        self.tagStack.push(None)
+        self.tagStack.push([None, None, self.PC, self.curBlock.offset, False])
 
     def __execRevert(self):  # 0xfd
-
         self.tagStack.pop()
         self.tagStack.pop()
 
@@ -605,52 +599,43 @@ class TagStack:
         # 模仿evmopt中的stackOp1
         # 涉及的指令有：AND OR XOR SUB DIV SHL SHR
         first, second = self.tagStack.pop(), self.tagStack.pop()
-        if first is None and second is None:  # 两个都是None，不计算
-            self.tagStack.push(None)
-        elif first is None and second is not None:  # first 是None
-            # 检查不是None的那个，是否可能是跳转地址
-            # 如果是，则要进行保留。若否，则置为None。下同
-            if second[4]:  # 可能是跳转地址
-                self.tagStack.push(second)
-            else:
-                self.tagStack.push(None)
-        elif first is not None and second is None:  # second 是None
-            if first[4]:  # 可能是跳转地址
-                self.tagStack.push(first)
-            else:
-                self.tagStack.push(None)
-        else:  # 两个都不是None
-            assert not (first[4] and second[4])  # 不能两个都是跳转地址
-            # 如果其中有一个可能是跳转地址，则进行保留，否则置为None
-            if first[4]:
-                self.tagStack.push(first)
-            elif second[4]:
-                self.tagStack.push(second)
-            else:
-                self.tagStack.push(None)
+        firstIsAddr, secondIsAddr = first[4], second[4]
+        assert not (firstIsAddr and secondIsAddr)  # 不能两个都是跳转地址
+        if not firstIsAddr and not secondIsAddr:  # 两个都不是地址，不计算
+            self.tagStack.push([None, None, self.PC, self.curBlock.offset, False])
+        elif not firstIsAddr and secondIsAddr:  # first不是地址
+            # 是否其中一个是跳转地址,则要进行保留
+            self.tagStack.push(second)
+        elif firstIsAddr and not secondIsAddr:  # second不是跳转地址
+            self.tagStack.push(first)
+        else:
+            assert 0
 
     def __execOp2(self):
         # 模仿evmopt中的stackOp2
         # 涉及的指令有：ADD MUL
         first, second = self.tagStack.pop(), self.tagStack.pop()
-        if first is None and second is None:  # 两个都是None，不计算
-            self.tagStack.push(None)
-        elif first is None and second is not None:  # first 是None
-            # 检查不是None的那个，是否可能是跳转地址
-            # 如果是，则还是要置为None，因为跳转地址不与None进行计算。下同
-            if second[4]:  # 可能是跳转地址
+        firstIsAddr, secondIsAddr = first[4], second[4]
+        assert not (firstIsAddr and secondIsAddr and first[0] != second[0])  # 两个地址之间进行计算
+
+        if not firstIsAddr and not secondIsAddr:  # 两个不是跳转地址
+            self.tagStack.push([None, None, self.PC, self.curBlock.offset, False])
+        elif not firstIsAddr and secondIsAddr:  # first不是跳转地址，second可能是
+            if first[0] is None:  # first 是一个未知数，计算结果一定不是跳转地址
                 self.log.warning("可疑的跳转地址与未知值之间出现了运算")
-            self.tagStack.push(None)
-        elif first is not None and second is None:  # second 是None
-            if first[4]:  # 可能是跳转地址
+                self.tagStack.push([None, None, self.PC, self.curBlock.offset, False])
+            else:  # first不是未知数
+                self.tagStack.push(second)
+        elif firstIsAddr and not secondIsAddr:  # first可能是跳转地址，second不是跳转地址
+            if second[0] is None:  # second 是一个未知数，结果不是跳转地址
                 self.log.warning("可疑的跳转地址与未知值之间出现了运算")
-            self.tagStack.push(None)
-        else:  # 两个都不是None
-            assert not (first[4] and second[4] and first[0] == second[0])  # 不能两个都是跳转地址，也不能两个值相等
-            # 如果其中有一个可能是跳转地址，则进行保留，否则置为None
-            if first[4]:
+                self.tagStack.push([None, None, self.PC, self.curBlock.offset, False])
+            else:
                 self.tagStack.push(first)
-            elif second[4]:
+        else:  # 两个都是，但是相等
+            if firstIsAddr:
+                self.tagStack.push(first)
+            elif secondIsAddr:
                 self.tagStack.push(second)
             else:
-                self.tagStack.push(None)
+                self.tagStack.push([None, None, self.PC, self.curBlock.offset, False])

@@ -3,6 +3,7 @@ import sys
 
 from Cfg import *
 from AssertionOptimizer.AssertionOptimizer import AssertionOptimizer
+from Cfg.EtherSolver import EtherSolver
 
 if __name__ == '__main__':
     """

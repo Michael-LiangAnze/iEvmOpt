@@ -137,3 +137,7 @@ processInfo.*
 Statistics.py
 report.json
 /temp
+特殊的合约.md
+EtherSolve.txt
+ethersolve.py
+*.dot

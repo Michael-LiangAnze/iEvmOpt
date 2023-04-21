@@ -1,4 +1,3 @@
-from AssertionOptimizer.TagStacks.TagStack import TagStack
 from AssertionOptimizer.TagStacks.TagStackForCfgRepairKit import TagStackForCfgRepairKit
 from Cfg.Cfg import Cfg
 from Utils.Logger import Logger
@@ -83,7 +82,7 @@ class CfgRepairKit:
         :return:
         """
         # print(curNode)
-        if self.visiting[curNode]:
+        if self.visiting[curNode] or curNode == self.cfg.exitBlockId or self.blocks[curNode].jumpType == "terminal":
             return
         # print(curNode)
         self.visiting[curNode] = True
@@ -97,17 +96,22 @@ class CfgRepairKit:
             if curTagStack.isLastInstr():
                 jumpInfo = curTagStack.getTagStackTop()
             curTagStack.execNextOpCode()
+            # curTagStack.printState(False)
+            # print(jumpInfo)
 
         # 第二步，查看是否跳到一个没有入边的节点，是则:
         # 若原来只是跳到exit block，则删除这条边
         # 添加新跳转边
+        jumpInfoDigit = None
+        jumpInfoStr = jumpInfo.__str__()
+        if jumpInfoStr.isdigit():  # 是一个数字，检查是否跳到了没有入边的点
+            jumpInfoDigit = int(jumpInfoStr)
+
         if self.blocks[curNode].jumpType == "unconditional":
-            if jumpInfo is None: # underflow会导致None
+            if jumpInfo is None:  # underflow会导致None
                 self.visiting[curNode] = False
                 return
-            jumpInfoStr = jumpInfo.__str__()
-            if jumpInfoStr.isdigit():  # 是一个数字，检查是否跳到了没有入边的点
-                jumpInfoDigit = int(jumpInfoStr)
+            if jumpInfoDigit is not None:  # 是一个数字，检查是否跳到了没有入边的点
                 if jumpInfoDigit in self.todoNodes and jumpInfoDigit not in self.edges[curNode]:
                     if len(self.edges[curNode]) == 1 and self.edges[curNode][0] == self.cfg.exitBlockId:  # 原来只是跳到Exit
                         self.edges[curNode] = []
@@ -118,10 +122,27 @@ class CfgRepairKit:
 
         # 继续dfs
         # 因为出边的数量可能在遍历的时候增加/减少，因此采用下标的方式遍历
-        i = 0
-        while i < len(self.edges[curNode]):
-            nextNode = self.edges[curNode][i]
-            self.__dfs(nextNode, curTagStack)
-            i += 1
+        # i = 0
+        # while i < len(self.edges[curNode]):
+        #     nextNode = self.edges[curNode][i]
+        #     self.__dfs(nextNode, curTagStack)
+        #     i += 1
+
+        # 不顾原来的边关系，直接做dfs
+        if jumpInfoDigit is None:  # 从栈中无法找到地址
+            assert self.blocks[curNode].jumpType not in ["conditional","unconditional"]
+            if self.blocks[curNode].jumpType == "fall":
+                self.__dfs(curNode + self.blocks[curNode].length, curTagStack)
+        else:
+            if self.blocks[curNode].jumpType == "conditional":  # fall 边
+                self.__dfs(jumpInfoDigit, curTagStack)
+                self.__dfs(curNode + self.blocks[curNode].length, curTagStack)
+            elif self.blocks[curNode].jumpType == "unconditional":
+                self.__dfs(jumpInfoDigit, curTagStack)
+            else: # fall only
+                self.__dfs(curNode + self.blocks[curNode].length, curTagStack)
+
+        # if curNode in [587,785]:
+        #     print(curNode,jumpInfoDigit)
 
         self.visiting[curNode] = False

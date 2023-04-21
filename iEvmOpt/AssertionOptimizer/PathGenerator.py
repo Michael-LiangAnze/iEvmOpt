@@ -119,19 +119,20 @@ class PathGenerator:
             elif opcode == 0x39:  # codecopy
                 tmpOffset = curTagStack.getTagStackItem(1)
                 tmpSize = curTagStack.getTagStackItem(2)
-                assert tmpOffset is not None, "cur PC:{},path:{}".format(curTagStack.PC, self.pathRecorder.getStack())
-                assert tmpSize is not None, "cur PC:{},path:{}".format(curTagStack.PC, self.pathRecorder.getStack())
+                # 不对offset和size做任何检查，检查留给优化工作去做
+                # assert tmpOffset is not None, "cur PC:{},path:{}".format(curTagStack.PC, self.pathRecorder.getStack())
+                # assert tmpSize is not None, "cur PC:{},path:{}".format(curTagStack.PC, self.pathRecorder.getStack())
                 tmpOffset.extend(tmpSize)
                 tmpOffset.append(curNode)
                 self.codecopyInfo.append(tmpOffset)
             if curTagStack.isLastInstr():
-                pushInfo = curTagStack.getTagStackTop()  # [push的值，push指令的地址，push指令所在的block]
+                pushInfo = curTagStack.getTagStackTop()  # [push的值，push的字节数,push指令的地址，push指令所在的block]
             curTagStack.execNextOpCode()
 
         # 第三步，根据跳转的类型，记录跳转边的信息
         if self.blocks[curNode].jumpType in ["unconditional", "conditional"]:  # 是一条跳转边
-            if pushInfo is None:
-                self.log.fail("跳转地址经过了计算，拒绝优化")
+            if pushInfo[0] is None:
+                self.log.fail("跳转地址经过了计算，拒绝优化，跳转信息为：{}，当前路径为:{}".format(pushInfo,self.pathRecorder.getTagStack().__str__()))
             assert pushInfo[0] in self.nodes  # 必须是一个block的offset
             pushInfo.append(curNode)  # 添加一条信息，就是jump所在的block
             self.jumpEdgeInfo.append(pushInfo)

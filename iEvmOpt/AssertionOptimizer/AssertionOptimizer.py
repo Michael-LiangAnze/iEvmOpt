@@ -105,10 +105,10 @@ class AssertionOptimizer:
         # copdcopy信息，格式: [[offset push的值，offset push的字节数，offset push指令的地址， offset push指令所在的block,
         #                       size push的值，size push的字节数，size push指令的地址， size push指令所在的block，codecopy所在的block]]
         self.codeCopyInfo = None
-
         # 构造函数重定位需要用到的信息
         self.runtimeDataSegOffset = 0  # 运行时的数据段的移动偏移量，即运行时的函数体总长度变化的偏移量
         self.isProcessingConstructor = False  # 是否正在对构造函数进行分析
+
 
     def optimize(self):
         self.log.info("开始进行字节码分析")
@@ -216,7 +216,7 @@ class AssertionOptimizer:
                     e = JumpEdge(n, self.cfg.blocks[_to])
                     self.uncondJumpEdge.append(e)
         # for e in self.uncondJumpEdge:
-        #     print(e.output())
+        #     e.output()
 
         # 第三步，两两之间进行匹配
         funcRange2Calls = {}  # 一个映射，格式为:
@@ -228,10 +228,14 @@ class AssertionOptimizer:
         for i in range(0, uncondJumpNum):
             for j in range(0, uncondJumpNum):
                 if i == j:
-                    pass
+                    continue
                 e1, e2 = self.uncondJumpEdge[i], self.uncondJumpEdge[j]  # 取出两个不同的边进行匹配
                 if e1.tetrad[0] == e2.tetrad[2] and e1.tetrad[1] == e2.tetrad[3] and e1.tetrad[
                     0] is not None:  # 匹配成功，e1为调用边，e2为返回边。注意None之间是不匹配的
+                    # 4.21新问题：如果是添加了修复边的话，可能会出现，调用边不是push addr,jump的结构
+                    # 比如说 AND JUMP。此时要多加一个限制，就是调用边指向的节点的offset，要比返回边的起始节点小
+                    if e1.targetNode > e2.beginNode:
+                        continue
                     e1.isCallerEdge = True
                     e2.isReturnEdge = True
                     self.isFuncBodyHeadNode[e1.targetNode] = True
@@ -292,7 +296,7 @@ class AssertionOptimizer:
             f = Function(self.funcCnt, offsetRange[0], offsetRange[1], funcBody, self.edges)
             self.funcDict[self.funcCnt] = f
             for node in funcBody:
-                assert self.node2FuncId[node] is None # 一个点只能被赋值一次
+                assert self.node2FuncId[node] is None  # 一个点只能被赋值一次
                 self.node2FuncId[node] = self.funcCnt
 
             # 这里做一个检查，看看所有找到的同一个函数的节点的长度拼起来，是否是其应有的长度，防止漏掉一些顶点
@@ -300,7 +304,7 @@ class AssertionOptimizer:
             tempLen = 0
             for n in funcBody:
                 tempLen += self.cfg.blocks[n].length
-            assert funcLen == tempLen, funcBody.__str__()+self.edges.__str__()
+            assert funcLen == tempLen, funcBody.__str__() + self.edges.__str__()
             # f.printFunc()
         # 这里再做一个检查，是否所有的common节点都被标记为了函数
 
@@ -387,17 +391,33 @@ class AssertionOptimizer:
         #     print(info)
 
         # 第三步，做一个检查信息，看codecopy指令是否只是用于复制运行时的代码，或者是用于访问数据段的信息
-        # copdcopy信息，格式: [[offset push的值，offset push的字节数，offset push指令的地址， offset push指令所在的block,
+        # codecopy信息，格式: [[offset push的值，offset push的字节数，offset push指令的地址， offset push指令所在的block,
         #                       size push的值，size push的字节数，size push指令的地址， size push指令所在的block]]
-        for info in self.codeCopyInfo:
-            offset, _size = info[0], info[4]
-            if not self.isProcessingConstructor:  # 正在分析的是runtimecfg
-                if offset in range(self.funcBodyLength, self.funcBodyLength + self.dataSegLength):  # 只能是数据段，不能为代码段
+        # 对于运行时的codecopy，假设其用于访问数据段，因此size是不做任何处理的，只关心offset的情况。
+        #   如果offset是一个可以获得的数，则保留该codecopy；如果offset是untag，但是被push的位置为codesize，则直接删除
+        #   如果codecopy信息被置为了untag，说明经过了计算，此时只有在以下的情况下，才会被删除:
+        # 对于构造函数的codecopy，假设其用于访问数据段以及copy runtime，它的offset和size必须是untag的
+        if not self.isProcessingConstructor:  # 正在分析的是runtimecfg
+            removeList = []
+            for info in self.codeCopyInfo:
+                offset = info[0]
+                if offset is None:  # 为None，则只能是codesize
+                    pushAddr, pushBlock = offset[2], offset[3]
+                    if self.blocks[pushBlock].bytecode[pushAddr - pushBlock] == 0x38:  # 是codesize
+                        removeList.append(info)
+                    else:
+                        self.log.fail("函数体的codecopy无法进行分析: offset未知:{}".format(info))
+                elif offset in range(self.funcBodyLength,
+                                     self.funcBodyLength + self.dataSegLength):  # 不是None，则offset只能在数据段，不能为代码段
                     # 以数据段的偏移量为开头，且长度不能超出数据段
                     continue
                 else:
                     self.log.fail("函数体的codecopy无法进行分析: offset不在数据段内")
-            else:  # 正在分析的是构造函数cfg
+            for info in removeList:
+                self.codeCopyInfo.remove(info)
+        else:  # 正在分析的是构造函数cfg
+            for info in self.codeCopyInfo:
+                offset, _size = info[0], info[4]
                 if offset in range(self.constructorFuncBodyLength,
                                    self.constructorFuncBodyLength + self.constructorDataSegLength):
                     # 访问的是构造函数的数据段
@@ -408,8 +428,9 @@ class AssertionOptimizer:
                     # 访问的是函数体后的数据段
                     continue
                 # elif offset == self.constructorFuncBodyLength + self.constructorDataSegLength and _size == self.funcBodyLength + self.dataSegLength:
-                elif offset == self.constructorFuncBodyLength + self.constructorDataSegLength and _size >= self.funcBodyLength:
-                    # 用来复制运行时的代码，注意，size有可能小于函数体+数据段的长度，因此不能用等于，只能判断size是否大于函数体
+                elif offset == self.constructorFuncBodyLength + self.constructorDataSegLength:
+                    # 用来复制运行时的代码，注意，size有可能小于函数体+数据段的长度
+                    # 这里判断的方法为，offset为运行时的开头
                     continue
                 else:
                     # 访问其他地址
@@ -872,8 +893,8 @@ class AssertionOptimizer:
         # 第二步，将codecopy信息转换成jump的信息，方便统一处理
         # 格式: [[offset push的值，offset push的字节数，offset push指令的地址， offset push指令所在的block,
         #          size push的值，size push的字节数，size push指令的地址， size push指令所在的block，codecopy所在的block]]
-        # 如果处理的是运行时代码的信息，则转换的方式为：将前四个信息变成jump信息中的前四个，最后将codecopy指令的地址变成jump信息的第五个（即jump所在的block）
-        # 如果处理的是构造函数中信息，因为可能涉及到函数体后数据段的访问、运行时代码的复制，此时offset和size会发生剧烈的变化
+        # 如果处理的是运行时代码的信息，则转换的方式为：将前四个信息变成jump信息中的前四个，最后将codecopy指令的地址变成jump信息的第五个（即jump所在的block）。此时offset会发生剧烈的变化
+        # 如果处理的是构造函数中信息，因为可能涉及到函数体后数据段的访问、运行时代码的复制，此时size会发生剧烈的变化
         # 因此，添加两个长度为7的跳转信息，专门用来处理这种情况：
         # 类型5：该信息是由codecopy中的offset信息修改而来的，在该情况下，push的addr需要加上offset，在第一次处理到这条信息时，会做试填入
         #       填入完成之后，变回成长度为5的普通信息
@@ -905,9 +926,9 @@ class AssertionOptimizer:
                     newInfo.append(self.runtimeDataSegOffset)
                     self.jumpEdgeInfo.append(newInfo)
                 # elif info[0] == constructorTotalLen and info[4] == runtimeTotalLen:
-                elif info[0] == constructorTotalLen and info[4] >= self.funcBodyLength:
+                elif info[0] == constructorTotalLen:  # and info[4] >= self.funcBodyLength
                     # 用来复制运行时的代码，则要修改为第5类信息
-                    # 注意，size不一定等于runtime的总程度，可能会出现：运行时函数体长度 <= size <= 运行时总长度
+                    # 注意，size不一定等于runtime的总程度，可能会出现：运行时函数体长度 <= size < 运行时总长度
                     # 对codecopy的offset，只需要对offset重定位即可
                     newInfo = list(info[:4])
                     newInfo.append(info[8])

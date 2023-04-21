@@ -121,7 +121,7 @@ class EtherSolver:
         constructorKit = CfgRepairKit(self.constructorCfg)
         constructorKit.fix()
         if not constructorKit.isFixed():  # 修复失败
-            self.log.error("构造函数边修复失败")
+            self.log.fail("构造函数边修复失败")
             assert 0
         else:
             self.log.info("构造函数边修复成功")
@@ -130,14 +130,12 @@ class EtherSolver:
         runtimeKit = CfgRepairKit(self.cfg)
         runtimeKit.fix()
         if not runtimeKit.isFixed():  # 修复失败
-            self.log.error("运行时函数边修复失败")
+            self.log.fail("运行时函数边修复失败")
         else:
             self.log.info("运行时函数边修复成功")
             self.cfg.edges, self.cfg.inEdges = runtimeKit.getRepairedEdges()
 
         ##############              修复结束                   ################
-
-
 
         # 添加unconditional、conditional跳转目标块的信息
         for offset, b in self.cfg.blocks.items():
@@ -168,7 +166,7 @@ class EtherSolver:
         #   jump的地址是在block内部计算得到的
         # 这种情况下，这个block也有可能是调用节点
         # 因为不知道栈中原有的内容，因此在做执行之前，先往栈中压入16个None
-        preInfo = [None for i in range(64)]  # 64个总够用了吧
+        preInfo = [[None, None, None, None, False] for i in range(64)]  # 64个总够用了吧
         pushInfo = None
         tagStack = TagStack(self.cfg)
         for offset, b in self.cfg.blocks.items():
@@ -181,7 +179,7 @@ class EtherSolver:
                 if tagStack.isLastInstr():
                     pushInfo = tagStack.getTagStackTop()
                 tagStack.execNextOpCode()
-            if pushInfo is None:
+            if pushInfo[0] is None:  # 置为了untag
                 continue
             # 检查pushinfo是否与可能的跳转边一致
             # 如果一致，则这个跳转边可能是调用边
@@ -200,7 +198,7 @@ class EtherSolver:
                 if tagStack.isLastInstr():
                     pushInfo = tagStack.getTagStackTop()
                 tagStack.execNextOpCode()
-            if pushInfo is None:
+            if pushInfo[0] is None:  # 置为了untag
                 continue
             # 检查pushinfo是否与可能的跳转边一致
             # 如果一致，则这个跳转边可能是调用边
