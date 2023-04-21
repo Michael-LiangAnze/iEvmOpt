@@ -36,8 +36,6 @@ class PathGenerator:
         # 解释一下，不能使用基于函数调用链的scc访问控制，否则当出现循环内调用函数的时候，会出现死循环
 
         self.jumpEdgeInfo = []  # 跳转边信息，格式为:[[push的值，push的字节数，push指令的地址，push指令所在的block,jump所在的block]]
-        self.pathRecorder = Stack()
-        self.returnAddrStack = Stack()
         self.pathId = 0  # 路径的id
         self.paths = []  # 记录寻找到的路径，格式为路径对象
 
@@ -59,7 +57,7 @@ class PathGenerator:
         '''
         # dfs寻路
 
-        self.__dfs(self.beginNode, TagStack(self.cfg))
+        self.__dfs(self.beginNode, TagStack(self.cfg), Stack(), Stack())
 
         # 因为得到的跳转信息和codecopy信息有可能是重复的，这里需要做一个去重处理
         tempDict = {}
@@ -84,16 +82,21 @@ class PathGenerator:
                 infoNum += 1  # 一次push即可
         assert infoNum == self.jumpEdgeInfo.__len__(), "{},{}".format(infoNum, self.jumpEdgeInfo.__len__())
 
-    def __dfs(self, curNode: int, parentTagStack: TagStack):
+    def __dfs(self, curNode: int, parentTagStack: TagStack, parentReturnAddrStack: Stack, parentPathRecorder: Stack):
         """
         路径记录：每访问一个新节点，则将其加入到路径栈，离开时pop一次(其实就是pop自己)
         访问控制：每访问一个新节点，则将其设置为true状态，退出时设置为false
         """
-        # print(curNode)
-        self.pathRecorder.push(curNode)
+        curTagStack = TagStack(self.cfg)
+        curTagStack.setTagStack(parentTagStack.getTagStack())
+        curReturnAddrStack = Stack()
+        curReturnAddrStack.setStack(parentReturnAddrStack.getStack())
+        curPathRecorder = Stack()
+        curPathRecorder.setStack(parentPathRecorder.getStack())
+        curPathRecorder.push(curNode)
 
         # 第一步，检查当前是否进入了scc，若是，则要修改访问控制
-        curReturnAddrStackStr = self.returnAddrStack.getStack().__str__()  # 返回地址栈的字符串
+        curReturnAddrStackStr = curReturnAddrStack.getStack().__str__()  # 返回地址栈的字符串
         if self.isLoopRelated[curNode]:  # 当前访问的是一个scc，需要将其标记为true，防止死循环
             if curReturnAddrStackStr not in self.sccVisiting.keys():  # 还没有建立访问控制
                 self.sccVisiting[curReturnAddrStackStr] = dict(
@@ -101,18 +104,16 @@ class PathGenerator:
             self.sccVisiting[curReturnAddrStackStr][curNode] = True
 
         # 第二步，进行tagstack执行，这一步需要复制父节点的tagstack信息
-        curTagStack = TagStack(self.cfg)
-        curTagStack.setTagStack(parentTagStack.getTagStack())
         curTagStack.setBeginBlock(curNode)
         pushInfo = None
         while not curTagStack.allInstrsExecuted():
             opcode = curTagStack.getOpcode()
             if opcode == 0xfe:  # invalid
-                path = Path(self.pathId, self.pathRecorder.getStack())
+                path = Path(self.pathId, curPathRecorder.getStack())
                 self.paths.append(path)
                 self.pathId += 1
                 # 不必往下走，直接返回
-                self.pathRecorder.pop()
+                # curPathRecorder.pop()
                 if self.isLoopRelated[curNode]:
                     self.sccVisiting[curReturnAddrStackStr][curNode] = False
                 return
@@ -125,19 +126,24 @@ class PathGenerator:
                 tmpOffset.extend(tmpSize)
                 tmpOffset.append(curNode)
                 self.codecopyInfo.append(tmpOffset)
-            if curTagStack.isLastInstr():
+            if curTagStack.isLastInstr() and self.blocks[curNode].jumpType != "terminal":  # terminal可能会没有栈信息
                 pushInfo = curTagStack.getTagStackTop()  # [push的值，push的字节数,push指令的地址，push指令所在的block]
             curTagStack.execNextOpCode()
 
         # 第三步，根据跳转的类型，记录跳转边的信息
         if self.blocks[curNode].jumpType in ["unconditional", "conditional"]:  # 是一条跳转边
             if pushInfo[0] is None:
-                self.log.fail("跳转地址经过了计算，拒绝优化，跳转信息为：{}，当前路径为:{}".format(pushInfo,self.pathRecorder.getTagStack().__str__()))
+                self.log.fail(
+                    "跳转地址经过了计算，拒绝优化，跳转信息为：{}，当前路径为:{}".format(pushInfo, curPathRecorder.getTagStack().__str__()))
             assert pushInfo[0] in self.nodes  # 必须是一个block的offset
             pushInfo.append(curNode)  # 添加一条信息，就是jump所在的block
             self.jumpEdgeInfo.append(pushInfo)
             # if curNode == 636:
             #     print(pushInfo)
+        elif self.blocks[curNode].jumpType == "terminal":  # 应当立即返回，不必再往下走
+            if self.isLoopRelated[curNode]:
+                self.sccVisiting[curReturnAddrStackStr][curNode] = False
+            return
 
         # 第四步，查看每一条出边
         # 如果出边会造成环形函数调用，或者是函数内scc死循环，则不走这些出边
@@ -154,13 +160,13 @@ class PathGenerator:
                     # 可以是环相关的点，循环内调用函数也可以
                     # if self.isLoopRelated[node]:  # 不能是环相关的点，例如循环内调用函数，会出现无限递归的情况
                     #     continue
-                    if self.returnAddrStack.hasItem(
+                    if curReturnAddrStack.hasItem(
                             e.tetrad[1]):  # 如果是已经调用过的函数，则说明出现了环形函数调用的情况，此时需要放弃优化
                         # 找出所有环相关的函数，用于报错
                         callFuncId = self.node2FuncId[e.targetNode]
                         callLoopRelatedFuncId = {}  # 用字典只是为了过滤相同的函数id
                         tempPathRecorder = Stack()
-                        tempPathRecorder.setStack(self.pathRecorder.getStack())
+                        tempPathRecorder.setStack(curPathRecorder.getStack())
                         isStop = False
                         while not isStop:
                             n = tempPathRecorder.pop()
@@ -171,25 +177,25 @@ class PathGenerator:
                         self.log.fail(
                             "检测到环形函数调用链的情况，涉及的函数id有：{}，字节码无法被优化".format([i for i in callLoopRelatedFuncId.keys()]))
                         # 程序已经结束了
-                    self.returnAddrStack.push(e.tetrad[1])  # push返回地址
-                    self.__dfs(node, curTagStack)
+                    curReturnAddrStack.push(e.tetrad[1])  # push返回地址
+                    self.__dfs(node, curTagStack, curReturnAddrStack, curPathRecorder)
                     # 已经走完了，返回信息栈需要pop掉这一个返回信息
-                    self.returnAddrStack.pop()
+                    curReturnAddrStack.pop()
                 elif e.isReturnEdge:  # 是一条返回边
-                    if self.returnAddrStack.empty():  # 栈里必须还有地址
+                    if curReturnAddrStack.empty():  # 栈里必须还有地址
                         continue
-                    if e.tetrad[3] != self.returnAddrStack.getTop():  # 和之前push的返回地址相同，才能做返回
+                    if e.tetrad[3] != curReturnAddrStack.getTop():  # 和之前push的返回地址相同，才能做返回
                         continue
-                    stackItems = self.returnAddrStack.getStack()  # 保存之前的栈，防止栈因为走向终止节点而被清空
-                    self.returnAddrStack.pop()  # 模拟返回后的效果
-                    self.__dfs(node, curTagStack)  # 返回
-                    self.returnAddrStack.setStack(stackItems)  # 如果走到过终点，则当前函数的返回地址以及前面函数的返回地址都没了，需要恢复
+                    stackItems = curReturnAddrStack.getStack()  # 保存之前的栈，防止栈因为走向终止节点而被清空
+                    curReturnAddrStack.pop()  # 模拟返回后的效果
+                    self.__dfs(node, curTagStack, curReturnAddrStack, curPathRecorder)  # 返回
+                    curReturnAddrStack.setStack(stackItems)  # 恢复之前的栈状态
                 else:  # 是一条普通的uncondjump边
-                    self.__dfs(node, curTagStack)
+                    self.__dfs(node, curTagStack, curReturnAddrStack, curPathRecorder)
             else:  # 不是unconditional jump
-                self.__dfs(node, curTagStack)
+                self.__dfs(node, curTagStack, curReturnAddrStack, curPathRecorder)
 
-        self.pathRecorder.pop()
+        # curReturnAddrStack.pop()
         if self.isLoopRelated[curNode]:
             self.sccVisiting[curReturnAddrStackStr][curNode] = False
 

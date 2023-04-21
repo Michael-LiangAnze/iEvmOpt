@@ -132,6 +132,7 @@ dmypy.json
 /contracts
 contracts.zip
 /test.py
+/testContract
 /testOptimized
 processInfo.*
 Statistics.py
@@ -140,4 +141,7 @@ report.json
 特殊的合约.md
 EtherSolve.txt
 ethersolve.py
+ethersolve1.py
 *.dot
+/removedContract
+/Optimized/*

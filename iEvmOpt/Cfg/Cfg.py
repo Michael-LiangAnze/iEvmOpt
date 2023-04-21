@@ -20,6 +20,7 @@ class Cfg:
         # 已经读入了所有的block，将它们拼接为一个长字符串，并设置长度
         nodes = list(self.blocks.keys())
         nodes.sort()
+        # print(nodes)
         for node in nodes:
             self.bytecodeStr += self.blocks[node].bytecodeStr
 

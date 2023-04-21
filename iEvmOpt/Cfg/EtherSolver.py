@@ -35,6 +35,7 @@ class EtherSolver:
         if not isParseBefore:
             dg = DotGraphGenerator(self.cfg.blocks.keys(), self.cfg.edges)
             dg.genDotGraph(self.outputPath, self.srcName)
+        self.timeOutLimit = 300 # 5min
 
     def __etherSolve(self):
         jarPath = os.path.dirname(__file__) + "\EtherSolve.jar"
@@ -42,32 +43,32 @@ class EtherSolver:
 
         cmd = "java -jar " + jarPath + " -c -H -o " + self.outputPath + self.srcName + "_cfg.html " + self.srcPath
         p = subprocess.Popen(cmd)
-        if p.wait() == 0:
+        if p.wait(self.timeOutLimit) == 0:
             pass
         if p.returncode != 0:
             exit(-1)
 
         cmd = "java -jar " + jarPath + " -r -H -o " + self.outputPath + self.srcName + "_constructor_cfg.html " + self.srcPath
         p = subprocess.Popen(cmd)
-        if p.wait() == 0:
+        if p.wait(self.timeOutLimit) == 0:
             pass
 
         cmd = "java -jar " + jarPath + " -c -j -o " + self.outputPath + self.srcName + "_cfg.json " + self.srcPath
         p = subprocess.Popen(cmd)
-        if p.wait() == 0:
+        if p.wait(self.timeOutLimit) == 0:
             pass
 
         if self.genPng:
             # 生成构建时cfg
             cmd = "java -jar " + jarPath + " -r -d -o " + self.outputPath + self.srcName + "_constructor_cfg.gv " + self.srcPath
             p = subprocess.Popen(cmd)
-            if p.wait() == 0:
+            if p.wait(self.timeOutLimit) == 0:
                 pass
 
             # 生成运行时cfg
             cmd = "java -jar " + jarPath + " -c -d -o " + self.outputPath + self.srcName + "_cfg.gv " + self.srcPath
             p = subprocess.Popen(cmd)
-            if p.wait() == 0:
+            if p.wait(self.timeOutLimit) == 0:
                 pass
 
             # 读取构建函数的gv文件，生成png图片

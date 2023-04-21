@@ -96,8 +96,22 @@ class SymbolicExecutor:
         获取程序当前的执行状态
         :return:一个PC；一个字符串，分别包含了栈、memory、storage的状态
         '''
-        state = self.stack.getStack().__str__() + "<=>" + self.memory.__str__() + "<=>" + self.storage.__str__()
-        return self.PC, state
+        stateStr = self.stack.getStack().__str__() + "<=>" + self.memory.__str__() + "<=>" + self.storage.__str__()
+        # stateStr = self.stack.getStack().__str__() + "<=>" + self.storage.__str__()
+        # stateStr = self.stack.getStack().__str__() + "<=>" + self.storage.__str__() + "<=>"
+        # addrs = list(self.memory.keys())
+        # addrs.sort()
+        # memoryStr = ",".join(["{}:{}".format(addr, self.memory[addr].__str__()) for addr in addrs])
+        # stateStr += "{" + memoryStr + "}"
+        return self.PC, stateStr
+
+    def getOpcode(self):
+        '''
+        获取当前PC处的操作码
+        :return:opcode
+        '''
+        index = self.PC - self.curBlock.offset
+        return self.curBlock.bytecode[index]
 
     def printState(self, printBlock: bool = True):
         """ 输出当前程序状态
@@ -837,7 +851,7 @@ class SymbolicExecutor:
             endAddr = simplify(startAddr + segSize)
             addr = startAddr.__str__() + "$" + endAddr.__str__()
             data = "return_" + str(self.callCnt) + "_data_" + startAddr.__str__() + "$" + endAddr.__str__()
-            self.memory[addr] = data
+            self.memory[addr] = BitVec(data, 256)
 
         # 记录返回数据的size
         self.returnDataSize = BitVecVal(tmpSize, 256)

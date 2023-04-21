@@ -109,7 +109,6 @@ class AssertionOptimizer:
         self.runtimeDataSegOffset = 0  # 运行时的数据段的移动偏移量，即运行时的函数体总长度变化的偏移量
         self.isProcessingConstructor = False  # 是否正在对构造函数进行分析
 
-
     def optimize(self):
         self.log.info("开始进行字节码分析")
         if self.outputProcessInfo:
@@ -152,9 +151,14 @@ class AssertionOptimizer:
         if self.fullyRedundantInvNodes.__len__() == 0 and self.partiallyRedundantInvNodes.__len__() == 0:
             self.log.info("不存在可优化的Assertion，优化结束")
             return
-        if self.fullyRedundantInvNodes.__len__() > 0:  # 存在完全冗余的节点
+
+        # 这里需要注意，只有在部分冗余的处理函数里，才会将exit Block假装成数据段
+        # 因此，如果只有完全冗余，没有部分冗余，这时候也要执行部分冗余的函数，此时部分冗余的函数只会做假装的工作
+        if self.fullyRedundantInvNodes.__len__() > 0:  # 存在完全冗余的情况
             self.log.info("正在对完全冗余的Assertion进行优化")
             self.__optimizeFullyRedundantAssertion()
+            if self.partiallyRedundantInvNodes.__len__() == 0:  # 不存在部分冗余的情况
+                self.__optimizePartiallyRedundantAssertion()  # 关键
             self.log.info("完全冗余Assertion优化完毕")
         if self.partiallyRedundantInvNodes.__len__() > 0:
             self.log.info("正在对部分冗余的Assertion进行优化")
@@ -328,21 +332,24 @@ class AssertionOptimizer:
                     continue
 
         # 第七步，因为dispatcher中也有可能存在scc，因此需要将它们也标记出来
+        # 4.21新问题：dispatcher也可能被识别为函数体，如在KOLUSDTFund.bin的构造函数中，某些函数体就是由dispatcher节点构成的
+        # 因此，讨论dispatcher中scc的问题时，应当考虑的是，非函数的非common节点
         # 先生成子图
-        dispatcherNodes = []
+        nonCommonNodes = []  # 如果从0开始，一次走不完，则取一个非common节点开始（可能是common、fallback
         subGraphEdges = {}  # 子图的边
         for offset, block in self.blocks.items():
-            if block.blockType == "dispatcher":
-                dispatcherNodes.append(offset)
+            # if block.blockType == "dispatcher":
+            if block.blockType != "common" and self.node2FuncId[offset] is None:
+                nonCommonNodes.append(offset)
                 subGraphEdges[offset] = []
-        checkSet = set(dispatcherNodes)
-        for node in dispatcherNodes:
+        checkSet = set(nonCommonNodes)
+        for node in nonCommonNodes:
             for out in self.edges[node]:
                 if out in checkSet:  # 找到一个指向内部节点的边
                     subGraphEdges[node].append(out)
-        tarjan = TarjanAlgorithm(dispatcherNodes, subGraphEdges)
+        tarjan = TarjanAlgorithm(nonCommonNodes, subGraphEdges)
         tarjan.tarjan(0)
-        for node in dispatcherNodes:
+        for node in nonCommonNodes:
             if not tarjan.visited[node]:
                 tarjan.tarjan(node)
         sccList = tarjan.getSccList()
@@ -351,6 +358,8 @@ class AssertionOptimizer:
                 for node in scc:  # 将这些点标记为loop-related
                     self.isLoopRelated[node] = True
                     if self.isFuncBodyHeadNode[node]:  # 函数头存在于scc，出现了递归的情况
+                        funcId = self.node2FuncId[node]
+                        self.funcDict[funcId].printFunc()
                         self.log.fail("检测到函数递归调用的情况，该字节码无法被优化!")
 
         # 第八步，处理可能出现的“自环”，见test12
@@ -400,9 +409,10 @@ class AssertionOptimizer:
         if not self.isProcessingConstructor:  # 正在分析的是runtimecfg
             removeList = []
             for info in self.codeCopyInfo:
+                # print(info)
                 offset = info[0]
                 if offset is None:  # 为None，则只能是codesize
-                    pushAddr, pushBlock = offset[2], offset[3]
+                    pushAddr, pushBlock = info[2], info[3]
                     if self.blocks[pushBlock].bytecode[pushAddr - pushBlock] == 0x38:  # 是codesize
                         removeList.append(info)
                     else:
@@ -422,9 +432,11 @@ class AssertionOptimizer:
                                    self.constructorFuncBodyLength + self.constructorDataSegLength):
                     # 访问的是构造函数的数据段
                     continue
-                elif offset in range(
-                        self.constructorFuncBodyLength + self.constructorDataSegLength + self.funcBodyLength,
-                        self.constructorFuncBodyLength + self.constructorDataSegLength + self.funcBodyLength + self.dataSegLength):
+                # 注意，offset可能是整个字节码的长度
+                # elif offset in range(
+                #         self.constructorFuncBodyLength + self.constructorDataSegLength + self.funcBodyLength,
+                #         self.constructorFuncBodyLength + self.constructorDataSegLength + self.funcBodyLength + self.dataSegLength):
+                elif offset >= self.constructorFuncBodyLength + self.constructorDataSegLength + self.funcBodyLength:
                     # 访问的是函数体后的数据段
                     continue
                 # elif offset == self.constructorFuncBodyLength + self.constructorDataSegLength and _size == self.funcBodyLength + self.dataSegLength:
@@ -636,12 +648,23 @@ class AssertionOptimizer:
             pathsOfCallChain = self.invalidNode2CallChain[invNode][0]  # 随意取出一条调用链，格式为[pathId1,pathId2...]
 
             # 第一步，获取路径上所有指令位置的程序状态
+            # 根据evmopt中的注释，需要辨别路径上是否有SHA3指令，有则从SHA3指令开始，不保留内存状态
+            # 这是例子：contracts/0x054bfcd07b64575c23c0045615b37b297e2e2929/bin/TokenERC20.bin
+            # 如果谁看到了这里，并愿意修复这个问题，我在这里提前感谢了！
+            # 我的代码暂时还是比evmopt里比较内存的部分优秀一点点的，毕竟它是直接放弃内存状态 :D
             pathNodes = self.invalidPaths[pathsOfCallChain[0]].pathNodes  # 随意取出一条路径
             stateMap = {}  # 状态map，实际存储的是，地址处的指令在执行前的程序状态
+            sha3Exist = False
             for node in pathNodes:
                 executor.setBeginBlock(node)
                 while not executor.allInstrsExecuted():  # block还没有执行完
+                    opCode = executor.getOpcode()
+                    if opCode == 0x20:
+                        sha3Exist = True
                     offset, state = executor.getCurState()
+                    if sha3Exist:  # 不再保留内存状态
+                        stateList = state.split("<=>")
+                        state = stateList[0] + "<=>" + stateList[2]
                     stateMap[offset] = state
                     executor.execNextOpCode()
             # print(statemap)
@@ -660,7 +683,8 @@ class AssertionOptimizer:
                         targetAddr = addr
                         targetNode = node
                 node = self.domTree[node]
-            assert targetAddr and targetNode  # 不能为none
+            assert targetAddr and targetNode, pathNodes  # 不能为none
+            # print(targetAddr, targetNode, pathNodes)
             assert self.blocks[targetNode].blockType != "dispatcher"  # 不应该出现在dispatcher中
             if self.outputProcessInfo:  # 需要输出处理信息
                 self.log.processing("找到和节点{}程序状态相同的地址:{}，对应的节点为:{}".format(invNode, targetAddr, targetNode))
@@ -738,7 +762,7 @@ class AssertionOptimizer:
 
             # 第四步，暂时不构造新的函数体，只是将invNode添加到对应函数，并记录冗余的地址区间
             targetFuncId = self.node2FuncId[invNode]
-            self.funcDict[targetFuncId].addInvalidNode(invNode)
+            self.funcDict[targetFuncId].addPartiallyInvalidNode(invNode)
             if self.inEdges[invNode + 1].__len__() == 1:  # jumpdest只有一个入边，要把它也删除掉
                 self.funcDict[targetFuncId].addRemovedRangeInfo(invNode, [targetAddr, targetNode, invNode + 2])
             else:  # 不止一个入边，不删jumpdest
@@ -853,12 +877,14 @@ class AssertionOptimizer:
                 self.jumpEdgeInfo.append(info)
 
         # 第六步，将exit block放在函数字节码的最后面，用于填充原来的数据段的位置，防止codecopy重定位时，因为offset位于数据段而出错
+        # 新坑：codecopy的offset刚好为整个字节码的长度，因此，exitBlock的长度设置为数据段的长度+1
+        # 貌似这种情况只会出现在构造函数里，但是当时连这里也改了，代码也跑了没出错，就算了吧
         newBlockOffset = curLastNode + self.blocks[curLastNode].length
         self.nodes.append(newBlockOffset)
-        tempExitBlock.length = self.dataSegLength
+        tempExitBlock.length = self.dataSegLength + 1
         tempExitBlock.offset = newBlockOffset
         tempBytecode = bytearray()
-        for i in range(self.dataSegLength):
+        for i in range(tempExitBlock.length):
             tempBytecode.append(0x1f)  # 空指令
         tempExitBlock.bytecode = tempBytecode
         self.cfg.exitBlockId = newBlockOffset
@@ -873,24 +899,7 @@ class AssertionOptimizer:
         # for info in self.codeCopyInfo:
         #     print(info)
 
-        # 第一步，对删除区间信息和codecopy信息去重
-        for node in self.nodes:
-            if self.removedRange[node].__len__() == 0:
-                continue
-            tempSet = set()
-            for _range in self.removedRange[node]:
-                tempSet.add(_range.__str__())  # 存为字符串
-            self.removedRange[node] = []  # 置空
-            for rangeStr in tempSet:
-                self.removedRange[node].append(json.loads(rangeStr))  # 再还原为list
-        tempSet = set()
-        for info in self.codeCopyInfo:
-            tempSet.add(info.__str__())
-        self.codeCopyInfo = []
-        for infoStr in tempSet:
-            self.codeCopyInfo.append(json.loads(infoStr))
-
-        # 第二步，将codecopy信息转换成jump的信息，方便统一处理
+        # 第一步，将codecopy信息转换成jump的信息，方便统一处理
         # 格式: [[offset push的值，offset push的字节数，offset push指令的地址， offset push指令所在的block,
         #          size push的值，size push的字节数，size push指令的地址， size push指令所在的block，codecopy所在的block]]
         # 如果处理的是运行时代码的信息，则转换的方式为：将前四个信息变成jump信息中的前四个，最后将codecopy指令的地址变成jump信息的第五个（即jump所在的block）。此时offset会发生剧烈的变化
@@ -917,7 +926,9 @@ class AssertionOptimizer:
                     newInfo = list(info[:4])
                     newInfo.append(info[8])
                     self.jumpEdgeInfo.append(newInfo)
-                elif info[0] in range(constructorTotalLen + self.funcBodyLength, constructorTotalLen + runtimeTotalLen):
+                # offset可能是整个字节码的长度
+                # elif info[0] in range(constructorTotalLen + self.funcBodyLength, constructorTotalLen + runtimeTotalLen):
+                elif info[0] >= constructorTotalLen + self.funcBodyLength:
                     # 访问的是函数体后的数据段，则要修改为第5类信息，其中的offset为数据段移动的偏移量
                     # 只需要对codecopy offset做处理即可，size保持不变
                     newInfo = list(info[:4])
@@ -941,6 +952,26 @@ class AssertionOptimizer:
                     self.jumpEdgeInfo.append(newInfo)
                 else:  # 不应该出现的访问
                     assert 0
+
+        # 第二步，对删除区间信息去重
+        # 因为添加了从codecopy转换而来的跳转信息，而这些新添加的信息
+        # 有可能是重复的，因此需要再对跳转信息做一次去重
+        # 注意，对后者的去重只能现在做，因为信息中可能包含None，会触发json.loads错误
+        for node in self.nodes:
+            if self.removedRange[node].__len__() == 0:
+                continue
+            tempSet = set()
+            for _range in self.removedRange[node]:
+                tempSet.add(_range.__str__())  # 存为字符串
+            self.removedRange[node] = []  # 置空
+            for rangeStr in tempSet:
+                self.removedRange[node].append(json.loads(rangeStr))  # 再还原为list
+        tempSet = set()
+        for info in self.jumpEdgeInfo:
+            tempSet.add(info.__str__())
+        self.jumpEdgeInfo = []
+        for infoStr in tempSet:
+            self.jumpEdgeInfo.append(json.loads(infoStr))
 
         # 第三步，将出现在已被删除字节码序列中的跳转信息删除
         # [[push的值，push的字节数，push指令的地址，push指令所在的block，jump所在的block，跳转的type(可选),新老函数体之间的offset(可选)]]
@@ -1240,8 +1271,9 @@ class AssertionOptimizer:
 
         # 第三步，修改原来exit block的长度以及内容，它的作用是替代构造函数的数据段、函数代码段、数据段、新添加的函数
         # 方便做新旧地址映射
+        # 新坑：有可能出现offset刚好为整个字节码长度的codecopy，因此需要将lastNodeLen + 1
         curLastNode = self.cfg.exitBlockId
-        lastNodeLen = self.constructorDataSegLength + self.funcBodyLength + self.dataSegLength + self.runtimeDataSegOffset
+        lastNodeLen = self.constructorDataSegLength + self.funcBodyLength + self.dataSegLength + self.runtimeDataSegOffset + 1
         self.blocks[curLastNode].length = lastNodeLen  # 直接改exit block的长度
         tempByteCode = bytearray()
         for i in range(lastNodeLen):

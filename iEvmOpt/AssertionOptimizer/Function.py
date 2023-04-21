@@ -23,7 +23,12 @@ class Function:
                 if out in checkSet:  # 找到一个指向内部节点的边
                     self.funcSubGraphEdges[node].append(out)
 
-    def addInvalidNode(self, invNode: int):
+    def addPartiallyInvalidNode(self, invNode: int):
+        """
+        添加函数内部分冗余的节点
+        :param invNode:部分冗余的节点id
+        :return:
+        """
         self.invalidNodes.append(invNode)
 
     def getInvalidNodes(self):
