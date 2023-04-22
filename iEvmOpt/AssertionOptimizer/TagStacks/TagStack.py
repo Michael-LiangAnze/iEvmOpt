@@ -16,8 +16,6 @@ class TagStack:
         # 置为untag时，将前两个字段置为None
         self.tagStack = Stack()
         self.log = Logger()
-        self.memory = {}
-        self.storage = {}
 
         # 辅助信息
         self.lastInstrAddrOfBlock = 0  # block内最后一个指令的地址

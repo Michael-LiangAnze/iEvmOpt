@@ -29,13 +29,14 @@ class EtherSolver:
         self.constructorDataSeg = None  # 构建函数体后的数据段
         self.dataSeg = None  # 函数体后的数据段
         self.log = Logger()
+        self.timeOutLimit = 300  # 5min
         if not isParseBefore:
             self.__etherSolve()
         self.__buildCfg()
-        if not isParseBefore:
-            dg = DotGraphGenerator(self.cfg.blocks.keys(), self.cfg.edges)
-            dg.genDotGraph(self.outputPath, self.srcName)
-        self.timeOutLimit = 300 # 5min
+        # if not isParseBefore:
+        #     dg = DotGraphGenerator(self.cfg.blocks.keys(), self.cfg.edges)
+        #     dg.genDotGraph(self.outputPath, self.srcName)
+
 
     def __etherSolve(self):
         jarPath = os.path.dirname(__file__) + "\EtherSolve.jar"
@@ -43,33 +44,72 @@ class EtherSolver:
 
         cmd = "java -jar " + jarPath + " -c -H -o " + self.outputPath + self.srcName + "_cfg.html " + self.srcPath
         p = subprocess.Popen(cmd)
-        if p.wait(self.timeOutLimit) == 0:
-            pass
-        if p.returncode != 0:
-            exit(-1)
+        returnCode = 0
+        try:
+            p.wait(timeout=self.timeOutLimit)
+            returnCode = p.returncode
+        except:
+            cmd = "taskkill /F /PID " + str(p.pid)
+            os.system(cmd)  # 杀死子进程
+            returnCode = -1
+            self.log.fail("EtherSolve处理超时")
+        if returnCode != 0:
+            self.log.fail("EtherSolve处理出错")
 
         cmd = "java -jar " + jarPath + " -r -H -o " + self.outputPath + self.srcName + "_constructor_cfg.html " + self.srcPath
         p = subprocess.Popen(cmd)
-        if p.wait(self.timeOutLimit) == 0:
-            pass
+        try:
+            p.wait(timeout=self.timeOutLimit)
+            returnCode = p.returncode
+        except:
+            cmd = "taskkill /F /PID " + str(p.pid)
+            os.system(cmd)  # 杀死子进程
+            returnCode = -1
+            self.log.fail("EtherSolve处理超时")
+        if returnCode != 0:
+            self.log.fail("EtherSolve处理出错")
 
         cmd = "java -jar " + jarPath + " -c -j -o " + self.outputPath + self.srcName + "_cfg.json " + self.srcPath
         p = subprocess.Popen(cmd)
-        if p.wait(self.timeOutLimit) == 0:
-            pass
+        try:
+            p.wait(timeout=self.timeOutLimit)
+            returnCode = p.returncode
+        except:
+            cmd = "taskkill /F /PID " + str(p.pid)
+            os.system(cmd)  # 杀死子进程
+            returnCode = -1
+            self.log.fail("EtherSolve处理超时")
+        if returnCode != 0:
+            self.log.fail("EtherSolve处理出错")
 
         if self.genPng:
             # 生成构建时cfg
             cmd = "java -jar " + jarPath + " -r -d -o " + self.outputPath + self.srcName + "_constructor_cfg.gv " + self.srcPath
             p = subprocess.Popen(cmd)
-            if p.wait(self.timeOutLimit) == 0:
-                pass
+            try:
+                p.wait(timeout=self.timeOutLimit)
+                returnCode = p.returncode
+            except:
+                cmd = "taskkill /F /PID " + str(p.pid)
+                os.system(cmd)  # 杀死子进程
+                returnCode = -1
+                self.log.fail("EtherSolve处理超时")
+            if returnCode != 0:
+                self.log.fail("EtherSolve处理出错")
 
             # 生成运行时cfg
             cmd = "java -jar " + jarPath + " -c -d -o " + self.outputPath + self.srcName + "_cfg.gv " + self.srcPath
             p = subprocess.Popen(cmd)
-            if p.wait(self.timeOutLimit) == 0:
-                pass
+            try:
+                p.wait(timeout=self.timeOutLimit)
+                returnCode = p.returncode
+            except:
+                cmd = "taskkill /F /PID " + str(p.pid)
+                os.system(cmd)  # 杀死子进程
+                returnCode = -1
+                self.log.fail("EtherSolve处理超时")
+            if returnCode != 0:
+                self.log.fail("EtherSolve处理出错")
 
             # 读取构建函数的gv文件，生成png图片
             with open(self.outputPath + self.srcName + "_constructor_cfg.gv ") as f:
@@ -123,7 +163,6 @@ class EtherSolver:
         constructorKit.fix()
         if not constructorKit.isFixed():  # 修复失败
             self.log.fail("构造函数边修复失败")
-            assert 0
         else:
             self.log.info("构造函数边修复成功")
             self.constructorCfg.edges, self.constructorCfg.inEdges = constructorKit.getRepairedEdges()

@@ -368,6 +368,10 @@ class TagStackForCfgRepairKit:
 
     def __execGt(self):  # 0x11
         a, b = self.stack.pop(), self.stack.pop()
+        if is_bool(a):
+            a = If(a, BitVecVal(1, 256), BitVecVal(0, 256))
+        if is_bool(b):
+            b = If(b, BitVecVal(1, 256), BitVecVal(0, 256))
         self.stack.push(simplify(UGT(a, b)))
 
     def __execSlt(self):  # 0x12

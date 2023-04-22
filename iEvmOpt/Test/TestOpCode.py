@@ -15,7 +15,7 @@ if __name__ == '__main__':
 
     # 测试符号执行
     s = TagStackForCfgRepairKit(cfg)
-    path = [0, 74,573,1451,1688,1459,1591,1863,1599,581,1601,1650]
+    path = [0, 13, 59, 70, 81, 92, 103, 451, 463, 3075, 3253]
     blocks = constructorCfg.blocks
     for n in path:
         s.setBeginBlock(n)

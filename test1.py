@@ -11,15 +11,17 @@ import sys
 """
 if __name__ == "__main__":
 
-    dataPath = 'D:/Projects/iEvmOpt/testContract'
+    dataPath = 'D:/Projects/iEvmOpt/contracts'
     dataFileList = os.listdir(dataPath)
     targetFile = []
     sizeList = []
     # limit = 12000
+    total = 0
     limit = 9999999999999
 
     for dataDir in dataFileList:
         # 读取info，获取对应的bin文件
+        total += 1
         dataDirPath = dataPath + "/" + dataDir
         infoPath = dataDirPath + '/info'
         with open(infoPath, 'r') as f:
@@ -29,14 +31,19 @@ if __name__ == "__main__":
         binPath = dataPath + '/' + dataDir + '/bin'
         success = False
         for f in os.listdir(dataDirPath):
+
             if f.find("_report.txt") != -1:  # 生成了报告
                 with open(dataDirPath + "/" + f, "r", encoding='utf-8') as rp:
                     s = rp.read()
-                    if s.find(
-                            "assert targetAddr and targetNode") != -1:  # 是assertion error问题
+                    # c = s.find("运行时函数边修复失败") != -1 or s.find("assert retOffset.__str__().isdigit()") != -1 or s.find("构造函数边修复失败") != -1 \
+                    #     or s.find("正在将优化后的字节码写入到文件") != -1 \
+                    #     or s.find("不存在可优化的Assertion") != -1\
+                    #     or s.find("没有待处理的Assertion") != -1
+                    # if not c:
+                    if s.find("assert funcLen == tempLen") != -1:
                         tempSize = os.path.getsize(binPath + '/' + targetBinFile)
                         if tempSize < limit:
-                            targetFile.append(dataDir+"/bin/"+targetBinFile+"    "+str(tempSize))
+                            targetFile.append(dataDir + "/bin/" + targetBinFile + "    " + str(tempSize))
                             sizeList.append(tempSize)
 
             # if f == "return_code.json":
@@ -47,7 +54,7 @@ if __name__ == "__main__":
             #             tempSize = os.path.getsize(binPath + '/' + targetBinFile)
             #             targetFile.append(dataDir + "/bin/" + targetBinFile + "    " + str(tempSize))
             #             sizeList.append(tempSize)
-            # elif f.find("_report.txt") != -1 and success:
+            # if f.find("_report.txt") != -1 and success:
             #     with open(dataDirPath + "/" + f, "r", encoding='utf-8') as rp:
             #         s = rp.read()
             #         s = s.split('\n')
@@ -58,7 +65,9 @@ if __name__ == "__main__":
             #         print(f + "   " + s[-5])
 
     sizeList.sort()
+    print(total)
     print(sizeList)
     for t in targetFile:
         print(t)
     print(len(targetFile))
+

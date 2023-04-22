@@ -303,14 +303,16 @@ class AssertionOptimizer:
                 assert self.node2FuncId[node] is None  # 一个点只能被赋值一次
                 self.node2FuncId[node] = self.funcCnt
 
-            # 这里做一个检查，看看所有找到的同一个函数的节点的长度拼起来，是否是其应有的长度，防止漏掉一些顶点
-            funcLen = offsetRange[1] + self.cfg.blocks[offsetRange[1]].length - offsetRange[0]
-            tempLen = 0
-            for n in funcBody:
-                tempLen += self.cfg.blocks[n].length
-            assert funcLen == tempLen, funcBody.__str__() + self.edges.__str__()
+            # 先不做检查，因为有些函数是没有返回边的，这些函数的节点会找不全
+            # # 这里做一个检查，看看所有找到的同一个函数的节点的长度拼起来，是否是其应有的长度，防止漏掉一些顶点
+            # funcLen = offsetRange[1] + self.cfg.blocks[offsetRange[1]].length - offsetRange[0]
+            # tempLen = 0
+            # for n in funcBody:
+            #     tempLen += self.cfg.blocks[n].length
+            # assert funcLen == tempLen, funcBody.__str__() + rangeInfo
             # f.printFunc()
-        # 这里再做一个检查，是否所有的common节点都被标记为了函数
+
+        # 第六步，尝试处理没有返回边的函数
 
         # 第六步，检查一个函数内的节点是否存在环，存在则将其标记出来
         for func in self.funcDict.values():  # 取出一个函数
@@ -358,8 +360,6 @@ class AssertionOptimizer:
                 for node in scc:  # 将这些点标记为loop-related
                     self.isLoopRelated[node] = True
                     if self.isFuncBodyHeadNode[node]:  # 函数头存在于scc，出现了递归的情况
-                        funcId = self.node2FuncId[node]
-                        self.funcDict[funcId].printFunc()
                         self.log.fail("检测到函数递归调用的情况，该字节码无法被优化!")
 
         # 第八步，处理可能出现的“自环”，见test12

@@ -27,7 +27,7 @@ class BasicBlock:
                     self.couldBeCaller = True
             case "JUMPI":
                 self.jumpType = "conditional"
-            case "INVALID" | "REVERT" | "RETURN" | "STOP":  # terminal
+            case "INVALID" | "REVERT" | "RETURN" | "STOP" | "SELFDESTRUCT":  # terminal
                 self.jumpType = "terminal"
                 if checker == "INVALID":
                     self.isInvalid = True

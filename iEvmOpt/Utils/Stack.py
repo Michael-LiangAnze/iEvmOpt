@@ -45,7 +45,11 @@ class Stack:
         if self.__stack.__len__() != 0:
             return self.__stack[self.__stack.__len__() - 1]
         else:
-            return None
+            if self.enableUnderFlow:
+                return None
+            else:
+                raise Exception("栈为空")
+                assert 0, "stack is empty!"
 
     def hasItem(self, item):
         return self.__stack.__contains__(item)

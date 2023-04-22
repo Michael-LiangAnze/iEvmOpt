@@ -98,6 +98,7 @@ class SymbolicExecutor:
         '''
         stateStr = self.stack.getStack().__str__() + "<=>" + self.memory.__str__() + "<=>" + self.storage.__str__()
         # stateStr = self.stack.getStack().__str__() + "<=>" + self.storage.__str__()
+        # stateStr = self.stack.getStack().__str__()
         # stateStr = self.stack.getStack().__str__() + "<=>" + self.storage.__str__() + "<=>"
         # addrs = list(self.memory.keys())
         # addrs.sort()

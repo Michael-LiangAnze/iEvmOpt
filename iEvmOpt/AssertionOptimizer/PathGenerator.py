@@ -126,7 +126,8 @@ class PathGenerator:
                 tmpOffset.extend(tmpSize)
                 tmpOffset.append(curNode)
                 self.codecopyInfo.append(tmpOffset)
-            if curTagStack.isLastInstr() and self.blocks[curNode].jumpType != "terminal":  # terminal可能会没有栈信息
+            if curTagStack.isLastInstr() and self.blocks[curNode].jumpType not in ["terminal", "fall"]:
+                # terminal、fall可能会没有栈信息
                 pushInfo = curTagStack.getTagStackTop()  # [push的值，push的字节数,push指令的地址，push指令所在的block]
             curTagStack.execNextOpCode()
 
