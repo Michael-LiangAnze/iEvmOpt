@@ -11,7 +11,7 @@ import sys
 """
 if __name__ == "__main__":
 
-    dataPath = 'D:/Projects/iEvmOpt/contracts'
+    dataPath = 'D:/Projects/iEvmOpt/testContract'
     dataFileList = os.listdir(dataPath)
     targetFile = []
     sizeList = []
@@ -40,7 +40,7 @@ if __name__ == "__main__":
                     #     or s.find("不存在可优化的Assertion") != -1\
                     #     or s.find("没有待处理的Assertion") != -1
                     # if not c:
-                    if s.find("assert funcLen == tempLen") != -1:
+                    if s.find("assert targetAddr and targetNode") != -1:
                         tempSize = os.path.getsize(binPath + '/' + targetBinFile)
                         if tempSize < limit:
                             targetFile.append(dataDir + "/bin/" + targetBinFile + "    " + str(tempSize))

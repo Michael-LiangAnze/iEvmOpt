@@ -2,21 +2,16 @@
 <project version="4">
   <component name="ChangeListManager">
     <list default="true" id="26761b8b-d032-4bbd-8113-13d1181eb69a" name="变更" comment="">
+      <change afterPath="$PROJECT_DIR$/2023-04-23_00-13-01.svg" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/2023-04-23_00-37-17.svg" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/iEvmOpt/AssertionOptimizer/AssertionOptimizer.py" beforeDir="false" afterPath="$PROJECT_DIR$/iEvmOpt/AssertionOptimizer/AssertionOptimizer.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/AssertionOptimizer/PathGenerator.py" beforeDir="false" afterPath="$PROJECT_DIR$/iEvmOpt/AssertionOptimizer/PathGenerator.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/AssertionOptimizer/SymbolicExecutor.py" beforeDir="false" afterPath="$PROJECT_DIR$/iEvmOpt/AssertionOptimizer/SymbolicExecutor.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/iEvmOpt/AssertionOptimizer/TagStacks/TagStack.py" beforeDir="false" afterPath="$PROJECT_DIR$/iEvmOpt/AssertionOptimizer/TagStacks/TagStack.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/AssertionOptimizer/TagStacks/TagStackForCfgRepairKit.py" beforeDir="false" afterPath="$PROJECT_DIR$/iEvmOpt/AssertionOptimizer/TagStacks/TagStackForCfgRepairKit.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/BasicBlock.py" beforeDir="false" afterPath="$PROJECT_DIR$/iEvmOpt/Cfg/BasicBlock.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test14_cfg.html" beforeDir="false" afterPath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test14_cfg.html" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test14_cfg.json" beforeDir="false" afterPath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test14_cfg.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgRepairKit.py" beforeDir="false" afterPath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgRepairKit.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/EtherSolver.py" beforeDir="false" afterPath="$PROJECT_DIR$/iEvmOpt/Cfg/EtherSolver.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Test/TestOpCode.py" beforeDir="false" afterPath="$PROJECT_DIR$/iEvmOpt/Test/TestOpCode.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Utils/Stack.py" beforeDir="false" afterPath="$PROJECT_DIR$/iEvmOpt/Utils/Stack.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/iEvmOpt/Main.py" beforeDir="false" afterPath="$PROJECT_DIR$/iEvmOpt/Main.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/test1.py" beforeDir="false" afterPath="$PROJECT_DIR$/test1.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/testOneContract.py" beforeDir="false" afterPath="$PROJECT_DIR$/testOneContract.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -48,28 +43,7 @@
     <property name="RunOnceActivity.ShowReadmeOnStart" value="true" />
     <property name="last_opened_file_path" value="$PROJECT_DIR$/ethersolve1.py" />
   </component>
-  <component name="RunManager" selected="Python.test1">
-    <configuration name="EtherSolve" type="PythonConfigurationType" factoryName="Python">
-      <module name="iEvmOpt" />
-      <option name="INTERPRETER_OPTIONS" value="" />
-      <option name="PARENT_ENVS" value="true" />
-      <envs>
-        <env name="PYTHONUNBUFFERED" value="1" />
-      </envs>
-      <option name="SDK_HOME" value="D:\Environment\Python310\python.exe" />
-      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$" />
-      <option name="IS_MODULE_SDK" value="false" />
-      <option name="ADD_CONTENT_ROOTS" value="true" />
-      <option name="ADD_SOURCE_ROOTS" value="true" />
-      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/ethersolve.py" />
-      <option name="PARAMETERS" value="" />
-      <option name="SHOW_COMMAND_LINE" value="false" />
-      <option name="EMULATE_TERMINAL" value="false" />
-      <option name="MODULE_MODE" value="false" />
-      <option name="REDIRECT_INPUT" value="false" />
-      <option name="INPUT_FILE" value="" />
-      <method v="2" />
-    </configuration>
+  <component name="RunManager" selected="Python.ethersolve1">
     <configuration name="Statistics" type="PythonConfigurationType" factoryName="Python">
       <module name="iEvmOpt" />
       <option name="INTERPRETER_OPTIONS" value="" />
@@ -83,6 +57,27 @@
       <option name="ADD_CONTENT_ROOTS" value="true" />
       <option name="ADD_SOURCE_ROOTS" value="true" />
       <option name="SCRIPT_NAME" value="$PROJECT_DIR$/Statistics.py" />
+      <option name="PARAMETERS" value="" />
+      <option name="SHOW_COMMAND_LINE" value="false" />
+      <option name="EMULATE_TERMINAL" value="false" />
+      <option name="MODULE_MODE" value="false" />
+      <option name="REDIRECT_INPUT" value="false" />
+      <option name="INPUT_FILE" value="" />
+      <method v="2" />
+    </configuration>
+    <configuration name="etherSolve" type="PythonConfigurationType" factoryName="Python">
+      <module name="iEvmOpt" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
+      <option name="SDK_HOME" value="D:\Environment\Python310\python.exe" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$" />
+      <option name="IS_MODULE_SDK" value="false" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/ethersolve.py" />
       <option name="PARAMETERS" value="" />
       <option name="SHOW_COMMAND_LINE" value="false" />
       <option name="EMULATE_TERMINAL" value="false" />
@@ -176,7 +171,7 @@
       <method v="2" />
     </configuration>
     <list>
-      <item itemvalue="Python.EtherSolve" />
+      <item itemvalue="Python.etherSolve" />
       <item itemvalue="Python.Statistics" />
       <item itemvalue="Python.test1" />
       <item itemvalue="Python.testOneContract" />

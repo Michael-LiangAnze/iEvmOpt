@@ -26,5 +26,5 @@ if __name__ == '__main__':
     constructorDataSegStr = es.getConstructorDataSegStr()
     dataSegStr = es.getDataSeg()
 
-    ao = AssertionOptimizer(constructorCfg, cfg, constructorDataSegStr, dataSegStr, sys.argv[2], True)
+    ao = AssertionOptimizer(constructorCfg, cfg, constructorDataSegStr, dataSegStr, sys.argv[2], outputProcessInfo=True)
     ao.optimize()

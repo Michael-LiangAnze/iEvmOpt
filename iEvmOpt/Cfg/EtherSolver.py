@@ -165,7 +165,7 @@ class EtherSolver:
             self.log.fail("构造函数边修复失败")
         else:
             self.log.info("构造函数边修复成功")
-            self.constructorCfg.edges, self.constructorCfg.inEdges = constructorKit.getRepairedEdges()
+        self.constructorCfg.edges, self.constructorCfg.inEdges = constructorKit.getRepairedEdges()
 
         runtimeKit = CfgRepairKit(self.cfg)
         runtimeKit.fix()
@@ -173,7 +173,7 @@ class EtherSolver:
             self.log.fail("运行时函数边修复失败")
         else:
             self.log.info("运行时函数边修复成功")
-            self.cfg.edges, self.cfg.inEdges = runtimeKit.getRepairedEdges()
+        self.cfg.edges, self.cfg.inEdges = runtimeKit.getRepairedEdges()
 
         ##############              修复结束                   ################
 

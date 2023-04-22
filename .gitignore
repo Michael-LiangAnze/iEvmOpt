@@ -145,3 +145,5 @@ ethersolve1.py
 *.dot
 /removedContract
 /Optimized/*
+/*.dot
+/*.svg

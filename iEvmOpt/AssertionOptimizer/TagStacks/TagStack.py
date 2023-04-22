@@ -603,15 +603,15 @@ class TagStack:
         # 涉及的指令有：AND OR XOR SUB DIV SHL SHR
         first, second = self.tagStack.pop(), self.tagStack.pop()
         firstIsAddr, secondIsAddr = first[4], second[4]
-        assert not (firstIsAddr and secondIsAddr)  # 不能两个都是跳转地址
+        assert not (firstIsAddr and secondIsAddr) or first[0] == second[0]  # 不能两个都是跳转地址，如果是，则两个不能相等
         if not firstIsAddr and not secondIsAddr:  # 两个都不是地址，不计算
             self.tagStack.push([None, None, self.PC, self.curBlock.offset, False])
         elif not firstIsAddr and secondIsAddr:  # first不是地址
-            # 是否其中一个是跳转地址,则要进行保留
+            # 是否其中一个是跳转地址,则要进行保留，下同
             self.tagStack.push(second)
         elif firstIsAddr and not secondIsAddr:  # second不是跳转地址
             self.tagStack.push(first)
-        else:
+        else: # 两个都是跳转地址
             assert 0
 
     def __execOp2(self):

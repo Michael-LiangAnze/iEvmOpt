@@ -70,8 +70,10 @@ class AssertionOptimizer:
         self.pathReachable = {}  # 某条路径是否可达
         self.invNodeReachable = None  # 某个Invalid节点是否可达，格式为： invNode:True/Flase
         self.redundantType = {}  # 每个invalid节点的冗余类型，类型包括fullyredundant和partiallyredundant，格式为： invNode: type
-        self.fullyRedundantInvNodes = []  # 完全冗余的invalid节点
-        self.partiallyRedundantInvNodes = []  # 部分冗余的invalid节点
+        self.fullyRedundantInvNodes = []  # 全部的完全冗余的invalid节点
+        self.partiallyRedundantInvNodes = []  # 全部的部分冗余的invalid节点
+        self.abandonedFullyRedundantInvNodes = []  # 放弃优化的完全冗余invalid节点
+        self.abandonedpartiallyRedundantInvNodes = []  # 放弃优化的部分冗余invalid节点
         self.nonRedundantInvNodes = []  # 不冗余的invalid节点
         self.invNodeToRedundantCallChain = {}  # 每个invalid节点对应的，冗余的函数调用链，格式为： invNode:[[pid1,pid2],[pid3,pid4]]
 
@@ -144,10 +146,11 @@ class AssertionOptimizer:
         self.__buildDominatorTree()
 
         self.log.info(
-            "一共找到{}个待优化的assertion，具体为：{}个完全冗余，{}个部分冗余，{}个不冗余".format(
+            "一共找到{}个待优化的assertion，具体为：{}个完全冗余{}，{}个部分冗余{}，{}个不冗余{}".format(
                 self.invalidNodeList.__len__(), self.fullyRedundantInvNodes.__len__(),
-                self.partiallyRedundantInvNodes.__len__(),
-                self.nonRedundantInvNodes.__len__()))
+                self.fullyRedundantInvNodes.__str__(),
+                self.partiallyRedundantInvNodes.__len__(), self.partiallyRedundantInvNodes.__str__(),
+                self.nonRedundantInvNodes.__len__(), self.nonRedundantInvNodes.__str__()))
         if self.fullyRedundantInvNodes.__len__() == 0 and self.partiallyRedundantInvNodes.__len__() == 0:
             self.log.info("不存在可优化的Assertion，优化结束")
             return
@@ -304,7 +307,7 @@ class AssertionOptimizer:
                 self.node2FuncId[node] = self.funcCnt
 
             # 先不做检查，因为有些函数是没有返回边的，这些函数的节点会找不全
-            # # 这里做一个检查，看看所有找到的同一个函数的节点的长度拼起来，是否是其应有的长度，防止漏掉一些顶点
+            # 这里做一个检查，看看所有找到的同一个函数的节点的长度拼起来，是否是其应有的长度，防止漏掉一些顶点
             # funcLen = offsetRange[1] + self.cfg.blocks[offsetRange[1]].length - offsetRange[0]
             # tempLen = 0
             # for n in funcBody:
@@ -653,21 +656,26 @@ class AssertionOptimizer:
             # 如果谁看到了这里，并愿意修复这个问题，我在这里提前感谢了！
             # 我的代码暂时还是比evmopt里比较内存的部分优秀一点点的，毕竟它是直接放弃内存状态 :D
             pathNodes = self.invalidPaths[pathsOfCallChain[0]].pathNodes  # 随意取出一条路径
-            stateMap = {}  # 状态map，实际存储的是，地址处的指令在执行前的程序状态
             sha3Exist = False
+            for node in pathNodes:
+                bytecode = self.blocks[node].bytecode
+                addrs = self.blocks[node].instrAddrs
+                for addr in addrs:
+                    if bytecode[addr - node] == 0x20:
+                        sha3Exist = True
+                        break
+                if sha3Exist:
+                    break
+            stateMap = {}  # 状态map，实际存储的是，地址处的指令在执行前的程序状态
             for node in pathNodes:
                 executor.setBeginBlock(node)
                 while not executor.allInstrsExecuted():  # block还没有执行完
-                    opCode = executor.getOpcode()
-                    if opCode == 0x20:
-                        sha3Exist = True
                     offset, state = executor.getCurState()
                     if sha3Exist:  # 不再保留内存状态
                         stateList = state.split("<=>")
                         state = stateList[0] + "<=>" + stateList[2]
                     stateMap[offset] = state
                     executor.execNextOpCode()
-            # print(statemap)
 
             # 第二步，在支配树中，从invalid节点出发，寻找程序状态与之相同的地址
             # 因为在符号执行中，invalid指令没有做任何操作，因此invalid处的状态和执行完jumpi的状态是一致的
@@ -677,13 +685,19 @@ class AssertionOptimizer:
             targetState = stateMap[invNode]
             node = self.domTree[invNode]
             while node != 0:
+                # self.blocks[node].printBlockInfo()
                 addrs = self.blocks[node].instrAddrs
                 for addr in reversed(addrs):  # 从后往前遍历
                     if stateMap[addr] == targetState:  # 找到一个状态相同的点
                         targetAddr = addr
                         targetNode = node
                 node = self.domTree[node]
-            assert targetAddr and targetNode, pathNodes  # 不能为none
+
+            # 新坑：assert里面调函数，并不是无副作用的，这时候会找不到程序状态相同的节点
+            # assert targetAddr and targetNode, pathNodes  # 不能为none
+            if targetAddr is None:
+                self.abandonedFullyRedundantInvNodes.append(invNode)
+                continue  # 放弃当前Assertion的优化
             # print(targetAddr, targetNode, pathNodes)
             assert self.blocks[targetNode].blockType != "dispatcher"  # 不应该出现在dispatcher中
             if self.outputProcessInfo:  # 需要输出处理信息
@@ -702,6 +716,10 @@ class AssertionOptimizer:
                 self.removedRange[invNode + 1].append([invNode + 1, invNode + 2])
                 self.blocks[invNode + 1].bytecode[0] = 0x1f
             # print(self.removedRange)
+
+        if self.abandonedFullyRedundantInvNodes.__len__() != 0:  # 有移除的invalid
+            self.log.info(
+                "放弃优化有副作用的Assertion:{}".format(",".join([str(n) for n in self.abandonedFullyRedundantInvNodes])))
 
     def __optimizePartiallyRedundantAssertion(self):
         """
@@ -732,12 +750,25 @@ class AssertionOptimizer:
             assert invNode == self.cfg.blocks[self.cfg.inEdges[invNode][0]].jumpiDest[False]
             pathIds = self.invNodeToRedundantCallChain[invNode][0]  # 随意取出一条调用链
             pathNodes = self.invalidPaths[pathIds[0]].pathNodes  # 随意取出一条路径
+            sha3Exist = False
+            for node in pathNodes:
+                bytecode = self.blocks[node].bytecode
+                addrs = self.blocks[node].instrAddrs
+                for addr in addrs:
+                    if bytecode[addr - node] == 0x20:
+                        sha3Exist = True
+                        break
+                if sha3Exist:
+                    break
             stateMap = {}  # 状态map，实际存储的是，地址处的指令在执行前的程序状态
             executor.clearExecutor()
             for node in pathNodes:
                 executor.setBeginBlock(node)
                 while not executor.allInstrsExecuted():  # block还没有执行完
                     offset, state = executor.getCurState()
+                    if sha3Exist:  # 不再保留内存状态
+                        stateList = state.split("<=>")
+                        state = stateList[0] + "<=>" + stateList[2]
                     stateMap[offset] = state
                     executor.execNextOpCode()
 
@@ -755,7 +786,11 @@ class AssertionOptimizer:
                         targetAddr = addr
                         targetNode = node
                 node = self.domTree[node]
-            assert targetAddr and targetNode  # 不能为none
+            # 没有找到程序状态相同的节点，放弃优化
+            if targetAddr is None:
+                self.abandonedpartiallyRedundantInvNodes.append(invNode)
+                continue  # 放弃当前Assertion的优化
+
             assert self.cfg.blocks[targetNode].blockType != "dispatcher"  # 不应该出现在dispatcher中
             if self.outputProcessInfo:  # 需要输出处理信息
                 self.log.processing("找到和节点{}程序状态相同的地址:{}，对应的节点为:{}".format(invNode, targetAddr, targetNode))
@@ -767,6 +802,10 @@ class AssertionOptimizer:
                 self.funcDict[targetFuncId].addRemovedRangeInfo(invNode, [targetAddr, targetNode, invNode + 2])
             else:  # 不止一个入边，不删jumpdest
                 self.funcDict[targetFuncId].addRemovedRangeInfo(invNode, [targetAddr, targetNode, invNode + 1])
+
+        if self.abandonedFullyRedundantInvNodes.__len__() != 0:  # 有移除的invalid
+            self.log.info(
+                "放弃优化有副作用的Assertion:{}".format(",".join([str(n) for n in self.abandonedFullyRedundantInvNodes])))
 
         # 第五步，对每一个包含部分冗余的函数体，都构造一个新函数体，其中去除了assertion相关的字节码
         # 同时，将旧函数体节点的对应信息，添加到新函数体中去
