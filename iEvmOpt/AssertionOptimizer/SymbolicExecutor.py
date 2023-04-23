@@ -827,21 +827,27 @@ class SymbolicExecutor:
         :param retSize: 返回内容的字节数
         :return:None
         '''
-        assert retOffset.__str__().isdigit()  # 应当为数字
-        assert retSize.__str__().isdigit()
+        # assert retOffset.__str__().isdigit() # evmop中并没有对offset做限制
+        assert retSize.__str__().isdigit()  # size必须是数字
 
-        memStart = int(simplify(retOffset).__str__())
-        memEnd = int(simplify(retOffset + retSize).__str__())  # 终止偏移量
+        # memStart = int(simplify(retOffset).__str__())
+        memStart = simplify(retOffset).__str__()  # start未必是一个数字，可能是表达式
+        # memEnd = int(simplify(retOffset + retSize).__str__())  # 终止偏移量
+        memEnd = simplify(retOffset + retSize).__str__()  # end也未必是数字
         tmpSize = int(retSize.__str__())  # size的值
 
         # 删除原位置上的内容
         removedItem = []
         for addr, _ in self.memory.items():
             begin, end = addr.split("$")
-            begin, end = int(begin), int(end)
-            if begin <= memStart < end or begin < memEnd <= end or (memStart <= begin and end <= memEnd):
-                # 位于返回内容的区间之内，需要删除
+            if begin == memStart:
                 removedItem.append(addr)
+            elif begin.isdigit() and memStart.isdigit():  # 两者都是数字
+                begin, end = int(begin), int(end)
+                tmpMemStart, tmpMemEnd = int(memStart), int(memEnd)
+                if begin <= tmpMemStart < end or begin < tmpMemEnd <= end or (tmpMemStart <= begin and end <= tmpMemEnd):
+                    # 位于返回内容的区间之内，需要删除
+                    removedItem.append(addr)
         for addr in removedItem:
             self.memory.pop(addr)
 
