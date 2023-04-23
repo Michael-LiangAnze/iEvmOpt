@@ -254,7 +254,12 @@ class AssertionOptimizer:
         # for k, v in funcRange2Calls.items():
         #     print(k, v)
 
-        # oldEdge = dict(self.edges)
+        originalInEdge = {}
+        for _from, tos in self.inEdges.items():
+            originalInEdge[_from] = []
+            for _to in tos:
+                originalInEdge[_from].append(_to)
+
         # 第四步，在caller的jump和返回的jumpdest节点之间加边
         for pairs in funcRange2Calls.values():
             for pair in pairs:
@@ -297,27 +302,121 @@ class AssertionOptimizer:
                     if out not in visited.keys() and out in range(offsetRange[0], offsetRange[1]):
                         stack.push(out)
                         visited[out] = True
-            # 存储函数信息
-            self.funcCnt += 1
+            # 先做一个检查，如果并没能找出所有的函数节点，则放弃这一个函数，因为下面会尝试寻找selfdestruct引起的函数
+            # 检查方式是，看看所有找到的同一个函数的节点的长度拼起来，是否是其应有的长度
             offsetRange[1] -= 1
+            funcLen = offsetRange[1] + self.cfg.blocks[offsetRange[1]].length - offsetRange[0]
+            tempLen = 0
+            for n in funcBody:
+                tempLen += self.cfg.blocks[n].length
+            if funcLen != tempLen:  # 没能找全节点
+                continue
+
+            # 检查通过，找全了函数节点，存储函数信息
+            self.funcCnt += 1
             f = Function(self.funcCnt, offsetRange[0], offsetRange[1], funcBody, self.edges)
             self.funcDict[self.funcCnt] = f
             for node in funcBody:
                 assert self.node2FuncId[node] is None  # 一个点只能被赋值一次
                 self.node2FuncId[node] = self.funcCnt
 
-            # 先不做检查，因为有些函数是没有返回边的，这些函数的节点会找不全
-            # 这里做一个检查，看看所有找到的同一个函数的节点的长度拼起来，是否是其应有的长度，防止漏掉一些顶点
-            # funcLen = offsetRange[1] + self.cfg.blocks[offsetRange[1]].length - offsetRange[0]
-            # tempLen = 0
-            # for n in funcBody:
-            #     tempLen += self.cfg.blocks[n].length
-            # assert funcLen == tempLen, funcBody.__str__() + rangeInfo
-            # f.printFunc()
+        # 第六步，尝试处理没有返回边selfdestruct函数
+        # 注意，有些selfdestruct函数是有返回边的，我们处理的是没有返回边的情况
+        # 一个假设：selfdestruct函数若没有返回边，则应当返回的节点（编译器生成的，但是实际上不会走到的block）应当是：JUMPDEST；STOP
+        # 同时，为了及早放弃优化一些没有入边的合约，这里顺带记录没有入边的节点，如果最后发现存在没有入边的节点，它并不具备selfdestruct的特征
+        # 则直接放弃优化
 
-        # 第六步，尝试处理没有返回边的函数
+        selfdestructNode = []
+        withoutInedgeNode = []
+        for offset, b in self.blocks.items():
+            if offset == 0:
+                continue
+            if originalInEdge[offset].__len__() == 0:  # 没有入边
+                withoutInedgeNode.append(offset)
+            else:
+                continue
+            if b.length != 2:
+                continue
+            if b.bytecode[0] != 0x5b or b.bytecode[1] != 0x00:
+                continue
+            selfdestructNode.append(offset)
+        if selfdestructNode.__str__() != withoutInedgeNode.__str__():  # 放弃优化
+            self.log.fail("未能找全函数节点，放弃优化")
+        self.nodes.sort()
+        for node in selfdestructNode:
+            # 找出这个可疑节点的上一个节点，它有可能是selfdestruct的调用节点
+            callBlock = None
+            for b in self.blocks.values():
+                if b.offset + b.length == node:
+                    callBlock = b
+                    break
+            # 检查这个节点是否为为可能的调用者节点
+            if not callBlock.couldBeCaller:
+                continue
+            # 检查这个节点里面push，是否压入了相应的地址，没有则不进行处理
+            hasReturnAddr = False
+            for addr in callBlock.instrAddrs:
+                i = addr - callBlock.offset
+                if callBlock.bytecode[i] in range(0x60, 0x80):  # push指令
+                    pushData = int(callBlock.instrs[i].split(" ")[2], 16)
+                    if pushData == node:  # push的内容与返回地址一致
+                        hasReturnAddr = True
+                        break
+                if hasReturnAddr:
+                    break
+            if not hasReturnAddr:
+                continue
+            # 从起始节点开始做dfs，看是否能够走完这个函数
+            funcBegin = self.edges[callBlock.offset][0]  # 因为是push addr;jump因此只有一条出边
+            funcRange = range(funcBegin, self.cfg.exitBlockId)
+            funcBody = []
+            stack = Stack()
+            visited = {}
+            visited[funcBegin] = True
+            stack.push(funcBegin)  # 既是范围一端，也是起始节点的offset
+            while not stack.empty():  # dfs找出所有节点
+                top = stack.pop()
+                funcBody.append(top)
+                for out in self.edges[top]:
+                    if out not in visited.keys() and out in funcRange:
+                        stack.push(out)
+                        visited[out] = True
+            # 检查找出的是否为同一个函数内的节点，并且节点这些节点中是否存在selfdestruct指令
+            funcBody.sort()
+            findAll = True
+            for i in range(funcBody.__len__() - 1):
+                curBlock, nextBlock = self.blocks[funcBody[i]], self.blocks[funcBody[i + 1]]
+                if curBlock.offset + curBlock.length != nextBlock.offset:
+                    findAll = False
+                    break
+            findSelfDestruct = False
+            for n in funcBody:
+                curBlock = self.blocks[n]
+                for addr in curBlock.instrAddrs:
+                    opcode = curBlock.bytecode[addr - n]
+                    if opcode == 0xff:
+                        findSelfDestruct = True
+                        break
+                if findSelfDestruct:
+                    break
+            if not findAll or not findSelfDestruct:
+                # 这不仅代表着，寻找函数节点的失败，也是合约优化的失败
+                self.log.fail("未能找全函数节点，放弃优化")
 
-        # 第六步，检查一个函数内的节点是否存在环，存在则将其标记出来
+            # 找到了selfdestruct函数，将其标出
+            self.funcCnt += 1
+            f = Function(self.funcCnt, funcBody[0], funcBody[-1], funcBody, self.edges)
+            self.funcDict[self.funcCnt] = f
+            for n in funcBody:
+                assert self.node2FuncId[n] is None  # 一个点只能被赋值一次
+                self.node2FuncId[n] = self.funcCnt
+
+        # 最后还要做一个检查，检查是否所有的common节点都被标记为了函数
+        for offset, b in self.blocks.items():
+            if b.blockType == "common" and self.node2FuncId[offset] is None:
+                self.log.fail("未能找全函数节点，放弃优化")
+
+        # 第七步，检查一个函数内的节点是否存在环，存在则将其标记出来
         for func in self.funcDict.values():  # 取出一个函数
             tarjan = TarjanAlgorithm(func.funcBodyNodes, func.funcSubGraphEdges)
             tarjan.tarjan(func.firstBodyBlockOffset)
@@ -336,7 +435,7 @@ class AssertionOptimizer:
                 else:
                     continue
 
-        # 第七步，因为dispatcher中也有可能存在scc，因此需要将它们也标记出来
+        # 第八步，因为dispatcher中也有可能存在scc，因此需要将它们也标记出来
         # 4.21新问题：dispatcher也可能被识别为函数体，如在KOLUSDTFund.bin的构造函数中，某些函数体就是由dispatcher节点构成的
         # 因此，讨论dispatcher中scc的问题时，应当考虑的是，非函数的非common节点
         # 先生成子图
@@ -365,12 +464,12 @@ class AssertionOptimizer:
                     if self.isFuncBodyHeadNode[node]:  # 函数头存在于scc，出现了递归的情况
                         self.log.fail("检测到函数递归调用的情况，该字节码无法被优化!")
 
-        # 第八步，处理可能出现的“自环”，见test12
+        # 第九步，处理可能出现的“自环”，见test12
         for node in self.nodes:
             if node in self.edges[node]:  # 出边指向自己
                 self.isLoopRelated[node] = True
 
-        # 第九步，去除之前添加的边，因为下面要做路径搜索，新加入的边并不是原来cfg中应该出现的边
+        # 第十步，去除之前添加的边，因为下面要做路径搜索，新加入的边并不是原来cfg中应该出现的边
         for pairs in funcRange2Calls.values():
             for pair in pairs:
                 self.edges[pair[0]].remove(pair[1])
@@ -487,12 +586,6 @@ class AssertionOptimizer:
         for node in removedInvNodes:
             self.invalidNodeList.remove(node)
             self.invalidNode2PathIds.pop(node)
-
-        # for k, v in self.invalidNode2PathIds.items():
-        #     print("invalid node is:{}".format(k))
-        #     for pathId in v:
-        #         self.invalidPaths[pathId].printPath()
-        # print(self.isFuncCallLoopRelated)
 
         # 第六步，对于每个可优化的invalid节点，将其所有路径根据函数调用链进行划分
         for invNode in self.invalidNodeList:  # 取出一个invalid节点

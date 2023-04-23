@@ -40,7 +40,7 @@ if __name__ == "__main__":
                     #     or s.find("不存在可优化的Assertion") != -1\
                     #     or s.find("没有待处理的Assertion") != -1
                     # if not c:
-                    if s.find("AssertionError") != -1:
+                    if s.find("运行时函数边修复失败") != -1:
                         tempSize = os.path.getsize(binPath + '/' + targetBinFile)
                         if tempSize < limit:
                             targetFile.append(dataDir + "/bin/" + targetBinFile + "    " + str(tempSize))

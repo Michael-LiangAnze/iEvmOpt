@@ -159,10 +159,12 @@ class EtherSolver:
         assert len(self.constructorCfg.edges[self.constructorCfg.exitBlockId]) == 0
 
         #############               使用CfgRepairKit进行检测和修复              #############
+        # 修复不一定是成功的，毕竟只是做简单的dfs
+        # 只是输出Warning，后续还要对没有入边的节点做判断，看看是否属于是selfdestruct引起的，如果是，则尝试再次进行修复
         constructorKit = CfgRepairKit(self.constructorCfg)
         constructorKit.fix()
         if not constructorKit.isFixed():  # 修复失败
-            self.log.fail("构造函数边修复失败")
+            self.log.warning("构造函数边修复失败")
         else:
             self.log.info("构造函数边修复成功")
         self.constructorCfg.edges, self.constructorCfg.inEdges = constructorKit.getRepairedEdges()
@@ -170,10 +172,11 @@ class EtherSolver:
         runtimeKit = CfgRepairKit(self.cfg)
         runtimeKit.fix()
         if not runtimeKit.isFixed():  # 修复失败
-            self.log.fail("运行时函数边修复失败")
+            self.log.warning("运行时函数边修复失败")
         else:
             self.log.info("运行时函数边修复成功")
         self.cfg.edges, self.cfg.inEdges = runtimeKit.getRepairedEdges()
+
 
         ##############              修复结束                   ################
 
