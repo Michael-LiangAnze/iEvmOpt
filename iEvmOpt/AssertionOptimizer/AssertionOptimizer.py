@@ -410,6 +410,10 @@ class AssertionOptimizer:
             for n in funcBody:
                 assert self.node2FuncId[n] is None  # 一个点只能被赋值一次
                 self.node2FuncId[n] = self.funcCnt
+            if self.isProcessingConstructor:
+                self.log.info("构造函数中发现对selfdestruct函数的调用，无入边节点:{}修复成功".format(str(node)))
+            else:
+                self.log.info("运行时函数中发现对selfdestruct函数的调用，无入边节点:{}修复成功".format(str(node)))
 
         # 最后还要做一个检查，检查是否所有的common节点都被标记为了函数
         for offset, b in self.blocks.items():

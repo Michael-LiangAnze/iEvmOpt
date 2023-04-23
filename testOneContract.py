@@ -11,8 +11,8 @@ import time
 if __name__ == "__main__":
 
     dataPath = 'D:/Projects/iEvmOpt/testContract'
-    dataDir = "0xa4115705b47b8c5eeaa3e2ea754c6085e39ef31b"
-    timeoutTime = 180
+    dataDir = "0xff1beda5ca92a83d05323e338d0534410858b6a2"
+    timeoutTime = 300
 
     processInfo = {}
     binPath = dataPath + '/' + dataDir + '/bin'

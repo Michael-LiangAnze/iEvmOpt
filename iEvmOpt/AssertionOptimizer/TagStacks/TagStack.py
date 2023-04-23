@@ -603,7 +603,7 @@ class TagStack:
         # 涉及的指令有：AND OR XOR SUB DIV SHL SHR
         first, second = self.tagStack.pop(), self.tagStack.pop()
         firstIsAddr, secondIsAddr = first[4], second[4]
-        assert not (firstIsAddr and secondIsAddr) or first[0] == second[0]  # 不能两个都是跳转地址，如果是，则两个不能相等
+        assert not (firstIsAddr and secondIsAddr) or first[0] == second[0]  # 不能两个都是跳转地址，如果是，则两个应该相等
         if not firstIsAddr and not secondIsAddr:  # 两个都不是地址，不计算
             self.tagStack.push([None, None, self.PC, self.curBlock.offset, False])
         elif not firstIsAddr and secondIsAddr:  # first不是地址
@@ -611,15 +611,23 @@ class TagStack:
             self.tagStack.push(second)
         elif firstIsAddr and not secondIsAddr:  # second不是跳转地址
             self.tagStack.push(first)
-        else: # 两个都是跳转地址
-            assert 0
+        else:  # 两个都是跳转地址，且相等
+            # assert 0, str(first) + str(second)
+            # 这是一个概率极小的情况，观察两个已经发现的例子：
+            # 0x5b63759a10f12c054039cdd5e302e65701d5b483/bin/MasBurner.bin
+            # 0xff1beda5ca92a83d05323e338d0534410858b6a2/bin/DiVoToken.bin
+            # 发现其实就是两个操作数，它们的值刚好和地址一致而已
+            # 而它们出现的地方也很有趣，对它们所在的节点，做dfs，起始会直接走到exit block
+            # 因此这里做一个简单的处理，就是将它们的结果置为非地址，值置为None
+            # 如果后续还发现有例子，可以考虑时尚上述提到的dfs
+            self.tagStack.push([None, None, self.PC, self.curBlock.offset, False])
 
     def __execOp2(self):
         # 模仿evmopt中的stackOp2
         # 涉及的指令有：ADD MUL
         first, second = self.tagStack.pop(), self.tagStack.pop()
         firstIsAddr, secondIsAddr = first[4], second[4]
-        assert not (firstIsAddr and secondIsAddr and first[0] != second[0])  # 两个地址之间进行计算
+        assert not (firstIsAddr and secondIsAddr and first[0] != second[0])  # 不能是两个相同的地址进行计算
 
         if not firstIsAddr and not secondIsAddr:  # 两个不是跳转地址
             self.tagStack.push([None, None, self.PC, self.curBlock.offset, False])
@@ -635,7 +643,7 @@ class TagStack:
                 self.tagStack.push([None, None, self.PC, self.curBlock.offset, False])
             else:
                 self.tagStack.push(first)
-        else:  # 两个都是，但是相等
+        else:  # 两个都是，但是不相等
             if firstIsAddr:
                 self.tagStack.push(first)
             elif secondIsAddr:
