@@ -1463,9 +1463,20 @@ class AssertionOptimizer:
         # codecopy信息，格式: [[offset push的值，offset push的字节数，offset push指令的地址， offset push指令所在的block,
         #                       size push的值，size push的字节数，size push指令的地址， size push指令所在的block]]
         #   对于构造函数的codecopy，假设其用于访问数据段以及copy runtime，它的offset和size必须是untag的
+        # 4.24新发现：和运行时函数一样，如果offset是Untag，且offset为codesize的结果，那么就不需要对其进行处理，相应的删除这一条信息
+        # 合约为：0x97492124f65B499b3328A9BC87FEf164D309c9b7
+        removeList = []
         for info in self.codeCopyInfo:
             offset, _size = info[0], info[4]
-            if offset in range(self.constructorFuncBodyLength,
+            if offset is None:
+                # 检查是否是由codecopy 获取的offset
+                index = info[2] - info[3]
+                if self.blocks[info[3]].bytecode[index] == 0x38: # codesize
+                    removeList.append(info)
+                    continue
+                else:
+                    self.log.fail("构造函数的codecopy无法进行分析: offset为{}，size为{}".format(info[0], info[4]))
+            elif offset in range(self.constructorFuncBodyLength,
                                self.constructorFuncBodyLength + self.constructorDataSegLength):
                 # 访问的是构造函数的数据段
                 continue
@@ -1485,6 +1496,8 @@ class AssertionOptimizer:
                 # 访问其他地址
                 # print(self.constructorFuncBodyLength + self.constructorDataSegLength,self.funcBodyLength + self.dataSegLength)
                 self.log.fail("构造函数的codecopy无法进行分析: offset为{}，size为{}".format(info[0], info[4]))
+        for info in removeList:
+            self.codeCopyInfo.remove(info)
 
         # 第三步，根据运行时函数段的长度变化，修改这些codecopy信息
         # 同时需要检查，原来的字节数，是否能够填入新的内容

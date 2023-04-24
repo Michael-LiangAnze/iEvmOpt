@@ -33,14 +33,13 @@ if __name__ == "__main__":
         for f in os.listdir(dataDirPath):
             if f.find("_report.txt") != -1:  # 生成了报告
                 with open(dataDirPath + "/" + f, "r", encoding='utf-8') as rp:
-                    print(dataDirPath + "/" + f)
                     s = rp.read()
                     # c = s.find("运行时函数边修复失败") != -1 or s.find("未能找全函数节点，放弃优化") != -1 or s.find("构造函数边修复失败") != -1 \
                     #     or s.find("正在将优化后的字节码写入到文件") != -1 \
                     #     or s.find("不存在可优化的Assertion") != -1\
                     #     or s.find("没有待处理的Assertion") != -1
                     # if not c:
-                    if s.find("构造函数边修复失败") != -1:
+                    if s.find("TypeError: ") != -1:
                         tempSize = os.path.getsize(binPath + '/' + targetBinFile)
                         if tempSize < limit:
                             targetFile.append(dataDir + "/bin/" + targetBinFile + "    " + str(tempSize))
@@ -65,8 +64,9 @@ if __name__ == "__main__":
             #         print(f + "   " + s[-5])
 
     sizeList.sort()
-    print(total)
-    print(sizeList)
+    # print(total)
+    print(targetFile.__len__())
+    # print(sizeList)
     for t in targetFile:
         print(t)
 

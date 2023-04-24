@@ -374,13 +374,21 @@ SHA3可能会改内存，因此如果出现路径上有SHA3指令的话，获取
 
 #### 有的函数确实会没有出边
 
-如下函数，是没有返回边的。ethbank
+以下函数，是没有返回边的
 
 ```
+    //0x022e063958a870c345749d1fe32f7e7bf2d240ed
     function moveBrickClear() onlyOwner public {
         require(msg.sender == owner, "only owner can use this method"); 
         selfdestruct(msg.sender);
 
+    }
+    
+    //0xE0339e6EBd1CCC09232d1E979d50257268B977Ef
+    function initialize(bytes calldata /*data*/)
+        external pure
+    {
+        revert("CANNOT_CALL_INITIALIZE");
     }
 ```
 
@@ -394,7 +402,7 @@ SHA3可能会改内存，因此如果出现路径上有SHA3指令的话，获取
 为了找出这些函数，只能在找出常规函数之后进行。具体方法如下：
 
 * 在找出常规函数之后，在函数的调用边起始节点和返回边终止节点之间加边
-* 找出所有的形如JUMPDEST；STOP的节点，用以备用。同时，它们必须是全部的，没有入边的节点。若不能覆盖，则要放弃优化
+* 找出所有的形如JUMPDEST；STOP的节点，用以备用。同时，它们必须是全部的，没有入边的节点。若不能覆盖所有没有入边的节点，则要放弃优化
 * 对原图中所有的节点排序
 * 对上述找出的节点，查找比他们offset小的第一个节点。如果这个节点里面出现了对应的push addr;jump，则说明是可能的调用节点。同时检查是否push过返回地址
 * 从可能的调用节点开始，在排序好的节点中一直找，直到找到exit block或者一个已经被标记为函数的节点才停下，这时候便得到了可能的终止节点。这些节点是可疑的函数节点
