@@ -8,6 +8,7 @@ from AssertionOptimizer.JumpEdge import JumpEdge
 from AssertionOptimizer.Path import Path
 from AssertionOptimizer.PathGenerator import PathGenerator
 from AssertionOptimizer.SymbolicExecutor import SymbolicExecutor
+from AssertionOptimizer.TagStacks.TagStack import TagStack
 from Cfg.Cfg import Cfg
 from Cfg.BasicBlock import BasicBlock
 from GraphTools import DominatorTreeBuilder
@@ -172,13 +173,16 @@ class AssertionOptimizer:
         self.log.info("正在重新生成运行时字节码序列")
         self.__regenerateRuntimeBytecode()
         self.log.info("运行时字节码序列生成完毕")
-        # self.__outputNewCfgPic(picName="runtime_new_cfg")  # 生成新cfg的图片，这一步必须在重新生成构造函数字节码序列之前完成，否则cfg的信息会被覆盖掉
 
         # 重新生成构造函数的字节码序列
         self.log.info("正在重新生成构造函数字节码序列")
-        self.__regenerateConstructorBytecode()
+        # self.__regenerateConstructorBytecode()
+        # 两套方案：
+        #   一套是尝试修复构造函数，然后用处理运行时函数的步骤来处理构造函数
+        #   一套是只改构造函数内的codecopy
+        # 要切换回第一套方案，只需要使用上面的函数，并在ethersolver里取消修复构造函数的注释即可
+        self.__processCodecopyInConstructor()
         self.log.info("构造函数字节码序列生成完毕")
-        # self.__outputNewCfgPic(picName="constructor_new_cfg")  # 生成新的构造函数的图片
 
         if self.outputProcessInfo:
             self.log.processing("\n\n以下是新字节码文件的长度信息:")
@@ -498,6 +502,7 @@ class AssertionOptimizer:
                                   self.node2FuncId, self.funcDict)
         generator.genPath()
         paths = generator.getPath()
+
         self.jumpEdgeInfo = generator.getJumpEdgeInfo()
         self.codeCopyInfo = generator.getCodecopyInfo()
         # for p in paths:
@@ -509,8 +514,7 @@ class AssertionOptimizer:
         # codecopy信息，格式: [[offset push的值，offset push的字节数，offset push指令的地址， offset push指令所在的block,
         #                       size push的值，size push的字节数，size push指令的地址， size push指令所在的block]]
         # 对于运行时的codecopy，假设其用于访问数据段，因此size是不做任何处理的，只关心offset的情况。
-        #   如果offset是一个可以获得的数，则保留该codecopy；如果offset是untag，但是被push的位置为codesize，则直接删除
-        #   如果codecopy信息被置为了untag，说明经过了计算，此时只有在以下的情况下，才会被删除:
+        #   如果offset是一个可以获得的数，则保留该codecopy；如果offset是untag，且被push的位置为codesize，则直接删除
         # 对于构造函数的codecopy，假设其用于访问数据段以及copy runtime，它的offset和size必须是untag的
         if not self.isProcessingConstructor:  # 正在分析的是runtimecfg
             removeList = []
@@ -624,6 +628,7 @@ class AssertionOptimizer:
         可达性分析：对于一个invalid节点，检查它的所有路径是否可达，并根据这些可达性信息判断冗余类型
         :return:None
         """
+
         # 第一步，使用求解器判断各条路径是否是可达的
         self.invNodeReachable = dict(zip(self.invalidNodeList, [False for i in range(self.invalidNodeList.__len__())]))
         executor = SymbolicExecutor(self.cfg)
@@ -1421,6 +1426,125 @@ class AssertionOptimizer:
             zip(self.nodes, [[] for i in range(0, len(self.nodes))]))  # 记录每个block中被移除的区间，每个区间的格式为:[from,to)
         self.originalToNewAddr = {}  # 一个映射，格式为： 旧addr:新addr
         self.__regenerateRuntimeBytecode()
+
+    def __processCodecopyInConstructor(self):
+        """
+        4.24新思路：
+        因为实际上，在构造函数里面，只需要处理codecopy即可，不需要过多处理重定位信息
+        只在一种情况下，需要对重定位信息进行考虑：新的codecopy的size/offset无法填入原来的位置
+        考虑到出现这种情况的概率非常小，同时，构造函数在做完ethersolve分析之后，出现没有入边的情况非常多
+        后者出现的概率甚至可以达到，1200+份合约当中，出现了超过份
+        因此这里做一个取舍：在构造函数里面，假设是不会出现无法填入的情况，也不做试填入。但是一旦出现了无法填入的情况，就立即放弃优化
+        同时还做一个假设：所有在构造函数里的codecopy，其参数都是在同一个block内push进去的
+        :return:
+        """
+        self.cfg = self.constructorCfg  # 重新设置cfg
+        self.nodes = list(self.cfg.blocks.keys())  # 存储点，格式为 [n1,n2,n3...]
+        self.blocks = self.cfg.blocks
+        # 第一步，对构造函数的每一个block做tagStack执行，找出offset和size
+        self.codeCopyInfo = []
+        preInfo = [[None, None, None, None, False] for i in range(128)]
+        pushInfo = None
+        tagStack = TagStack(self.cfg)
+        for offset, b in self.cfg.blocks.items():
+            tagStack.clear()
+            tagStack.setBeginBlock(offset)
+            tagStack.setTagStack(preInfo)
+            while not tagStack.allInstrsExecuted():
+                opcode = tagStack.getOpcode()
+                if opcode == 0x39:  # codecopy
+                    tmpOffset = tagStack.getTagStackItem(1)
+                    tmpSize = tagStack.getTagStackItem(2)
+                    tmpOffset.extend(tmpSize)
+                    self.codeCopyInfo.append(tmpOffset)
+                tagStack.execNextOpCode()
+
+        # 第二步，做一个检查信息，看codecopy指令是否只是用于复制运行时的代码，或者是用于访问数据段的信息
+        # codecopy信息，格式: [[offset push的值，offset push的字节数，offset push指令的地址， offset push指令所在的block,
+        #                       size push的值，size push的字节数，size push指令的地址， size push指令所在的block]]
+        #   对于构造函数的codecopy，假设其用于访问数据段以及copy runtime，它的offset和size必须是untag的
+        for info in self.codeCopyInfo:
+            offset, _size = info[0], info[4]
+            if offset in range(self.constructorFuncBodyLength,
+                               self.constructorFuncBodyLength + self.constructorDataSegLength):
+                # 访问的是构造函数的数据段
+                continue
+            # 注意，offset可能是整个字节码的长度
+            # elif offset in range(
+            #         self.constructorFuncBodyLength + self.constructorDataSegLength + self.funcBodyLength,
+            #         self.constructorFuncBodyLength + self.constructorDataSegLength + self.funcBodyLength + self.dataSegLength):
+            elif offset >= self.constructorFuncBodyLength + self.constructorDataSegLength + self.funcBodyLength:
+                # 访问的是函数体后的数据段
+                continue
+            # elif offset == self.constructorFuncBodyLength + self.constructorDataSegLength and _size == self.funcBodyLength + self.dataSegLength:
+            elif offset == self.constructorFuncBodyLength + self.constructorDataSegLength:
+                # 用来复制运行时的代码，注意，size有可能小于函数体+数据段的长度
+                # 这里判断的方法为，offset为运行时的开头
+                continue
+            else:
+                # 访问其他地址
+                # print(self.constructorFuncBodyLength + self.constructorDataSegLength,self.funcBodyLength + self.dataSegLength)
+                self.log.fail("构造函数的codecopy无法进行分析: offset为{}，size为{}".format(info[0], info[4]))
+
+        # 第三步，根据运行时函数段的长度变化，修改这些codecopy信息
+        # 同时需要检查，原来的字节数，是否能够填入新的内容
+        for info in self.codeCopyInfo:
+            offset, _size = info[0], info[4]
+            offsetByteNum, sizeByteNum = info[1], info[5]
+            newOffset, newSize = None, None
+            if offset in range(self.constructorFuncBodyLength,
+                               self.constructorFuncBodyLength + self.constructorDataSegLength):
+                # 访问的是构造函数的数据段
+                continue  # 什么都不改
+            elif offset >= self.constructorFuncBodyLength + self.constructorDataSegLength + self.funcBodyLength:
+                # 访问的是函数体后的数据段
+                newOffset = info[0] + self.runtimeDataSegOffset
+            elif offset == self.constructorFuncBodyLength + self.constructorDataSegLength:
+                # 用来复制运行时的代码，注意，size有可能小于函数体+数据段的长度
+                newSize = info[4] + self.runtimeDataSegOffset
+            # 检查原字节数是否能填入
+            if newOffset is not None:
+                newByteNum = 0  # 新内容需要的字节数
+                tmp = newOffset
+                while tmp != 0:
+                    tmp >>= 8
+                    newByteNum += 1
+                offset = newByteNum - offsetByteNum
+                if offset > 0:
+                    self.log.fail("构造函数的codecopy无法填入新信息")  # 程序已经结束
+                newBytes = deque()  # 新地址的字节码
+                while newOffset != 0:
+                    newBytes.appendleft(newOffset & 0xff)  # 取低八位
+                    newOffset >>= 8
+                for i in range(-offset):  # 高位缺失的字节用0填充
+                    newBytes.appendleft(0x00)
+                for i in range(offsetByteNum):  # 按原来的字节数填
+                    self.blocks[info[3]].bytecode[info[2] - info[3] + 1 + i] = newBytes[i]  # 改的是地址，因此需要+1
+            if newSize is not None:
+                newByteNum = 0  # 新内容需要的字节数
+                tmp = newSize
+                while tmp != 0:
+                    tmp >>= 8
+                    newByteNum += 1
+                offset = newByteNum - sizeByteNum
+                if offset > 0:
+                    self.log.fail("构造函数的codecopy无法填入新信息")  # 程序已经结束
+                newBytes = deque()  # 新地址的字节码
+                while newSize != 0:
+                    newBytes.appendleft(newSize & 0xff)  # 取低八位
+                    newSize >>= 8
+                for i in range(-offset):  # 高位缺失的字节用0填充
+                    newBytes.appendleft(0x00)
+                for i in range(sizeByteNum):  # 按原来的字节数填
+                    self.blocks[info[7]].bytecode[info[6] - info[7] + 1 + i] = newBytes[i]  # 改的是地址，因此需要+1
+
+        # 第四步，将构造字节码拼成一个新的整体
+        self.constructorOpcode = deque()  # 效率更高
+        self.nodes.sort()
+        for node in self.nodes:
+            if node < self.cfg.exitBlockId:  # 不是构造函数的函数字节码不要
+                for bc in self.blocks[node].bytecode:
+                    self.constructorOpcode.append(bc)
 
     def __outputFile(self):
         '''

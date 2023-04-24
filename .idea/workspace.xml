@@ -2,10 +2,12 @@
 <project version="4">
   <component name="ChangeListManager">
     <list default="true" id="26761b8b-d032-4bbd-8113-13d1181eb69a" name="变更" comment="">
+      <change afterPath="$PROJECT_DIR$/iEvmOpt/2023-04-24_16-33-03.svg" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Optimized/test14_optimized.txt" beforeDir="false" afterPath="$PROJECT_DIR$/Optimized/test14_optimized.txt" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/iEvmOpt/AssertionOptimizer/AssertionOptimizer.py" beforeDir="false" afterPath="$PROJECT_DIR$/iEvmOpt/AssertionOptimizer/AssertionOptimizer.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/iEvmOpt/AssertionOptimizer/PathGenerator.py" beforeDir="false" afterPath="$PROJECT_DIR$/iEvmOpt/AssertionOptimizer/PathGenerator.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/AssertionOptimizer/TagStacks/TagStack.py" beforeDir="false" afterPath="$PROJECT_DIR$/iEvmOpt/AssertionOptimizer/TagStacks/TagStack.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/EtherSolver.py" beforeDir="false" afterPath="$PROJECT_DIR$/iEvmOpt/Cfg/EtherSolver.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/test1.py" beforeDir="false" afterPath="$PROJECT_DIR$/test1.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/testOneContract.py" beforeDir="false" afterPath="$PROJECT_DIR$/testOneContract.py" afterDir="false" />
     </list>
@@ -37,9 +39,9 @@
     <property name="ASKED_ADD_EXTERNAL_FILES" value="true" />
     <property name="RunOnceActivity.OpenProjectViewOnStart" value="true" />
     <property name="RunOnceActivity.ShowReadmeOnStart" value="true" />
-    <property name="last_opened_file_path" value="$PROJECT_DIR$/test2.py" />
+    <property name="last_opened_file_path" value="$PROJECT_DIR$/test3.py" />
   </component>
-  <component name="RunManager" selected="Python.test">
+  <component name="RunManager" selected="Python.test1">
     <configuration name="Statistics" type="PythonConfigurationType" factoryName="Python">
       <module name="iEvmOpt" />
       <option name="INTERPRETER_OPTIONS" value="" />
@@ -166,6 +168,27 @@
       <option name="INPUT_FILE" value="" />
       <method v="2" />
     </configuration>
+    <configuration name="test3" type="PythonConfigurationType" factoryName="Python">
+      <module name="iEvmOpt" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
+      <option name="SDK_HOME" value="D:\Environment\Python310\python.exe" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$" />
+      <option name="IS_MODULE_SDK" value="false" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/test3.py" />
+      <option name="PARAMETERS" value="" />
+      <option name="SHOW_COMMAND_LINE" value="false" />
+      <option name="EMULATE_TERMINAL" value="false" />
+      <option name="MODULE_MODE" value="false" />
+      <option name="REDIRECT_INPUT" value="false" />
+      <option name="INPUT_FILE" value="" />
+      <method v="2" />
+    </configuration>
     <configuration name="testOneContract" type="PythonConfigurationType" factoryName="Python">
       <module name="iEvmOpt" />
       <option name="INTERPRETER_OPTIONS" value="" />
@@ -192,6 +215,7 @@
       <item itemvalue="Python.Statistics" />
       <item itemvalue="Python.test1" />
       <item itemvalue="Python.testOneContract" />
+      <item itemvalue="Python.test3" />
       <item itemvalue="Python.ethersolve1" />
       <item itemvalue="Python.test" />
       <item itemvalue="Python.test2" />

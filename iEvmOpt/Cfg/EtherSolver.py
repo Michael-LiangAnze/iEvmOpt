@@ -161,13 +161,14 @@ class EtherSolver:
         #############               使用CfgRepairKit进行检测和修复              #############
         # 修复不一定是成功的，毕竟只是做简单的dfs
         # 只是输出Warning，后续还要对没有入边的节点做判断，看看是否属于是selfdestruct引起的，如果是，则尝试再次进行修复
-        constructorKit = CfgRepairKit(self.constructorCfg)
-        constructorKit.fix()
-        if not constructorKit.isFixed():  # 修复失败
-            self.log.warning("构造函数边修复失败")
-        else:
-            self.log.info("构造函数边修复成功")
-        self.constructorCfg.edges, self.constructorCfg.inEdges = constructorKit.getRepairedEdges()
+        # constructorKit = CfgRepairKit(self.constructorCfg)
+        # constructorKit.fix()
+        # if not constructorKit.isFixed():  # 修复失败
+        #     # 构造函数边修复失败，没必要继续往下走
+        #     self.log.fail("构造函数边修复失败")
+        # else:
+        #     self.log.info("构造函数边修复成功")
+        #     self.constructorCfg.edges, self.constructorCfg.inEdges = constructorKit.getRepairedEdges()
 
         runtimeKit = CfgRepairKit(self.cfg)
         runtimeKit.fix()
@@ -208,8 +209,8 @@ class EtherSolver:
         # 对每一个unconditional jump的block，进行tagStack执行，看是否有可能出现：
         #   jump的地址是在block内部计算得到的
         # 这种情况下，这个block也有可能是调用节点
-        # 因为不知道栈中原有的内容，因此在做执行之前，先往栈中压入16个None
-        preInfo = [[None, None, None, None, False] for i in range(64)]  # 64个总够用了吧
+        # 因为不知道栈中原有的内容，因此在做执行之前，先往栈中压入128个None
+        preInfo = [[None, None, None, None, False] for i in range(128)]
         pushInfo = None
         tagStack = TagStack(self.cfg)
         for offset, b in self.cfg.blocks.items():

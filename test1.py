@@ -31,16 +31,16 @@ if __name__ == "__main__":
         binPath = dataPath + '/' + dataDir + '/bin'
         success = False
         for f in os.listdir(dataDirPath):
-
             if f.find("_report.txt") != -1:  # 生成了报告
                 with open(dataDirPath + "/" + f, "r", encoding='utf-8') as rp:
+                    print(dataDirPath + "/" + f)
                     s = rp.read()
-                    # c = s.find("运行时函数边修复失败") != -1 or s.find("assert retOffset.__str__().isdigit()") != -1 or s.find("构造函数边修复失败") != -1 \
+                    # c = s.find("运行时函数边修复失败") != -1 or s.find("未能找全函数节点，放弃优化") != -1 or s.find("构造函数边修复失败") != -1 \
                     #     or s.find("正在将优化后的字节码写入到文件") != -1 \
                     #     or s.find("不存在可优化的Assertion") != -1\
                     #     or s.find("没有待处理的Assertion") != -1
                     # if not c:
-                    if s.find("AssertionError") != -1:
+                    if s.find("构造函数边修复失败") != -1:
                         tempSize = os.path.getsize(binPath + '/' + targetBinFile)
                         if tempSize < limit:
                             targetFile.append(dataDir + "/bin/" + targetBinFile + "    " + str(tempSize))
@@ -49,7 +49,7 @@ if __name__ == "__main__":
             # if f == "return_code.json":
             #     with open(dataDirPath + "/" + f, "r", encoding='utf-8') as rt:
             #         rtJson = json.load(rt)
-            #         if rtJson[targetBinFile] == '0':  # 返回正常
+            #         if rtJson[targetBinFile] != '0':  # 返回正常
             #             success = True
             #             tempSize = os.path.getsize(binPath + '/' + targetBinFile)
             #             targetFile.append(dataDir + "/bin/" + targetBinFile + "    " + str(tempSize))
@@ -69,5 +69,4 @@ if __name__ == "__main__":
     print(sizeList)
     for t in targetFile:
         print(t)
-    print(len(targetFile))
 

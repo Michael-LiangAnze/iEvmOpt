@@ -87,7 +87,7 @@ class PathGenerator:
         路径记录：每访问一个新节点，则将其加入到路径栈，离开时pop一次(其实就是pop自己)
         访问控制：每访问一个新节点，则将其设置为true状态，退出时设置为false
         """
-        # print(curNode)
+
         curTagStack = TagStack(self.cfg)
         curTagStack.setTagStack(parentTagStack.getTagStack())
         curReturnAddrStack = Stack()
