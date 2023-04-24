@@ -306,7 +306,7 @@ class AssertionOptimizer:
                     if out not in visited.keys() and out in range(offsetRange[0], offsetRange[1]):
                         stack.push(out)
                         visited[out] = True
-            # 先做一个检查，如果并没能找出所有的函数节点，则放弃这一个函数，因为下面会尝试寻找selfdestruct引起的函数
+            # 先做一个检查，如果并没能找出所有的函数节点，则放弃这一个函数，因为下面会尝试寻找selfdestruct、revert引起的函数
             # 检查方式是，看看所有找到的同一个函数的节点的长度拼起来，是否是其应有的长度
             offsetRange[1] -= 1
             funcLen = offsetRange[1] + self.cfg.blocks[offsetRange[1]].length - offsetRange[0]
@@ -324,13 +324,13 @@ class AssertionOptimizer:
                 assert self.node2FuncId[node] is None  # 一个点只能被赋值一次
                 self.node2FuncId[node] = self.funcCnt
 
-        # 第六步，尝试处理没有返回边selfdestruct函数
+        # 第六步，尝试处理没有返回边selfdestruct、revert函数
         # 注意，有些selfdestruct函数是有返回边的，我们处理的是没有返回边的情况
-        # 一个假设：selfdestruct函数若没有返回边，则应当返回的节点（编译器生成的，但是实际上不会走到的block）应当是：JUMPDEST；STOP
-        # 同时，为了及早放弃优化一些没有入边的合约，这里顺带记录没有入边的节点，如果最后发现存在没有入边的节点，它并不具备selfdestruct的特征
+        # 一个假设：selfdestruct、revert函数若没有返回边，则应当返回的节点（编译器生成的，但是实际上不会走到的block）应当是：JUMPDEST；STOP
+        # 同时，为了及早放弃优化一些没有入边的合约，这里顺带记录没有入边的节点，如果最后发现存在没有入边的节点，它并不具备selfdestruct、revert的特征
         # 则直接放弃优化
 
-        selfdestructNode = []
+        selfdestructAndRevertNode = []
         withoutInedgeNode = []
         for offset, b in self.blocks.items():
             if offset == 0:
@@ -343,11 +343,11 @@ class AssertionOptimizer:
                 continue
             if b.bytecode[0] != 0x5b or b.bytecode[1] != 0x00:
                 continue
-            selfdestructNode.append(offset)
-        if selfdestructNode.__str__() != withoutInedgeNode.__str__():  # 放弃优化
+            selfdestructAndRevertNode.append(offset)
+        if selfdestructAndRevertNode.__str__() != withoutInedgeNode.__str__():  # 放弃优化
             self.log.fail("未能找全函数节点，放弃优化")
         self.nodes.sort()
-        for node in selfdestructNode:
+        for node in selfdestructAndRevertNode:
             # 找出这个可疑节点的上一个节点，它有可能是selfdestruct的调用节点
             callBlock = None
             for b in self.blocks.values():
@@ -357,19 +357,22 @@ class AssertionOptimizer:
             # 检查这个节点是否为为可能的调用者节点
             if not callBlock.couldBeCaller:
                 continue
-            # 检查这个节点里面push，是否压入了相应的地址，没有则不进行处理
-            hasReturnAddr = False
-            for addr in callBlock.instrAddrs:
-                i = addr - callBlock.offset
-                if callBlock.bytecode[i] in range(0x60, 0x80):  # push指令
-                    pushData = int(callBlock.instrs[i].split(" ")[2], 16)
-                    if pushData == node:  # push的内容与返回地址一致
-                        hasReturnAddr = True
-                        break
-                if hasReturnAddr:
-                    break
-            if not hasReturnAddr:
-                continue
+            # 之前的假设是，在这里会压入一个返回地址，对于遇到的selfdestruct函数，也大多数成立
+            # 现在观察到合约0xE0339e6EBd1CCC09232d1E979d50257268B977Ef在调用包含revert函数的时候，调用者节点中并没有push返回地址，而是在之前的几个节点中进行了push
+            # 于是这里取消这个限制，只要是push addr;jump的节点，都可以视为潜在的调用者
+            # # 检查这个节点里面push，是否压入了相应的地址，没有则不进行处理
+            # hasReturnAddr = False
+            # for addr in callBlock.instrAddrs:
+            #     i = addr - callBlock.offset
+            #     if callBlock.bytecode[i] in range(0x60, 0x80):  # push指令
+            #         pushData = int(callBlock.instrs[i].split(" ")[2], 16)
+            #         if pushData == node:  # push的内容与返回地址一致
+            #             hasReturnAddr = True
+            #             break
+            #     if hasReturnAddr:
+            #         break
+            # if not hasReturnAddr:
+            #     continue
             # 从起始节点开始做dfs，看是否能够走完这个函数
             funcBegin = self.edges[callBlock.offset][0]  # 因为是push addr;jump因此只有一条出边
             funcRange = range(funcBegin, self.cfg.exitBlockId)
@@ -385,7 +388,7 @@ class AssertionOptimizer:
                     if out not in visited.keys() and out in funcRange:
                         stack.push(out)
                         visited[out] = True
-            # 检查找出的是否为同一个函数内的节点，并且节点这些节点中是否存在selfdestruct指令
+            # 检查找出的是否为同一个函数内的节点
             funcBody.sort()
             findAll = True
             for i in range(funcBody.__len__() - 1):
@@ -393,21 +396,11 @@ class AssertionOptimizer:
                 if curBlock.offset + curBlock.length != nextBlock.offset:
                     findAll = False
                     break
-            findSelfDestruct = False
-            for n in funcBody:
-                curBlock = self.blocks[n]
-                for addr in curBlock.instrAddrs:
-                    opcode = curBlock.bytecode[addr - n]
-                    if opcode == 0xff:
-                        findSelfDestruct = True
-                        break
-                if findSelfDestruct:
-                    break
-            if not findAll or not findSelfDestruct:
+            if not findAll:
                 # 这不仅代表着，寻找函数节点的失败，也是合约优化的失败
                 self.log.fail("未能找全函数节点，放弃优化")
 
-            # 找到了selfdestruct函数，将其标出
+            # 找到了selfdestruct、revert函数，将其标出
             self.funcCnt += 1
             f = Function(self.funcCnt, funcBody[0], funcBody[-1], funcBody, self.edges)
             self.funcDict[self.funcCnt] = f
@@ -415,9 +408,9 @@ class AssertionOptimizer:
                 assert self.node2FuncId[n] is None  # 一个点只能被赋值一次
                 self.node2FuncId[n] = self.funcCnt
             if self.isProcessingConstructor:
-                self.log.info("构造函数中发现对selfdestruct函数的调用，无入边节点:{}修复成功".format(str(node)))
+                self.log.info("构造函数中发现无返回边函数，无入边节点{}修复成功".format(str(node)))
             else:
-                self.log.info("运行时函数中发现对selfdestruct函数的调用，无入边节点:{}修复成功".format(str(node)))
+                self.log.info("运行时函数中发现无返回边函数，无入边节点:{}修复成功".format(str(node)))
 
         # 最后还要做一个检查，检查是否所有的common节点都被标记为了函数
         for offset, b in self.blocks.items():
