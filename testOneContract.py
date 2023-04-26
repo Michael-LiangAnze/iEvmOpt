@@ -10,8 +10,8 @@ import time
 """
 if __name__ == "__main__":
 
-    dataPath = 'D:/Projects/iEvmOpt/testContract'
-    dataDir = "0xE0339e6EBd1CCC09232d1E979d50257268B977Ef"
+    dataPath = 'D:/Projects/iEvmOpt/testContract1'
+    dataDir = "0x0b4D742d52EE0C4391439f80822B26fDF1ad6Ee7"
     timeoutTime = 360
 
     processInfo = {}
@@ -23,7 +23,7 @@ if __name__ == "__main__":
     os.mkdir(newBinPath)
 
     for f in os.listdir(binPath):
-        cmd = "python iEvmOpt/Main1.py " + binPath + "/" + f + " " + newBinPath + "/" + f
+        cmd = "python iEvmOpt/Main.py " + binPath + "/" + f + " " + newBinPath + "/" + f
         print(time.strftime('%Y-%m-%d %H:%M:%S - : ', time.localtime()) + cmd)
         reportFile = dataPath + '/' + dataDir + "/" + f + "_report.json"
         if os.path.exists(reportFile):

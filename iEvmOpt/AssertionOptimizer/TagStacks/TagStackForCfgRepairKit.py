@@ -406,11 +406,23 @@ class TagStackForCfgRepairKit:
 
     def __execAnd(self):  # 0x16
         a, b = self.stack.pop(), self.stack.pop()
-        assert (is_bv(a) and is_bv(b)) or (is_bool(a) and is_bool(b))
-        if is_bv(a):
+        # assert (is_bv(a) and is_bv(b)) or (is_bool(a) and is_bool(b))
+        # if is_bv(a):
+        #     self.stack.push(simplify(a & b))
+        # else:  # bool
+        #     self.stack.push(simplify(And(a, b)))
+        aIsBool, aIsBV = is_bool(a), is_bv(a)
+        bIsBool, bIsBV = is_bool(b), is_bv(b)
+        if aIsBV and bIsBV:
             self.stack.push(simplify(a & b))
-        else:  # bool
+        elif aIsBool and bIsBool:
             self.stack.push(simplify(And(a, b)))
+        elif aIsBV and bIsBool:
+            self.stack.push(simplify(a & If(b, BitVecVal(1, 256), BitVecVal(0, 256))))
+        elif aIsBool and bIsBV:
+            self.stack.push(simplify(If(a, BitVecVal(1, 256), BitVecVal(0, 256) & b)))
+        else:
+            assert 0
 
     def __execOr(self):  # 0x17
         a, b = self.stack.pop(), self.stack.pop()
