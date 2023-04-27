@@ -11,7 +11,7 @@ import sys
 """
 if __name__ == "__main__":
 
-    dataPath = 'D:/Projects/iEvmOpt/contracts'
+    dataPath = 'D:/Projects/iEvmOpt/testContract'
     dataFileList = os.listdir(dataPath)
     targetFile = []
     sizeList = []
@@ -39,7 +39,7 @@ if __name__ == "__main__":
                     #     or s.find("不存在可优化的Assertion") != -1\
                     #     or s.find("没有待处理的Assertion") != -1
                     # if not c:
-                    if s.find("AssertionError") != -1 and s.find("assert funcBodyBeginIndex != -1")  == -1:
+                    if s.find("没有待处理的Assertion") != -1:
                         tempSize = os.path.getsize(binPath + '/' + targetBinFile)
                         if tempSize < limit:
                             targetFile.append(dataDir + "/bin/" + targetBinFile + "    " + str(tempSize))
@@ -48,7 +48,7 @@ if __name__ == "__main__":
             # if f == "return_code.json":
             #     with open(dataDirPath + "/" + f, "r", encoding='utf-8') as rt:
             #         rtJson = json.load(rt)
-            #         if rtJson[targetBinFile] != '0':  # 返回正常
+            #         if rtJson[targetBinFile] == '0':  # 返回正常
             #             success = True
             #             tempSize = os.path.getsize(binPath + '/' + targetBinFile)
             #             targetFile.append(dataDir + "/bin/" + targetBinFile + "    " + str(tempSize))

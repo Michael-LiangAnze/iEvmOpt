@@ -131,12 +131,13 @@ class AssertionOptimizer:
         callChainNum = 0
         for invNode in self.invalidNodeList:
             callChainNum += self.invalidNode2CallChain[invNode].__len__()
-        self.log.info(
-            "路径搜索完毕，一共找到{}个待处理的Assertion，一共找到{}条路径，{}条函数调用链".format(self.invalidNodeList.__len__(),
-                                                                    self.invalidPaths.__len__(), callChainNum))
         if self.invalidNodeList.__len__() == 0:
-            self.log.info("没有待处理的Assertion，优化结束")
+            self.log.info("没有找到Assertion，优化结束")
             return
+        self.log.info(
+            "路径搜索完毕，一共找到{}个Assertion，一共找到{}条路径，{}条函数调用链".format(self.invalidNodeList.__len__(),
+                                                                    self.invalidPaths.__len__(), callChainNum))
+
 
         # 求解各条路径是否可行
         self.log.info("正在分析路径可达性")
@@ -438,7 +439,7 @@ class AssertionOptimizer:
         for offset, block in self.blocks.items():
             if block.blockType == "common":
                 if self.node2FuncId[offset] == None:  # 没有标记
-                    self.log.fail("未能找全所有的函数节点，放弃优化")
+                    self.log.fail("未能找全函数节点，放弃优化")
                 else:
                     continue
 
