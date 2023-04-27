@@ -330,6 +330,9 @@ class AssertionOptimizer:
         # 同时，为了及早放弃优化一些没有入边的合约，这里顺带记录没有入边的节点，如果最后发现存在没有入边的节点，它并不具备selfdestruct、revert的特征
         # 则直接放弃优化
 
+        # 4.27 新发现：应当返回的节点不一定是JUMPDEST；STOP，见readme
+        # 因此，只要发现不是只有一条jumpdest的block，都应该做一遍这个过程
+
         selfdestructAndRevertNode = []
         withoutInedgeNode = []
         for offset, b in self.blocks.items():
@@ -339,10 +342,13 @@ class AssertionOptimizer:
                 withoutInedgeNode.append(offset)
             else:
                 continue
-            if b.length != 2:
-                continue
-            if b.bytecode[0] != 0x5b or b.bytecode[1] != 0x00:
-                continue
+            # if b.length != 2:
+            #     continue
+            # if b.bytecode[0] != 0x5b or b.bytecode[1] != 0x00:
+            #     continue
+            if b.length == 1:
+                if b.bytecode[0] == 0x5b:
+                    continue
             selfdestructAndRevertNode.append(offset)
         if selfdestructAndRevertNode.__str__() != withoutInedgeNode.__str__():  # 放弃优化
             self.log.fail("未能找全函数节点，放弃优化")
@@ -707,15 +713,30 @@ class AssertionOptimizer:
 
     def __buildDominatorTree(self):
         # 因为支配树算法中，节点是按1~N进行标号的，因此需要先做一个标号映射，并处理映射后的边，才能进行支配树的生成
-        mapper = GraphMapper(self.nodes, self.edges)
-        # mapper.output()
+        # 4.27新问题：如果有多个没有入边的节点，会导致算法不收敛
+        # 最简单的触发办法：domTree.initGraph(3, [[1, 3], [2, 3], [1, 2]])
+        # 下面改变原来策略，如果是没有入边的节点，而且不是init block，都会在计算支配树时被移除，而且对应的边也移除
+        # 因为已经经过了函数检查，此时没有入边，而且没有不是Init的block都是不会出现的返回节点，不影响程序的正确性
+        newNode = list(self.nodes)
+        tmpEdge = {}
+        for k, v in self.edges.items():
+            tmpEdge[k] = list(v)
+        for _to, _froms in self.inEdges.items():
+            if _to != 0 and len(_froms) == 0:  # 找到一个没有入边的，非init节点
+                newNode.remove(_to)
+                tmpEdge.pop(_to)
+
+
+        # mapper = GraphMapper(self.nodes, self.edges)
+        mapper = GraphMapper(newNode, tmpEdge)
         newEdges = mapper.getNewEdges()
         domTreeEdges = []
         for _from in newEdges.keys():
             for _to in newEdges[_from]:
                 domTreeEdges.append([_from, _to])
         domTree = DominatorTreeBuilder()
-        domTree.initGraph(self.nodes.__len__(), domTreeEdges)
+        # domTree.initGraph(self.nodes.__len__(), domTreeEdges)
+        domTree.initGraph(newNode.__len__(), domTreeEdges)
         domTree.buildTreeFrom(1)  # 原图的偏移量为0的block对应新图中标号为1的节点
         # domTree.outputIdom()
         idoms = domTree.getIdom()

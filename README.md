@@ -421,6 +421,20 @@ assert(balanceOf[_from] + balanceOf[_to] == previousBalances)
 
 注意，这些包含selfdestruct函数，可能会出现类似递归的情况，即头结点存在于scc内，如0x1eeaf25f2ecbcaf204ecadc8db7b0db9da845327。
 
+###### 4.27新坑
+
+有些函数确实没有出边，并且返回的节点不是以jumpdest;stop的形式出现(0x385827aC8d1AC7B2960D4aBc303c843D9f87Bb0C)
+
+```
+function debit(address, bytes calldata) external returns (address, uint) { revert("not supported"); }
+```
+
+因为定义里面指明了返回的类型，因此编译器会专门用一些block来完成返回值的处理，但是实际上并不会走到这些block。
+
+为了兼容之前的发现，这里将这种死字节码定义为：不是只有一条jumpdest的，没有入边的block
+
+
+
 #### assert并非没有副作用
 
 YECCToken里面，assert内调用了函数，会影响程序的状态。此时会找不到和目标程序状态相同的地址。这时候，应当拒绝优化该字节码
