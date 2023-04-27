@@ -370,7 +370,14 @@ AnxToken里，如果一个scc内的节点只走一次，则无法遍历所有的
 
 #### SHA3改内存
 
-SHA3可能会改内存，因此如果出现路径上有SHA3指令的话，获取程序状态时，不要memory的部分
+SHA3可能会改内存，因此如果出现路径上有SHA3指令的话，获取程序状态时，不要memory的部分。例子如下：
+
+```
+//0x1fD4fd5B079ab1eDA7F08719737FF61945289aEf
+assert(balanceOf[_from] + balanceOf[_to] == previousBalances)
+```
+
+其中的previousBalances为局部变量，另外两个是mapping后的结果。字节码首先是用dup1来获取previousBalances，然后再获取其他两个参数。其中用到了sha3，于是会用一系列的mstore来该内存，这种状态改变一直持续到invalid。最后拿着invalid的程序状态去找，并不能找到dup1时的状态，因为dup1处还没有改过内存。
 
 #### 有的函数确实会没有出边
 

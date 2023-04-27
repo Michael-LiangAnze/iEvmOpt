@@ -1,5 +1,6 @@
 import sys
 
+from AssertionOptimizer.SymbolicExecutor import SymbolicExecutor
 from AssertionOptimizer.TagStacks.TagStackForCfgRepairKit import TagStackForCfgRepairKit
 from Cfg import *
 from Cfg.EtherSolver import EtherSolver
@@ -14,8 +15,8 @@ if __name__ == '__main__':
     constructorCfg = builder.getConstructorCfg()
 
     # 测试符号执行
-    s = TagStackForCfgRepairKit(cfg)
-    path = [0, 13, 59, 70, 81, 92, 103, 451, 463, 3075, 3253]
+    s = SymbolicExecutor(cfg)
+    path = [0, 13, 65, 76, 87, 98, 109, 120, 131, 142, 153, 1062, 1074, 3034, 3473, 3512, 3590, 3733, 4257]
     blocks = constructorCfg.blocks
     for n in path:
         s.setBeginBlock(n)

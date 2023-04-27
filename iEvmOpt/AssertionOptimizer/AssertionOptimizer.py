@@ -786,6 +786,9 @@ class AssertionOptimizer:
                     if stateMap[addr] == targetState:  # 找到一个状态相同的点
                         targetAddr = addr
                         targetNode = node
+                        break
+                if targetAddr is not None:
+                    break
                 node = self.domTree[node]
 
             # 新坑：assert里面调函数，并不是无副作用的，这时候会找不到程序状态相同的节点
@@ -794,7 +797,6 @@ class AssertionOptimizer:
                 self.abandonedFullyRedundantInvNodes.append(invNode)
                 continue  # 放弃当前Assertion的优化
             # print(targetAddr, targetNode, pathNodes)
-            assert self.blocks[targetNode].blockType != "dispatcher"  # 不应该出现在dispatcher中
             if self.outputProcessInfo:  # 需要输出处理信息
                 self.log.processing("找到和节点{}程序状态相同的地址:{}，对应的节点为:{}".format(invNode, targetAddr, targetNode))
 
@@ -880,7 +882,11 @@ class AssertionOptimizer:
                     if stateMap[addr] == targetState:  # 找到一个状态相同的点
                         targetAddr = addr
                         targetNode = node
+                        break
+                if targetAddr is not None:
+                    break
                 node = self.domTree[node]
+            # assert targetAddr and targetNode, pathNodes  # 不能为none
             # 没有找到程序状态相同的节点，放弃优化
             if targetAddr is None:
                 self.abandonedpartiallyRedundantInvNodes.append(invNode)
@@ -1087,7 +1093,7 @@ class AssertionOptimizer:
                 else:  # 不应该出现的访问
                     assert 0
 
-        # 第二步，对删除区间信息去重
+        # 第二步，对跳转信息去重
         # 因为添加了从codecopy转换而来的跳转信息，而这些新添加的信息
         # 有可能是重复的，因此需要再对跳转信息做一次去重
         # 注意，对后者的去重只能现在做，因为信息中可能包含None，会触发json.loads错误
@@ -1164,6 +1170,7 @@ class AssertionOptimizer:
             # 解释一下为什么要做这个assert:因为这一个跳转信息是根据返回地址栈得出的
             # 也就是说，如果要删除push，则jump必须也要被删除，否则当出现这个函数调用关系时，
             # 在jump的时候会找不到返回地址
+            # 4.27新处理：要么只删除jump，要么两个同时删除
             assert delPush == delJump
             if delPush:  # 确定要删除
                 removedInfo.append(info)
@@ -1311,12 +1318,19 @@ class AssertionOptimizer:
                 offset = newByteNum - originalByteNum
                 if offset <= 0:  # 原有的字节数已经足够表示新地址，不需要移动，直接填入新内容即可
                     newAddrBytes = deque()  # 新地址的字节码
+                    # if pushBlock == 1093:
+                    #     print(pushBlock, info[2], info[0], newAddr, info[1], newByteNum, pushAddr - pushBlockOffset)
                     while newAddr != 0:
                         newAddrBytes.appendleft(newAddr & 0xff)  # 取低八位
                         newAddr >>= 8
                     for i in range(-offset):  # 高位缺失的字节用0填充
                         newAddrBytes.appendleft(0x00)
                     for i in range(originalByteNum):  # 按原来的字节数填
+                        # print(len(self.blocks[pushBlock].bytecode),pushAddr - pushBlockOffset + 1 + i,originalByteNum,offset)
+                        # self.blocks[1093].printBlockInfo()
+                        # if pushBlock == 1093:
+                        #     print(pushAddr - pushBlockOffset + 1 + i, len(self.blocks[pushBlock].bytecode))
+                        #     self.blocks[1093].printBlockInfo()
                         self.blocks[pushBlock].bytecode[pushAddr - pushBlockOffset + 1 + i] = newAddrBytes[
                             i]  # 改的是地址，因此需要+1
                 else:  # 新内容不能直接填入，原位置空间不够，需要移动字节码
@@ -1464,13 +1478,13 @@ class AssertionOptimizer:
             if offset is None:
                 # 检查是否是由codecopy 获取的offset
                 index = info[2] - info[3]
-                if self.blocks[info[3]].bytecode[index] == 0x38: # codesize
+                if self.blocks[info[3]].bytecode[index] == 0x38:  # codesize
                     removeList.append(info)
                     continue
                 else:
                     self.log.fail("构造函数的codecopy无法进行分析: offset为{}，size为{}".format(info[0], info[4]))
             elif offset in range(self.constructorFuncBodyLength,
-                               self.constructorFuncBodyLength + self.constructorDataSegLength):
+                                 self.constructorFuncBodyLength + self.constructorDataSegLength):
                 # 访问的是构造函数的数据段
                 continue
             # 注意，offset可能是整个字节码的长度
