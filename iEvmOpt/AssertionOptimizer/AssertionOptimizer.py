@@ -136,8 +136,7 @@ class AssertionOptimizer:
             return
         self.log.info(
             "路径搜索完毕，一共找到{}个Assertion，一共找到{}条路径，{}条函数调用链".format(self.invalidNodeList.__len__(),
-                                                                    self.invalidPaths.__len__(), callChainNum))
-
+                                                                self.invalidPaths.__len__(), callChainNum))
 
         # 求解各条路径是否可行
         self.log.info("正在分析路径可达性")
@@ -366,7 +365,7 @@ class AssertionOptimizer:
                 continue
             # 之前的假设是，在这里会压入一个返回地址，对于遇到的selfdestruct函数，也大多数成立
             # 现在观察到合约0xE0339e6EBd1CCC09232d1E979d50257268B977Ef在调用包含revert函数的时候，调用者节点中并没有push返回地址，而是在之前的几个节点中进行了push
-            # 于是这里取消这个限制，只要是push addr;jump的节点，都可以视为潜在的调用者
+            # 于是这里取消这个限制，只要是无入边节点的前一个节点，就可以视为潜在的调用者
             # # 检查这个节点里面push，是否压入了相应的地址，没有则不进行处理
             # hasReturnAddr = False
             # for addr in callBlock.instrAddrs:
@@ -381,7 +380,8 @@ class AssertionOptimizer:
             # if not hasReturnAddr:
             #     continue
             # 从起始节点开始做dfs，看是否能够走完这个函数
-            funcBegin = self.edges[callBlock.offset][0]  # 因为是push addr;jump因此只有一条出边
+            assert len(self.edges[callBlock.offset]) == 1  # 假设是push addr;jump因此只有一条出边
+            funcBegin = self.edges[callBlock.offset][0]
             funcRange = range(funcBegin, self.cfg.exitBlockId)
             funcBody = []
             stack = Stack()
@@ -392,7 +392,7 @@ class AssertionOptimizer:
                 top = stack.pop()
                 funcBody.append(top)
                 for out in self.edges[top]:
-                    if out not in visited.keys() and out in funcRange:
+                    if out not in visited.keys() and out in funcRange and self.node2FuncId[out] is None:  # 不能是已经标记过的函数
                         stack.push(out)
                         visited[out] = True
             # 检查找出的是否为同一个函数内的节点
@@ -726,7 +726,6 @@ class AssertionOptimizer:
             if _to != 0 and len(_froms) == 0:  # 找到一个没有入边的，非init节点
                 newNode.remove(_to)
                 tmpEdge.pop(_to)
-
 
         # mapper = GraphMapper(self.nodes, self.edges)
         mapper = GraphMapper(newNode, tmpEdge)
