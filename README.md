@@ -433,6 +433,83 @@ function debit(address, bytes calldata) external returns (address, uint) { rever
 
 为了兼容之前的发现，这里将这种死字节码定义为：不是只有一条jumpdest的，没有入边的block
 
+###### 4.28发现：没有入边的jumpdest
+
+1. 在if里面调用mapping会导致没有入边的jumpdest出现。同时，这些jumpdest处的offset并不会被push
+
+   ```
+   pragma solidity ^0.4.0;
+   
+   contract test21 {
+       mapping(address => uint256) balances;
+   
+       function test() returns (bool success) {
+           if (balances[msg.sender] >= 0) {
+               return true;
+           } else {
+               return false;
+           }
+       }
+   }
+   ```
+
+2. 多层if嵌套，也会出现这种情况
+
+   ```
+   pragma solidity ^0.4.0;
+   
+   contract test22 {
+       uint a;
+       uint b;
+       uint c;
+   
+       function test() returns (bool success) {
+           if (a >= 0) {
+               if(a > b){
+                   return true;
+               }
+               else{
+                   return false;
+               }
+           } else {
+               if(c > b){
+                   return true;
+               }
+               else{
+                   return false;
+               }
+           }
+       }
+   }
+   ```
+
+3. if内包含函数，也会出现这种情况
+
+   ```
+   
+   pragma solidity ^0.4.0;
+   
+   contract test23 {
+   
+       uint a;
+       uint b;
+   
+       function judge(uint _a,uint _b)public returns(bool){
+           return _a > _b;
+       }
+   
+       function test() returns (bool success) {
+           if (judge(a,b)) {
+               return true;
+           } else {
+               return false;
+           }
+       }
+   }
+   ```
+
+   
+
 
 
 #### assert并非没有副作用
