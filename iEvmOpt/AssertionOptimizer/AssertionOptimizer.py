@@ -422,6 +422,8 @@ class AssertionOptimizer:
             # 从起始节点开始做dfs，看是否能够走完这个函数
             assert len(self.edges[callBlock.offset]) == 1  # 假设是push addr;jump因此只有一条出边
             funcBegin = self.edges[callBlock.offset][0]
+            if self.node2FuncId[funcBegin] is not None:
+                self.log.fail("未能找全函数节点，放弃优化")
             funcRange = range(funcBegin, self.cfg.exitBlockId)
             funcBody = []
             stack = Stack()
