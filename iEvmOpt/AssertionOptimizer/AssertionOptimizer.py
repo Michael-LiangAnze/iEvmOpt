@@ -207,12 +207,15 @@ class AssertionOptimizer:
            我们不关心函数调用关系产生的“错误的环”，因为这种错误的环我们可以在搜索路径时，可以通过符号执行或者返回地址栈解决掉
         """
 
-        # 第一步，检查是否除了0号offset节点之外，是否还有节点没有入边,若有，则存在返回边错误，一般为递归情况
+        # 第一步，检查是否除了0号offset节点之外，是否还有节点没有入边,若有，则可能存在错误，输出警告信息
+        # 同时记录除起始节点以外没有入边的节点，这些节点用于后续的处理
+        nodeWithoutInedge = set()
         for _to, _from in self.inEdges.items():
             if _to == self.cfg.initBlockId:
                 continue
             if _from.__len__() == 0:
                 self.log.warning("发现一个不是初始节点，但没有入边的Block: {}".format(_to))
+                nodeWithoutInedge.add(_to)
 
         # 第二步，找出所有unconditional jump的边
         for n in self.cfg.blocks.values():
@@ -306,23 +309,78 @@ class AssertionOptimizer:
                     if out not in visited.keys() and out in range(offsetRange[0], offsetRange[1]):
                         stack.push(out)
                         visited[out] = True
-            # 先做一个检查，如果并没能找出所有的函数节点，则放弃这一个函数，因为下面会尝试寻找selfdestruct、revert引起的函数
-            # 检查方式是，看看所有找到的同一个函数的节点的长度拼起来，是否是其应有的长度
+            # 先做一个检查，如果并没能找出所有的函数节点，则:
+            #   1.如果：
+            #       使用没有入边的节点可以填补这一空缺
+            #       没有入边的节点是JUMPDEST
+            #       没有入边的节点对应的offset，没有被push过
+            #      则使用这个节点进行填充，同时将这个节点从nodeWithoutInedge中pop
+            #   2.如果发现无法填补空缺，则放弃这一个函数，因为下面会尝试寻找selfdestruct、revert引起的函数
+            # 检查方式是，对节点进行排序，看前一个节点的offset+length是否等于后一个节点的offset，同时统计长度是否和预期的相同
+            # offsetRange[1] -= 1
+            # funcLen = offsetRange[1] + self.cfg.blocks[offsetRange[1]].length - offsetRange[0]
+            # tempLen = 0
+            # for n in funcBody:
+            #     tempLen += self.cfg.blocks[n].length
+            # if funcLen != tempLen:  # 没能找全节点
+            #     continue
             offsetRange[1] -= 1
-            funcLen = offsetRange[1] + self.cfg.blocks[offsetRange[1]].length - offsetRange[0]
-            tempLen = 0
-            for n in funcBody:
-                tempLen += self.cfg.blocks[n].length
-            if funcLen != tempLen:  # 没能找全节点
+            missingBlocks = [] # 缺失的block
+            funcBody.sort()
+            isProcess = True
+            for i in range(len(funcBody)-1):
+                length = self.blocks[funcBody[i]].length
+                if funcBody[i] + length == funcBody[i+1]:
+                    continue
+                elif funcBody[i] + length + 1 == funcBody[i+1]:# 刚好缺一个字节的长度
+                    missingBlocks.append(funcBody[i] + length)
+                else: # 缺一个不是jumpdest的block，放弃处理这个函数
+                    isProcess = False
+                    break
+            if not isProcess: # 放弃处理这个函数
                 continue
 
-            # 检查通过，找全了函数节点，存储函数信息
+            # 检查找到的所有缺失的block，是否都是满足条件的
+            for missingBlockOffset in missingBlocks:
+                if self.blocks[missingBlockOffset].length != 1:
+                    isProcess = False
+                    break
+                if self.blocks[missingBlockOffset].bytecode[0] != 0x5b:
+                    isProcess = False
+                    break
+                if missingBlockOffset not in nodeWithoutInedge:
+                    isProcess = False
+                    break
+                if missingBlockOffset in self.cfg.pushedData:
+                    # 这暂时是不被允许的，因为这里能识别出来的是，没有push过返回地址的jumpdest
+                    # 这种jumpdest并不影响程序的正确性
+                    # 具体如何触发见readme
+                    self.log.fail("未能找全函数节点，放弃优化")
+            if not isProcess:
+                continue
+
+            # 经过检查，可以通过加jumpdest来使函数保持完整.找全了函数节点，存储函数信息
+            for missingBlockOffset in missingBlocks:
+                funcBody.append(missingBlockOffset)
+                nodeWithoutInedge.remove(missingBlockOffset)
             self.funcCnt += 1
             f = Function(self.funcCnt, offsetRange[0], offsetRange[1], funcBody, self.edges)
             self.funcDict[self.funcCnt] = f
             for node in funcBody:
                 assert self.node2FuncId[node] is None  # 一个点只能被赋值一次
                 self.node2FuncId[node] = self.funcCnt
+            if len(missingBlocks) != 0:
+                if self.isProcessingConstructor:
+                    self.log.info("构造函数中发现无入边JUMPDEST，无入边节点{}修复成功".format(str(node)))
+                else:
+                    self.log.info("运行时函数中发现无入边JUMPDEST，无入边节点:{}修复成功".format(str(node)))
+
+        # 此时不应该还有无入边的jumpdest块
+        for offset in nodeWithoutInedge:
+            if self.blocks[offset].length != 1:
+                continue
+            if self.blocks[offset].bytecode[0] == 0x5b:
+                self.log.fail("未能找全函数节点，放弃优化")
 
         # 第六步，尝试处理没有返回边selfdestruct、revert函数
         # 注意，有些selfdestruct函数是有返回边的，我们处理的是没有返回边的情况
@@ -333,27 +391,9 @@ class AssertionOptimizer:
         # 4.27 新发现：应当返回的节点不一定是JUMPDEST；STOP，见readme
         # 因此，只要发现不是只有一条jumpdest的block，都应该做一遍这个过程
 
-        selfdestructAndRevertNode = []
-        withoutInedgeNode = []
-        for offset, b in self.blocks.items():
-            if offset == 0:
-                continue
-            if originalInEdge[offset].__len__() == 0:  # 没有入边
-                withoutInedgeNode.append(offset)
-            else:
-                continue
-            # if b.length != 2:
-            #     continue
-            # if b.bytecode[0] != 0x5b or b.bytecode[1] != 0x00:
-            #     continue
-            if b.length == 1:
-                if b.bytecode[0] == 0x5b:
-                    continue
-            selfdestructAndRevertNode.append(offset)
-        if selfdestructAndRevertNode.__str__() != withoutInedgeNode.__str__():  # 放弃优化
-            self.log.fail("未能找全函数节点，放弃优化")
         self.nodes.sort()
-        for node in selfdestructAndRevertNode:
+        removedNode = []
+        for node in nodeWithoutInedge:
             # 找出这个可疑节点的上一个节点，它有可能是selfdestruct的调用节点
             callBlock = None
             for b in self.blocks.values():
@@ -418,11 +458,16 @@ class AssertionOptimizer:
                 self.log.info("构造函数中发现无返回边函数，无入边节点{}修复成功".format(str(node)))
             else:
                 self.log.info("运行时函数中发现无返回边函数，无入边节点:{}修复成功".format(str(node)))
+            removedNode.append(node)
+        for node in removedNode:
+            nodeWithoutInedge.remove(node)
 
-        # 最后还要做一个检查，检查是否所有的common节点都被标记为了函数
+        # 最后还要做一个检查，检查是否所有的common节点都被标记为了函数，以及没有入边的节点是否已经被处理干净
         for offset, b in self.blocks.items():
             if b.blockType == "common" and self.node2FuncId[offset] is None:
                 self.log.fail("未能找全函数节点，放弃优化")
+        if len(nodeWithoutInedge) != 0:
+            self.log.fail("未能找全函数节点，放弃优化")
 
         # 第七步，检查一个函数内的节点是否存在环，存在则将其标记出来
         for func in self.funcDict.values():  # 取出一个函数

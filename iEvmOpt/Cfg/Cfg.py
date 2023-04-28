@@ -14,7 +14,10 @@ class Cfg:
         self.bytecodeStr = ""
 
         self.beginIndexInBytecode = 0  # cfg在原字节码中的起始偏移量
-        self.jumpDests = set()  # 存错所有jumpdest的offset，用于tagStack
+        self.jumpDests = set()  # 存储所有jumpdest的offset，用于tagStack
+
+        # 额外的信息
+        self.pushedData = set()  # 存储所有push过的数据
 
     def genBytecodeStr(self):
         # 已经读入了所有的block，将它们拼接为一个长字符串，并设置长度

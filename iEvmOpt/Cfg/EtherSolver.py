@@ -210,6 +210,8 @@ class EtherSolver:
         #   jump的地址是在block内部计算得到的
         # 这种情况下，这个block也有可能是调用节点
         # 因为不知道栈中原有的内容，因此在做执行之前，先往栈中压入128个None
+        # 为了获取cfg中Push过的所有数据，在这里记录一下
+        pushedData = set()
         preInfo = [[None, None, None, None, False] for i in range(128)]
         pushInfo = None
         tagStack = TagStack(self.cfg)
@@ -220,9 +222,13 @@ class EtherSolver:
             tagStack.setTagStack(preInfo)
             tagStack.setBeginBlock(offset)
             while not tagStack.allInstrsExecuted():
+                opcode = tagStack.getOpcode()
                 if tagStack.isLastInstr():
                     pushInfo = tagStack.getTagStackTop()
                 tagStack.execNextOpCode()
+                if 0x60 <= opcode <= 0x7f: # 是一个push指令，获取push的数据
+                    tmp = tagStack.getTagStackTop()
+                    pushedData.add(tmp[0])
             if pushInfo[0] is None:  # 置为了untag
                 continue
             # 检查pushinfo是否与可能的跳转边一致
@@ -230,7 +236,9 @@ class EtherSolver:
             # 如果一致，则这个跳转边一定不是返回边
             if pushInfo[0] in self.cfg.jumpDests:  # and self.cfg.inEdges[pushInfo[0]].__len__() > 1错误的
                 b.couldBeCaller = True
+        self.cfg.pushedData = pushedData
 
+        pushedData = set()
         tagStack = TagStack(self.constructorCfg)
         for offset, b in self.constructorCfg.blocks.items():
             if b.jumpType != "unconditional":
@@ -239,9 +247,13 @@ class EtherSolver:
             tagStack.setTagStack(preInfo)
             tagStack.setBeginBlock(offset)
             while not tagStack.allInstrsExecuted():
+                opcode = tagStack.getOpcode()
                 if tagStack.isLastInstr():
                     pushInfo = tagStack.getTagStackTop()
                 tagStack.execNextOpCode()
+                if 0x60 <= opcode <= 0x7f: # 是一个push指令，获取push的数据
+                    tmp = tagStack.getTagStackTop()
+                    pushedData.add(tmp[0])
             if pushInfo[0] is None:  # 置为了untag
                 continue
             # 检查pushinfo是否与可能的跳转边一致
@@ -249,6 +261,7 @@ class EtherSolver:
             # 如果一致，则这个跳转边一定不是返回边
             if pushInfo[0] in self.constructorCfg.jumpDests:  # and self.cfg.inEdges[pushInfo[0]].__len__() > 1错误的
                 b.couldBeCaller = True
+        self.constructorCfg.pushedData = pushedData
 
         # 设置起始偏移量
         with open(self.srcPath, "r") as f:
