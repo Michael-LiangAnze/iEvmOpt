@@ -325,19 +325,19 @@ class AssertionOptimizer:
             # if funcLen != tempLen:  # 没能找全节点
             #     continue
             offsetRange[1] -= 1
-            missingBlocks = [] # 缺失的block
+            missingBlocks = []  # 缺失的block
             funcBody.sort()
             isProcess = True
-            for i in range(len(funcBody)-1):
+            for i in range(len(funcBody) - 1):
                 length = self.blocks[funcBody[i]].length
-                if funcBody[i] + length == funcBody[i+1]:
+                if funcBody[i] + length == funcBody[i + 1]:
                     continue
-                elif funcBody[i] + length + 1 == funcBody[i+1]:# 刚好缺一个字节的长度
+                elif funcBody[i] + length + 1 == funcBody[i + 1]:  # 刚好缺一个字节的长度
                     missingBlocks.append(funcBody[i] + length)
-                else: # 缺一个不是jumpdest的block，放弃处理这个函数
+                else:  # 缺一个不是jumpdest的block，放弃处理这个函数
                     isProcess = False
                     break
-            if not isProcess: # 放弃处理这个函数
+            if not isProcess:  # 放弃处理这个函数
                 continue
 
             # 检查找到的所有缺失的block，是否都是满足条件的
@@ -424,7 +424,16 @@ class AssertionOptimizer:
             funcBegin = self.edges[callBlock.offset][0]
             if self.node2FuncId[funcBegin] is not None:
                 self.log.fail("未能找全函数节点，放弃优化")
-            funcRange = range(funcBegin, self.cfg.exitBlockId)
+            endNode = None
+            for n in self.nodes:  # 已排序
+                if n <= funcBegin:
+                    continue
+                elif self.node2FuncId[n] is None:
+                    continue
+                else:  # 要么到了Exit，要么到了一个被标记为函数的节点
+                    endNode = n
+            assert endNode is not None
+            funcRange = range(funcBegin, endNode)
             funcBody = []
             stack = Stack()
             visited = {}
