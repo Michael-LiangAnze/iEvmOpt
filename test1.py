@@ -11,7 +11,7 @@ import sys
 """
 if __name__ == "__main__":
 
-    dataPath = 'D:/Projects/iEvmOpt/testContract1'
+    dataPath = 'D:/Projects/iEvmOpt/testContract'
     dataFileList = os.listdir(dataPath)
     targetFile = []
     sizeList = []
@@ -39,29 +39,29 @@ if __name__ == "__main__":
                     #     or s.find("不存在可优化的Assertion") != -1\
                     #     or s.find("没有找到Assertion") != -1
                     # if not c:
-                    if s.find("不存在可优化的Assertion") != -1:
-                        tempSize = os.path.getsize(binPath + '/' + targetBinFile)
-                        if tempSize < limit:
-                            targetFile.append(dataDir + "/bin/" + targetBinFile + "    " + str(tempSize))
-                            sizeList.append(tempSize)
+                    # if s.find("未能找全函数节点，放弃优化") != -1:
+                    #     tempSize = os.path.getsize(binPath + '/' + targetBinFile)
+                    #     if tempSize < limit:
+                    #         targetFile.append(dataDir + "/bin/" + targetBinFile + "    " + str(tempSize))
+                    #         sizeList.append(tempSize)
 
-            # if f == "return_code.json":
-            #     with open(dataDirPath + "/" + f, "r", encoding='utf-8') as rt:
-            #         rtJson = json.load(rt)
-            #         if rtJson[targetBinFile] != '0':  # 返回正常
-            #             success = True
-            #             tempSize = os.path.getsize(binPath + '/' + targetBinFile)
-            #             targetFile.append(dataDir + "/bin/" + targetBinFile + "    " + str(tempSize))
-            #             sizeList.append(tempSize)
-            # if f.find("_report.txt") != -1 and success:
-            #     with open(dataDirPath + "/" + f, "r", encoding='utf-8') as rp:
-            #         s = rp.read()
-            #         s = s.split('\n')
-            #         print(f + "   " + s[-1])
-            #         print(f + "   " + s[-2])
-            #         print(f + "   " + s[-3])
-            #         print(f + "   " + s[-4])
-            #         print(f + "   " + s[-5])
+            if f == "return_code.json":
+                with open(dataDirPath + "/" + f, "r", encoding='utf-8') as rt:
+                    rtJson = json.load(rt)
+                    if rtJson[targetBinFile] != '0':  # 返回正常
+                        success = True
+                        tempSize = os.path.getsize(binPath + '/' + targetBinFile)
+                        targetFile.append(dataDir + "/bin/" + targetBinFile + "    " + str(tempSize))
+                        sizeList.append(tempSize)
+            if f.find("_report.txt") != -1 and success:
+                with open(dataDirPath + "/" + f, "r", encoding='utf-8') as rp:
+                    s = rp.read()
+                    s = s.split('\n')
+                    print(f + "   " + s[-1])
+                    print(f + "   " + s[-2])
+                    print(f + "   " + s[-3])
+                    print(f + "   " + s[-4])
+                    print(f + "   " + s[-5])
 
     sizeList.sort()
     print("total:{}".format(total))

@@ -738,7 +738,7 @@ class AssertionOptimizer:
                 if isSolve:
                     if self.outputProcessInfo:  # 需要输出处理信息
                         self.log.processing("正在计算路径{}的约束".format(pathId))
-                    s = Solver(ctx=executor.getCtx())
+                    s = Solver()
                     self.pathReachable[pathId] = s.check(constrains) == sat
                     if self.outputProcessInfo:  # 需要输出处理信息
                         self.log.processing("路径{}约束求解完毕".format(pathId))
