@@ -10,8 +10,8 @@ import time
 """
 if __name__ == "__main__":
 
-    dataPath = 'D:/Projects/iEvmOpt/testContract'
-    dataDir = "0xBa051891B752ecE3670671812486fe8dd34CC1c8"
+    dataPath = 'D:/Projects/iEvmOpt/testContract1'
+    dataDir = "0x16de59092dae5ccf4a1e6439d611fd0653f0bd01"
     timeoutTime = 360
 
     processInfo = {}

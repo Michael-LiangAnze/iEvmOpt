@@ -1,4 +1,10 @@
+import multiprocessing
+import pickle
+import threading
+import time
 from collections import deque
+from concurrent.futures import ThreadPoolExecutor
+from threading import Thread
 
 from graphviz import Digraph
 from z3 import *
@@ -126,6 +132,7 @@ class AssertionOptimizer:
         self.log.info("函数体识别完毕，一共识别到:{}个函数体".format(self.funcCnt))
 
         # 然后找到所有invalid节点，找出他们到起始节点之间所有的边
+        self.log.info("开始进行路径搜索")
         self.__searchPaths()
 
         callChainNum = 0
@@ -143,9 +150,6 @@ class AssertionOptimizer:
         self.__reachabilityAnalysis()
         self.log.info("可达性分析完毕")
 
-        # 生成cfg的支配树
-        self.__buildDominatorTree()
-
         self.log.info(
             "一共找到{}个待优化的assertion，具体为：{}个完全冗余{}，{}个部分冗余{}，{}个不冗余{}".format(
                 self.invalidNodeList.__len__(), self.fullyRedundantInvNodes.__len__(),
@@ -158,6 +162,12 @@ class AssertionOptimizer:
 
         # 这里需要注意，只有在部分冗余的处理函数里，才会将exit Block假装成数据段
         # 因此，如果只有完全冗余，没有部分冗余，这时候也要执行部分冗余的函数，此时部分冗余的函数只会做假装的工作
+
+        # 生成cfg的支配树
+        if self.outputProcessInfo:
+            self.log.processing("正在生成支配树")
+        self.__buildDominatorTree()
+
         if self.fullyRedundantInvNodes.__len__() > 0:  # 存在完全冗余的情况
             self.log.info("正在对完全冗余的Assertion进行优化")
             self.__optimizeFullyRedundantAssertion()
@@ -428,7 +438,7 @@ class AssertionOptimizer:
             for n in self.nodes:  # 已排序
                 if n <= funcBegin:
                     continue
-                elif self.node2FuncId[n] is None:
+                elif self.node2FuncId[n] is None and n != self.cfg.exitBlockId:
                     continue
                 else:  # 要么到了Exit，要么到了一个被标记为函数的节点
                     endNode = n
@@ -686,6 +696,7 @@ class AssertionOptimizer:
         """
 
         # 第一步，使用求解器判断各条路径是否是可达的
+        pathId2Constrains = {}
         self.invNodeReachable = dict(zip(self.invalidNodeList, [False for i in range(self.invalidNodeList.__len__())]))
         executor = SymbolicExecutor(self.cfg)
         for invNode in self.invalidNodeList:  # 对一个invalid节点
@@ -725,12 +736,13 @@ class AssertionOptimizer:
                             else:
                                 assert 0
                 if isSolve:
-                    s = Solver()
+                    if self.outputProcessInfo:  # 需要输出处理信息
+                        self.log.processing("正在计算路径{}的约束".format(pathId))
+                    s = Solver(ctx=executor.getCtx())
                     self.pathReachable[pathId] = s.check(constrains) == sat
-        # for pid, r in self.pathReachable.items():
-        #     print(pid, r)
+                    if self.outputProcessInfo:  # 需要输出处理信息
+                        self.log.processing("路径{}约束求解完毕".format(pathId))
 
-        # invalidNode2CallChain
         # 第二步，根据各个函数调用链的可达性，判断每个invalid节点的冗余类型
         for invNode in self.invalidNodeList:
             self.invNodeToRedundantCallChain[invNode] = []
@@ -755,18 +767,6 @@ class AssertionOptimizer:
                 else:  # 没有冗余的调用链
                     self.redundantType[invNode] = nonRedundant
                     self.nonRedundantInvNodes.append(invNode)
-        # # 第二步，根据各条路径的可达性，判断每个invalid节点的冗余类型
-        # for invNode in self.invalidNodeList:
-        #     hasReachable = False  # 一个invalid的路径中是否包含可达的路径
-        #     for pathId in self.invalidNode2PathIds[invNode]:  # 取出一条路径
-        #         if self.pathReachable[pathId]:  # 找到一条可达的
-        #             hasReachable = True
-        #     if not hasReachable:  # 没有一条路径可达，是完全冗余
-        #         self.redundantType[invNode] = fullyRedundant
-        #     else:  # 既有可达的也有不可达的，是部分冗余
-        #         self.redundantType[invNode] = partiallyRedundant
-        # for node, t in self.redundantType.items():
-        #     print(node, t)
 
     def __buildDominatorTree(self):
         # 因为支配树算法中，节点是按1~N进行标号的，因此需要先做一个标号映射，并处理映射后的边，才能进行支配树的生成
@@ -1704,3 +1704,13 @@ class AssertionOptimizer:
                 G.edge(str(_from), str(_to))
         G.render(filename=sys.argv[0] + "_" + picName + ".gv",
                  outfile=sys.argv[0] + "_" + picName + ".png", format='png')
+
+
+def solveConstrains(pathId: int, context, constrains: list):
+    log = Logger()
+    log.info("正在计算路径{}的约束".format(pathId))
+    s = Solver(ctx=context)
+    res = s.check(constrains) == sat
+    # res = False
+    log.info("路径{}约束求解完毕".format(pathId))
+    return pathId, res
