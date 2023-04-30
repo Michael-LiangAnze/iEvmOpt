@@ -13,7 +13,7 @@ class Logger:
 
     def fail(self, strInfo:str):
         print("\033[31m{}\033[0m".format(time.strftime('%Y-%m-%d %H:%M:%S - FAILURE : ', time.localtime()) + strInfo))
-        exit(-1)
+        exit(0)
 
     def processing(self,strInfo:str):
         print(time.strftime('%Y-%m-%d %H:%M:%S - PROCESSING : ', time.localtime())+strInfo)

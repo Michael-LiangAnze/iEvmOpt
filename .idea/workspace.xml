@@ -2,13 +2,11 @@
 <project version="4">
   <component name="ChangeListManager">
     <list default="true" id="26761b8b-d032-4bbd-8113-13d1181eb69a" name="变更" comment="">
-      <change afterPath="$PROJECT_DIR$/iEvmOpt/2023-04-30_23-44-20.svg" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.gitignore" beforeDir="false" afterPath="$PROJECT_DIR$/.gitignore" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/iEvmOpt/AssertionOptimizer/AssertionOptimizer.py" beforeDir="false" afterPath="$PROJECT_DIR$/iEvmOpt/AssertionOptimizer/AssertionOptimizer.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/Cfg.py" beforeDir="false" afterPath="$PROJECT_DIR$/iEvmOpt/Cfg/Cfg.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Main.py" beforeDir="false" afterPath="$PROJECT_DIR$/iEvmOpt/Main.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/test1.py" beforeDir="false" afterPath="$PROJECT_DIR$/test1.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/iEvmOpt/AssertionOptimizer/PathGenerator.py" beforeDir="false" afterPath="$PROJECT_DIR$/iEvmOpt/AssertionOptimizer/PathGenerator.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/EtherSolver.py" beforeDir="false" afterPath="$PROJECT_DIR$/iEvmOpt/Cfg/EtherSolver.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/iEvmOpt/Utils/Logger.py" beforeDir="false" afterPath="$PROJECT_DIR$/iEvmOpt/Utils/Logger.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -56,7 +54,7 @@
     <property name="RunOnceActivity.ShowReadmeOnStart" value="true" />
     <property name="last_opened_file_path" value="$PROJECT_DIR$/test5.py" />
   </component>
-  <component name="RunManager" selected="Python.test5">
+  <component name="RunManager" selected="Python.test4">
     <configuration name="Statistics" type="PythonConfigurationType" factoryName="Python">
       <module name="iEvmOpt" />
       <option name="INTERPRETER_OPTIONS" value="" />

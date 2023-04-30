@@ -371,6 +371,7 @@ class AssertionOptimizer:
                     # 这种jumpdest并不影响程序的正确性
                     # 具体如何触发见readme
                     self.log.fail("未能找全函数节点，放弃优化")
+                    exit(0)
             if not isProcess:
                 continue
 
@@ -396,6 +397,7 @@ class AssertionOptimizer:
                 continue
             if self.blocks[offset].bytecode[0] == 0x5b:
                 self.log.fail("未能找全函数节点，放弃优化")
+                exit(0)
 
         # 第六步，尝试处理没有返回边selfdestruct、revert函数
         # 注意，有些selfdestruct函数是有返回边的，我们处理的是没有返回边的情况
@@ -439,6 +441,7 @@ class AssertionOptimizer:
             funcBegin = self.edges[callBlock.offset][0]
             if self.node2FuncId[funcBegin] is not None:
                 self.log.fail("未能找全函数节点，放弃优化")
+                exit(0)
             endNode = None
             for n in self.nodes:  # 已排序
                 if n <= funcBegin:
@@ -472,6 +475,7 @@ class AssertionOptimizer:
             if not findAll:
                 # 这不仅代表着，寻找函数节点的失败，也是合约优化的失败
                 self.log.fail("未能找全函数节点，放弃优化")
+                exit(0)
 
             # 找到了selfdestruct、revert函数，将其标出
             self.funcCnt += 1
@@ -492,8 +496,10 @@ class AssertionOptimizer:
         for offset, b in self.blocks.items():
             if b.blockType == "common" and self.node2FuncId[offset] is None:
                 self.log.fail("未能找全函数节点，放弃优化")
+                exit(0)
         if len(nodeWithoutInedge) != 0:
             self.log.fail("未能找全函数节点，放弃优化")
+            exit(0)
 
         # 第七步，检查一个函数内的节点是否存在环，存在则将其标记出来
         for func in self.funcDict.values():  # 取出一个函数
@@ -506,11 +512,13 @@ class AssertionOptimizer:
                         self.isLoopRelated[node] = True
                         if self.isFuncBodyHeadNode[node]:  # 函数头存在于scc，出现了递归的情况
                             self.log.fail("检测到函数递归调用的情况，该字节码无法被优化!")
+                            exit(0)
         # 这里再做一个检查，看是否所有的common节点都被标记为了函数相关的节点
         for offset, block in self.blocks.items():
             if block.blockType == "common":
                 if self.node2FuncId[offset] == None:  # 没有标记
                     self.log.fail("未能找全函数节点，放弃优化")
+                    exit(0)
                 else:
                     continue
 
@@ -542,6 +550,7 @@ class AssertionOptimizer:
                     self.isLoopRelated[node] = True
                     if self.isFuncBodyHeadNode[node]:  # 函数头存在于scc，出现了递归的情况
                         self.log.fail("检测到函数递归调用的情况，该字节码无法被优化!")
+                        exit(0)
 
         # 第九步，处理可能出现的“自环”，见test12
         for node in self.nodes:
@@ -598,12 +607,14 @@ class AssertionOptimizer:
                         removeList.append(info)
                     else:
                         self.log.fail("函数体的codecopy无法进行分析: offset未知:{}".format(info))
+                        exit(0)
                 elif offset in range(self.funcBodyLength,
                                      self.funcBodyLength + self.dataSegLength):  # 不是None，则offset只能在数据段，不能为代码段
                     # 以数据段的偏移量为开头，且长度不能超出数据段
                     continue
                 else:
                     self.log.fail("函数体的codecopy无法进行分析: offset不在数据段内")
+                    exit(0)
             for info in removeList:
                 self.codeCopyInfo.remove(info)
         else:  # 正在分析的是构造函数cfg
@@ -629,6 +640,7 @@ class AssertionOptimizer:
                     # 访问其他地址
                     # print(self.constructorFuncBodyLength + self.constructorDataSegLength,self.funcBodyLength + self.dataSegLength)
                     self.log.fail("构造函数的codecopy无法进行分析: offset为{}，size为{}".format(info[0], info[4]))
+                    exit(0)
 
         # 第四步，将这些路径根据invalid节点进行归类
         for invNode in self.invalidNodeList:
@@ -1565,6 +1577,7 @@ class AssertionOptimizer:
                     continue
                 else:
                     self.log.fail("构造函数的codecopy无法进行分析: offset为{}，size为{}".format(info[0], info[4]))
+                    exit(0)
             elif offset in range(self.constructorFuncBodyLength,
                                  self.constructorFuncBodyLength + self.constructorDataSegLength):
                 # 访问的是构造函数的数据段
@@ -1585,6 +1598,7 @@ class AssertionOptimizer:
                 # 访问其他地址
                 # print(self.constructorFuncBodyLength + self.constructorDataSegLength,self.funcBodyLength + self.dataSegLength)
                 self.log.fail("构造函数的codecopy无法进行分析: offset为{}，size为{}".format(info[0], info[4]))
+                exit(0)
         for info in removeList:
             self.codeCopyInfo.remove(info)
 
@@ -1614,6 +1628,7 @@ class AssertionOptimizer:
                 offset = newByteNum - offsetByteNum
                 if offset > 0:
                     self.log.fail("构造函数的codecopy无法填入新信息")  # 程序已经结束
+                    exit(0)
                 newBytes = deque()  # 新地址的字节码
                 while newOffset != 0:
                     newBytes.appendleft(newOffset & 0xff)  # 取低八位
@@ -1631,6 +1646,7 @@ class AssertionOptimizer:
                 offset = newByteNum - sizeByteNum
                 if offset > 0:
                     self.log.fail("构造函数的codecopy无法填入新信息")  # 程序已经结束
+                    exit(0)
                 newBytes = deque()  # 新地址的字节码
                 while newSize != 0:
                     newBytes.appendleft(newSize & 0xff)  # 取低八位

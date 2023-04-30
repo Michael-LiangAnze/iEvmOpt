@@ -137,6 +137,7 @@ class PathGenerator:
             if pushInfo[0] is None:
                 self.log.fail(
                     "跳转地址经过了计算，拒绝优化，跳转信息为：{}，当前路径为:{}".format(pushInfo, curPathRecorder.getTagStack().__str__()))
+                exit(0)
             assert pushInfo[0] in self.nodes  # 必须是一个block的offset
             pushInfo.append(curNode)  # 添加一条信息，就是jump所在的block
             self.jumpEdgeInfo.append(pushInfo)
@@ -178,6 +179,7 @@ class PathGenerator:
                             callLoopRelatedFuncId[self.node2FuncId[n]] = None
                         self.log.fail(
                             "检测到环形函数调用链的情况，涉及的函数id有：{}，字节码无法被优化".format([i for i in callLoopRelatedFuncId.keys()]))
+                        exit(0)
                         # 程序已经结束了
                     curReturnAddrStack.push(e.tetrad[1])  # push返回地址
                     self.__dfs(node, curTagStack, curReturnAddrStack, curPathRecorder)
