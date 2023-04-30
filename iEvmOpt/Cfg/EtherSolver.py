@@ -42,36 +42,38 @@ class EtherSolver:
         jarPath = os.path.dirname(__file__) + "\EtherSolve.jar"
         self.log.info("正在使用EtherSolve处理字节码")
 
-        cmd = "java -jar " + jarPath + " -c -H -o " + self.outputPath + self.srcName + "_cfg.html " + self.srcPath
-        p = subprocess.Popen(cmd)
         returnCode = 0
-        try:
-            p.wait(timeout=self.timeOutLimit)
-            returnCode = p.returncode
-        except:
-            cmd = "taskkill /F /PID " + str(p.pid)
-            os.system(cmd)  # 杀死子进程
-            returnCode = -1
-            self.log.fail("EtherSolve处理超时")
-            exit(0)
-        if returnCode != 0:
-            self.log.fail("EtherSolve处理出错")
-            exit(0)
 
-        cmd = "java -jar " + jarPath + " -r -H -o " + self.outputPath + self.srcName + "_constructor_cfg.html " + self.srcPath
-        p = subprocess.Popen(cmd)
-        try:
-            p.wait(timeout=self.timeOutLimit)
-            returnCode = p.returncode
-        except:
-            cmd = "taskkill /F /PID " + str(p.pid)
-            os.system(cmd)  # 杀死子进程
-            returnCode = -1
-            self.log.fail("EtherSolve处理超时")
-            exit(0)
-        if returnCode != 0:
-            self.log.fail("EtherSolve处理出错")
-            exit(0)
+        # 生成HTML用于观察测试
+        # cmd = "java -jar " + jarPath + " -c -H -o " + self.outputPath + self.srcName + "_cfg.html " + self.srcPath
+        # p = subprocess.Popen(cmd)
+        # try:
+        #     p.wait(timeout=self.timeOutLimit)
+        #     returnCode = p.returncode
+        # except:
+        #     cmd = "taskkill /F /PID " + str(p.pid)
+        #     os.system(cmd)  # 杀死子进程
+        #     returnCode = -1
+        #     self.log.fail("EtherSolve处理超时")
+        #     exit(-1)
+        # if returnCode != 0:
+        #     self.log.fail("EtherSolve处理出错")
+        #     exit(-1)
+        #
+        # cmd = "java -jar " + jarPath + " -r -H -o " + self.outputPath + self.srcName + "_constructor_cfg.html " + self.srcPath
+        # p = subprocess.Popen(cmd)
+        # try:
+        #     p.wait(timeout=self.timeOutLimit)
+        #     returnCode = p.returncode
+        # except:
+        #     cmd = "taskkill /F /PID " + str(p.pid)
+        #     os.system(cmd)  # 杀死子进程
+        #     returnCode = -1
+        #     self.log.fail("EtherSolve处理超时")
+        #     exit(-1)
+        # if returnCode != 0:
+        #     self.log.fail("EtherSolve处理出错")
+        #     exit(-1)
 
         cmd = "java -jar " + jarPath + " -c -j -o " + self.outputPath + self.srcName + "_cfg.json " + self.srcPath
         p = subprocess.Popen(cmd)
@@ -83,10 +85,10 @@ class EtherSolver:
             os.system(cmd)  # 杀死子进程
             returnCode = -1
             self.log.fail("EtherSolve处理超时")
-            exit(0)
+            exit(-1)
         if returnCode != 0:
             self.log.fail("EtherSolve处理出错")
-            exit(0)
+            exit(-1)
 
         if self.genPng:
             # 生成构建时cfg
@@ -100,10 +102,10 @@ class EtherSolver:
                 os.system(cmd)  # 杀死子进程
                 returnCode = -1
                 self.log.fail("EtherSolve处理超时")
-                exit(0)
+                exit(-1)
             if returnCode != 0:
                 self.log.fail("EtherSolve处理出错")
-                exit(0)
+                exit(-1)
 
             # 生成运行时cfg
             cmd = "java -jar " + jarPath + " -c -d -o " + self.outputPath + self.srcName + "_cfg.gv " + self.srcPath
@@ -116,10 +118,10 @@ class EtherSolver:
                 os.system(cmd)  # 杀死子进程
                 returnCode = -1
                 self.log.fail("EtherSolve处理超时")
-                exit(0)
+                exit(-1)
             if returnCode != 0:
                 self.log.fail("EtherSolve处理出错")
-                exit(0)
+                exit(-1)
 
             # 读取构建函数的gv文件，生成png图片
             with open(self.outputPath + self.srcName + "_constructor_cfg.gv ") as f:

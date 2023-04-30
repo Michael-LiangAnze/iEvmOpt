@@ -18,9 +18,9 @@ if __name__ == '__main__':
     if len(sys.argv) < 3:
         exit(-1)
 
-    es = EtherSolver(srcPath)
+    # es = EtherSolver(srcPath)
     # es = EtherSolver(srcPath, genPng=True)
-    # es = EtherSolver(srcPath, isParseBefore=True)
+    es = EtherSolver(srcPath, isParseBefore=True)
     constructorCfg = es.getConstructorCfg()
     cfg = es.getCfg()
     constructorDataSegStr = es.getConstructorDataSegStr()
