@@ -18,6 +18,7 @@ class Cfg:
 
         # 额外的信息
         self.pushedData = set()  # 存储所有push过的数据
+        self.invalidExist = False # 是否存在invalid节点
 
     def genBytecodeStr(self):
         # 已经读入了所有的block，将它们拼接为一个长字符串，并设置长度
@@ -59,6 +60,8 @@ class Cfg:
             self.edges[offset] = []
         if offset not in self.inEdges.keys():
             self.inEdges[offset] = []
+        if block.isInvalid:
+            self.invalidExist = True
 
     def addEdge(self, edge: dict):
         # 必须先添加完block再添加edge

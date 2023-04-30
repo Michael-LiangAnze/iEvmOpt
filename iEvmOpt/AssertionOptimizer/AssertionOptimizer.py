@@ -127,6 +127,11 @@ class AssertionOptimizer:
             self.log.processing("运行时的函数体长度为:{}".format(self.funcBodyLength))
             self.log.processing("运行时的数据段长度为:{}\n".format(self.dataSegLength))
 
+        # 简单检查是否有invalid，可以提高效率
+        if not self.cfg.invalidExist:
+            self.log.info("没有找到Assertion，优化结束")
+            return
+
         # 首先识别出所有的函数体，将每个函数体内的强连通分量的所有点标记为loop-related
         self.__identifyAndCheckFunctions()
         self.log.info("函数体识别完毕，一共识别到:{}个函数体".format(self.funcCnt))
