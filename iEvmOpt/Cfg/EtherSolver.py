@@ -37,7 +37,6 @@ class EtherSolver:
         #     dg = DotGraphGenerator(self.cfg.blocks.keys(), self.cfg.edges)
         #     dg.genDotGraph(self.outputPath, self.srcName)
 
-
     def __etherSolve(self):
         jarPath = os.path.dirname(__file__) + "\EtherSolve.jar"
         self.log.info("正在使用EtherSolve处理字节码")
@@ -159,6 +158,12 @@ class EtherSolver:
             self.cfg.addEdge(e)
         self.cfg.genBytecodeStr()
 
+        # 避个坑，这里检查一下是否存在invalid，如果都不存在invalid，则在这里就可以返回了，在Assertion里面检测到没有invalid,程序会结束
+        if not self.cfg.invalidExist:
+            self.constructorDataSeg = "" # 设置一下，不然会报错
+            self.dataSeg = ""
+            return
+
         # 获取起始基本块和终止基本块
         self.cfg.initBlockId = min(self.cfg.blocks.keys())
         assert self.cfg.initBlockId == 0
@@ -190,7 +195,6 @@ class EtherSolver:
         else:
             self.log.info("运行时函数边修复成功")
         self.cfg.edges, self.cfg.inEdges = runtimeKit.getRepairedEdges()
-
 
         # ##############              修复结束                   ################
 
@@ -239,7 +243,7 @@ class EtherSolver:
                 if tagStack.isLastInstr():
                     pushInfo = tagStack.getTagStackTop()
                 tagStack.execNextOpCode()
-                if 0x60 <= opcode <= 0x7f: # 是一个push指令，获取push的数据
+                if 0x60 <= opcode <= 0x7f:  # 是一个push指令，获取push的数据
                     tmp = tagStack.getTagStackTop()
                     pushedData.add(tmp[0])
             if pushInfo[0] is None:  # 置为了untag
@@ -264,7 +268,7 @@ class EtherSolver:
                 if tagStack.isLastInstr():
                     pushInfo = tagStack.getTagStackTop()
                 tagStack.execNextOpCode()
-                if 0x60 <= opcode <= 0x7f: # 是一个push指令，获取push的数据
+                if 0x60 <= opcode <= 0x7f:  # 是一个push指令，获取push的数据
                     tmp = tagStack.getTagStackTop()
                     pushedData.add(tmp[0])
             if pushInfo[0] is None:  # 置为了untag
