@@ -6,7 +6,6 @@ from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from threading import Thread
 
-from graphviz import Digraph
 from z3 import *
 
 from AssertionOptimizer.Function import Function
@@ -1725,56 +1724,56 @@ class AssertionOptimizer:
             f.write(
                 constructorStr + self.constructorDataSegStr + newFuncBodyStr + self.dataSegStr)
 
-    def __outputNewCfgPic(self, picName: str):
-        # 4.11 因为可以用ethersolve直接得出新的cfg图片，因此不再维护之前的边关系，并删除相关的代码，该方法作废
-        return
-        # 测试使用，将新的cfg输出为图片，方便检查
-        self.blocks[self.cfg.exitBlockId].bytecode = bytearray()
-        self.blocks[self.cfg.exitBlockId].length = 0
-        translator = OpcodeTranslator(self.cfg.exitBlockId)
-        for node in self.blocks.keys():
-            self.blocks[node].instrs = translator.translate(self.blocks[node])
-
-        # for b in self.blocks.values():
-        #     b.printBlockInfo()
-        G = Digraph(name="G",
-                    node_attr={'shape': 'box',
-                               'style': 'filled',
-                               'color': 'black',
-                               'fillcolor': 'white',
-                               'fontname': 'arial',
-                               'fontcolor': 'black'
-                               }
-                    )
-        G.attr(bgcolor='transparent')
-        G.attr(rankdir='UD')
-        for node in self.nodes:
-            if self.blocks[node].instrs.__len__() == 0 and node != self.cfg.exitBlockId:
-                continue
-            if node == self.cfg.initBlockId:
-                G.node(name=str(node), label="\l".join(self.blocks[node].instrs) + "\l", fillcolor='gold',
-                       shape='Msquare')
-            elif node == self.cfg.exitBlockId:
-                G.node(name=str(node), label="\l".join(self.blocks[node].instrs) + "\l", fillcolor='crimson',
-                       )
-            elif self.blocks[node].blockType == "dispatcher":
-                if self.blocks[node].jumpType != "terminal":
-                    G.node(name=str(node), label="\l".join(self.blocks[node].instrs) + "\l", fillcolor='lemonchiffon'
-                           )
-                else:
-                    G.node(name=str(node), label="\l".join(self.blocks[node].instrs) + "\l", fillcolor='lemonchiffon',
-                           color='crimson', shape='Msquare')
-            elif self.blocks[node].jumpType == "terminal":  # invalid
-                G.node(name=str(node), label="\l".join(self.blocks[node].instrs) + "\l", color='crimson',
-                       shape='Msquare')
-            else:
-                G.node(name=str(node), label="\l".join(self.blocks[node].instrs) + "\l")
-
-        for _from in self.edges.keys():
-            for _to in self.edges[_from]:
-                G.edge(str(_from), str(_to))
-        G.render(filename=sys.argv[0] + "_" + picName + ".gv",
-                 outfile=sys.argv[0] + "_" + picName + ".png", format='png')
+    # def __outputNewCfgPic(self, picName: str):
+    #     # 4.11 因为可以用ethersolve直接得出新的cfg图片，因此不再维护之前的边关系，并删除相关的代码，该方法作废
+    #     return
+    #     # 测试使用，将新的cfg输出为图片，方便检查
+    #     self.blocks[self.cfg.exitBlockId].bytecode = bytearray()
+    #     self.blocks[self.cfg.exitBlockId].length = 0
+    #     translator = OpcodeTranslator(self.cfg.exitBlockId)
+    #     for node in self.blocks.keys():
+    #         self.blocks[node].instrs = translator.translate(self.blocks[node])
+    #
+    #     # for b in self.blocks.values():
+    #     #     b.printBlockInfo()
+    #     G = Digraph(name="G",
+    #                 node_attr={'shape': 'box',
+    #                            'style': 'filled',
+    #                            'color': 'black',
+    #                            'fillcolor': 'white',
+    #                            'fontname': 'arial',
+    #                            'fontcolor': 'black'
+    #                            }
+    #                 )
+    #     G.attr(bgcolor='transparent')
+    #     G.attr(rankdir='UD')
+    #     for node in self.nodes:
+    #         if self.blocks[node].instrs.__len__() == 0 and node != self.cfg.exitBlockId:
+    #             continue
+    #         if node == self.cfg.initBlockId:
+    #             G.node(name=str(node), label="\l".join(self.blocks[node].instrs) + "\l", fillcolor='gold',
+    #                    shape='Msquare')
+    #         elif node == self.cfg.exitBlockId:
+    #             G.node(name=str(node), label="\l".join(self.blocks[node].instrs) + "\l", fillcolor='crimson',
+    #                    )
+    #         elif self.blocks[node].blockType == "dispatcher":
+    #             if self.blocks[node].jumpType != "terminal":
+    #                 G.node(name=str(node), label="\l".join(self.blocks[node].instrs) + "\l", fillcolor='lemonchiffon'
+    #                        )
+    #             else:
+    #                 G.node(name=str(node), label="\l".join(self.blocks[node].instrs) + "\l", fillcolor='lemonchiffon',
+    #                        color='crimson', shape='Msquare')
+    #         elif self.blocks[node].jumpType == "terminal":  # invalid
+    #             G.node(name=str(node), label="\l".join(self.blocks[node].instrs) + "\l", color='crimson',
+    #                    shape='Msquare')
+    #         else:
+    #             G.node(name=str(node), label="\l".join(self.blocks[node].instrs) + "\l")
+    #
+    #     for _from in self.edges.keys():
+    #         for _to in self.edges[_from]:
+    #             G.edge(str(_from), str(_to))
+    #     G.render(filename=sys.argv[0] + "_" + picName + ".gv",
+    #              outfile=sys.argv[0] + "_" + picName + ".png", format='png')
 
 
 def solveConstrains(pathId: int, context, constrains: list):
