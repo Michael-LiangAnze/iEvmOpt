@@ -17,6 +17,7 @@ from AssertionOptimizer.SymbolicExecutor import SymbolicExecutor
 from AssertionOptimizer.TagStacks.TagStack import TagStack
 from Cfg.Cfg import Cfg
 from Cfg.BasicBlock import BasicBlock
+from Cfg.EtherSolver import EtherSolver
 from GraphTools import DominatorTreeBuilder
 from GraphTools.GraphMapper import GraphMapper
 from GraphTools.TarjanAlgorithm import TarjanAlgorithm
@@ -33,38 +34,44 @@ nonRedundant = "nonRedundant"
 
 
 class AssertionOptimizer:
-    def __init__(self, constructorCfg: Cfg, cfg: Cfg, constructorDataSegStr: str, dataSegStr: str, outputFile: str,
-                 outputProcessInfo: bool = False):
+    def __init__(self, inputFile: str, outputPath: str, outputName: str, outputProcessInfo: bool = False,
+                 outputHtml: bool = False):
         """
         对部分冗余和完全冗余进行优化，并重新生成字节码
-        :param constructorCfg:构造部分cfg
-        :param cfg:运行时函数体的cfg
-        :param constructorDataSegStr:构造部分数据段字符串
-        :param dataSegStr:数据段字符串
-        :param outputFile: 输出文件的路径
+        :param inputFile: 输入文件的路径
+        :param outputPath: 输出文件的路径
+        :param outputName: 输出文件的文件名
         :param outputProcessInfo:是否输出处理过程信息，默认为不输出
+        :param outputHtml:是否输出HTML报告
         """
-        self.constructorCfg = constructorCfg
-        self.cfg = cfg
-        self.constructorDataSegStr = constructorDataSegStr
-        self.dataSegStr = dataSegStr
-        self.blocks = self.cfg.blocks  # 存储基本块，格式为 起始offset:BasicBlock
-        self.outputFile = outputFile  # 处理后的新文件
-        self.log = Logger()
+
+        # 输入输出路径文件
+        self.inputFile = inputFile
+        self.outputPath = outputPath
+        self.outputName = outputName
         self.outputProcessInfo = outputProcessInfo
+        self.outputHtml = outputHtml
+
+        # 存储cfg需要用到的信息
+        self.constructorCfg = None
+        self.cfg = None
+        self.constructorDataSegStr = None
+        self.dataSegStr = None
+
+        self.blocks = None  # 存储基本块，格式为 起始offset:BasicBlock
+
+        self.log = Logger()
 
         # 函数识别、处理时需要用到的信息
         self.uncondJumpEdge = []  # 存储所有的unconditional jump的边，类型为JumpEdge
-        self.nodes = list(self.cfg.blocks.keys())  # 存储点，格式为 [n1,n2,n3...]
-        self.edges = self.cfg.edges  # 存储出边表，格式为 from:[to1,to2...]
-        self.inEdges = self.cfg.inEdges  # 存储入边表，格式为 to:[from1,from2...]
+        self.nodes = []  # 存储点，格式为 [n1,n2,n3...]
+        self.edges = {}  # 存储出边表，格式为 from:[to1,to2...]
+        self.inEdges = {}  # 存储入边表，格式为 to:[from1,from2...]
         self.funcCnt = 0  # 函数计数
         self.funcDict = {}  # 记录找到的所有函数，格式为：  funcId:function
-        self.node2FuncId = dict(
-            zip(self.nodes, [None for i in range(0, self.nodes.__len__())]))  # 记录节点属于哪个函数，格式为：  node：funcId
-        self.isFuncBodyHeadNode = dict(
-            zip(self.nodes, [False for i in range(0, len(self.nodes))]))  # 函数体头结点信息，用于后续做函数内环压缩时，判断某个函数是否存在递归的情况
-        self.isLoopRelated = dict(zip(self.nodes, [False for i in range(0, len(self.nodes))]))  # 标记各个节点是否为loop-related
+        self.node2FuncId = {}  # 记录节点属于哪个函数，格式为：  node：funcId
+        self.isFuncBodyHeadNode = {}  # 函数体头结点信息，用于后续做函数内环压缩时，判断某个函数是否存在递归的情况
+        self.isLoopRelated = {}  # 标记各个节点是否为loop-related
         self.isFuncCallLoopRelated = None  # 记录节点是否在函数调用环之内，该信息只能由路径搜索得到
 
         # 路径搜索需要用到的信息
@@ -86,11 +93,10 @@ class AssertionOptimizer:
 
         # 冗余assertion优化需要用到的信息
         self.domTree = {}  # 支配树。注意，为了方便从invalid节点往前做遍历，该支配树存储的是入边，格式为   to:from
-        self.removedRange = dict(
-            zip(self.nodes, [[] for i in range(0, len(self.nodes))]))  # 记录每个block中被移除的区间，每个区间的格式为:[from,to)
+        self.removedRange = {}  # 记录每个block中被移除的区间，格式为: node: [[from1,to1),[from2,to2)]
 
         # 重定位需要用到的信息
-        self.jumpEdgeInfo = None  # 跳转边信息，格式为:[[push的值，push的字节数，push指令的地址，push指令所在的block，jump所在的block，跳转的type(可选),新老函数体之间的offset(可选)]]
+        self.jumpEdgeInfo = []  # 跳转边信息，格式为:[[push的值，push的字节数，push指令的地址，push指令所在的block，jump所在的block，跳转的type(可选),新老函数体之间的offset(可选)]]
         # 这里给一个设定：
         # 在重定位时，一旦出现了第六个和第七个参数，即说明这是新构造函数体的相关跳转信息
         # 此时为第一次读取到这条信息，后面会根据这条信息进行试填入。填入之后，直接修改信息，然后将最后两个参数pop，即将该信息变回到普通的信息，统一处理。
@@ -106,10 +112,10 @@ class AssertionOptimizer:
         self.constructorOpcode = None  # constructor的字节码
         self.newFuncBodyOpcode = None  # 原函数体相关的字节码
 
-        self.constructorFuncBodyLength = self.constructorCfg.bytecodeLength
-        self.funcBodyLength = self.cfg.bytecodeLength
-        self.constructorDataSegLength = self.constructorDataSegStr.__len__() // 2
-        self.dataSegLength = self.dataSegStr.__len__() // 2
+        self.constructorFuncBodyLength = 0
+        self.funcBodyLength = 0
+        self.constructorDataSegLength = 0
+        self.dataSegLength = 0
 
         # copdcopy信息，格式: [[offset push的值，offset push的字节数，offset push指令的地址， offset push指令所在的block,
         #                       size push的值，size push的字节数，size push指令的地址， size push指令所在的block，codecopy所在的block]]
@@ -120,6 +126,7 @@ class AssertionOptimizer:
 
     def optimize(self):
         self.log.info("开始进行字节码分析")
+        self.__etherSolve()
         if self.outputProcessInfo:
             self.log.processing("\n\n以下是原字节码文件的长度信息:")
             self.log.processing("构造函数的函数体长度为:{}".format(self.constructorFuncBodyLength))
@@ -140,15 +147,11 @@ class AssertionOptimizer:
         self.log.info("开始进行路径搜索")
         self.__searchPaths()
 
-        callChainNum = 0
-        for invNode in self.invalidNodeList:
-            callChainNum += self.invalidNode2CallChain[invNode].__len__()
         if self.invalidNodeList.__len__() == 0:
             self.log.info("没有找到Assertion，优化结束")
             return
         self.log.info(
-            "路径搜索完毕，一共找到{}个Assertion，一共找到{}条路径，{}条函数调用链".format(self.invalidNodeList.__len__(),
-                                                                self.invalidPaths.__len__(), callChainNum))
+            "路径搜索完毕，一共找到{}个Assertion:{}".format(self.invalidNodeList.__len__(), self.invalidNodeList))
 
         # 求解各条路径是否可行
         self.log.info("正在分析路径可达性")
@@ -156,11 +159,14 @@ class AssertionOptimizer:
         self.log.info("可达性分析完毕")
 
         self.log.info(
-            "一共找到{}个待优化的assertion，具体为：{}个完全冗余{}，{}个部分冗余{}，{}个不冗余{}".format(
-                self.invalidNodeList.__len__(), self.fullyRedundantInvNodes.__len__(),
+            "分析结果：{}个完全冗余{}，{}个部分冗余{}，{}个不冗余{}".format(
+                self.fullyRedundantInvNodes.__len__(),
                 self.fullyRedundantInvNodes.__str__(),
-                self.partiallyRedundantInvNodes.__len__(), self.partiallyRedundantInvNodes.__str__(),
-                self.nonRedundantInvNodes.__len__(), self.nonRedundantInvNodes.__str__()))
+                self.partiallyRedundantInvNodes.__len__(),
+                self.partiallyRedundantInvNodes.__str__(),
+                self.nonRedundantInvNodes.__len__(),
+                self.nonRedundantInvNodes.__str__())
+        )
         if self.fullyRedundantInvNodes.__len__() == 0 and self.partiallyRedundantInvNodes.__len__() == 0:
             self.log.info("不存在可优化的Assertion，优化结束")
             return
@@ -207,9 +213,52 @@ class AssertionOptimizer:
             self.log.processing("运行时的数据段长度为:{}".format(self.dataSegLength))
 
         # 将优化后的运行时字节码写入文件
-        self.log.info("正在将优化后的字节码写入到文件: {}".format(self.outputFile))
         self.__outputFile()
         self.log.info("写入完毕")
+
+    def __etherSolve(self):
+        '''
+        使用ethersolve对字节码进行分析
+        :return:
+        '''
+        # 检查文件路径是否存在
+        if not os.path.exists(self.inputFile):
+            self.log.fail("输入文件:{} 不存在".format(self.inputFile))
+        if not os.path.exists(self.outputPath):
+            self.log.fail("输出路径:{} 不存在".format(self.outputPath))
+
+        self.inputFile = self.inputFile.replace("\\", "/")
+        self.inputFile = self.inputFile.replace("\\\\", "/")
+        self.outputPath = self.outputPath.replace("\\", "/")
+        self.outputPath = self.outputPath.replace("\\\\", "/")
+        if self.outputPath[-1] != '/':
+            self.outputPath += '/'
+
+        # 使用ethersolve工具进行处理
+        es = EtherSolver(self.inputFile, self.outputPath, outputHtml=self.outputHtml)
+        es.execSolver()
+
+        # 处理完成之后，对优化使用到的数据进行初始化
+        self.constructorCfg = es.getConstructorCfg()
+        self.cfg = es.getCfg()
+        self.constructorDataSegStr = es.getConstructorDataSegStr()
+        self.dataSegStr = es.getDataSeg()
+        self.constructorFuncBodyLength = self.constructorCfg.bytecodeLength
+        self.funcBodyLength = self.cfg.bytecodeLength
+        self.constructorDataSegLength = self.constructorDataSegStr.__len__() // 2
+        self.dataSegLength = self.dataSegStr.__len__() // 2
+        self.blocks = self.cfg.blocks  # 存储基本块，格式为 起始offset:BasicBlock
+        self.nodes = list(self.cfg.blocks.keys())  # 存储点，格式为 [n1,n2,n3...]
+        self.edges = self.cfg.edges  # 存储出边表，格式为 from:[to1,to2...]
+        self.inEdges = self.cfg.inEdges  # 存储入边表，格式为 to:[from1,from2...]
+        self.node2FuncId = dict(
+            zip(self.nodes, [None for i in range(0, self.nodes.__len__())]))  # 记录节点属于哪个函数，格式为：  node：funcId
+        self.isFuncBodyHeadNode = dict(
+            zip(self.nodes, [False for i in range(0, len(self.nodes))]))  # 函数体头结点信息，用于后续做函数内环压缩时，判断某个函数是否存在递归的情况
+        self.isLoopRelated = dict(zip(self.nodes, [False for i in range(0, len(self.nodes))]))  # 标记各个节点是否为loop-related
+        self.isFuncCallLoopRelated = None  # 记录节点是否在函数调用环之内，该信息只能由路径搜索得
+        self.removedRange = dict(
+            zip(self.nodes, [[] for i in range(0, len(self.nodes))]))  # 记录每个block中被移除的区间，每个区间的格式为:[from,to)
 
     def __identifyAndCheckFunctions(self):
         """
@@ -998,9 +1047,9 @@ class AssertionOptimizer:
             else:  # 不止一个入边，不删jumpdest
                 self.funcDict[targetFuncId].addRemovedRangeInfo(invNode, [targetAddr, targetNode, invNode + 1])
 
-        if self.abandonedFullyRedundantInvNodes.__len__() != 0:  # 有移除的invalid
+        if self.abandonedpartiallyRedundantInvNodes.__len__() != 0:  # 有移除的invalid
             self.log.info(
-                "放弃优化有副作用的Assertion:{}".format(",".join([str(n) for n in self.abandonedFullyRedundantInvNodes])))
+                "放弃优化有副作用的Assertion:{}".format(",".join([str(n) for n in self.abandonedpartiallyRedundantInvNodes])))
 
         # 第五步，对每一个包含部分冗余的函数体，都构造一个新函数体，其中去除了assertion相关的字节码
         # 同时，将旧函数体节点的对应信息，添加到新函数体中去
@@ -1671,7 +1720,8 @@ class AssertionOptimizer:
         '''
         constructorStr = "".join(['{:02x}'.format(num) for num in self.constructorOpcode])
         newFuncBodyStr = "".join(['{:02x}'.format(num) for num in self.newFuncBodyOpcode])
-        with open(self.outputFile, "w+") as f:
+        self.log.info("正在将优化后的字节码写入到文件: {}".format(self.outputPath + self.outputName))
+        with open(self.outputPath + self.outputName, "w+") as f:
             f.write(
                 constructorStr + self.constructorDataSegStr + newFuncBodyStr + self.dataSegStr)
 

@@ -16,4 +16,4 @@ class Logger:
         exit(0)
 
     def processing(self,strInfo:str):
-        print(time.strftime('%Y-%m-%d %H:%M:%S - PROCESSING : ', time.localtime())+strInfo)
+        print(time.strftime('%Y-%m-%d %H:%M:%S - PROCESS DETAIL : ', time.localtime())+strInfo)

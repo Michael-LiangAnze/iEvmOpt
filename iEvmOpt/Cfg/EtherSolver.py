@@ -1,6 +1,8 @@
 import os
+import shutil
 import subprocess
 import json
+import sys
 
 import graphviz
 
@@ -14,68 +16,37 @@ from Utils.Logger import Logger
 
 class EtherSolver:
 
-    def __init__(self, srcPath: str, isParseBefore: bool = False, genPng=False):
-        """ 使用EtherSolve工具分析字节码文件，得到对应的json、html、gv文件
-            并通过json文件构造cfg
-        :param isParseBefore:之前是否已经得到过了输出文件，若为False则不再对字节码使用EtherSolve分析，而是直接读取对应的输出文件
-        :param genPng:生成png图片
+    def __init__(self, srcPath: str, outputPath: str, outputHtml=False):
+        """ 使用EtherSolve工具分析字节码文件，得到对应的json、html文件并通过json文件构造cfg
+        :param srcPath:输入字节码路径
+        :param outputPath:输出路径
+        :param outputHtml:生成CFG的HTML文件
         """
-        self.srcPath = srcPath  # 原bin文件的路径
-        self.genPng = genPng
+        self.srcPath = srcPath  # 输入bin文件的路径
+        self.outputPath = outputPath  # 输出的目录名
+        self.outputHtml = outputHtml
         self.srcName = os.path.basename(srcPath).split(".")[0]  # 原bin文件的文件名
-        self.outputPath = "Cfg\CfgOutput\\"  # 输出的目录名
+
         self.constructorCfg = Cfg()
         self.cfg = Cfg()
         self.constructorDataSeg = None  # 构建函数体后的数据段
         self.dataSeg = None  # 函数体后的数据段
         self.log = Logger()
         self.timeOutLimit = 300  # 5min
-        if not isParseBefore:
-            self.__etherSolve()
-        self.__buildCfg()
-        # if not isParseBefore:
-        #     dg = DotGraphGenerator(self.cfg.blocks.keys(), self.cfg.edges)
-        #     dg.genDotGraph(self.outputPath, self.srcName)
 
-    def __etherSolve(self):
-        jarPath = os.path.dirname(__file__) + "\EtherSolve.jar"
-        self.log.info("正在使用EtherSolve处理字节码")
+    def execSolver(self):
+        self.log.info("正在使用EtherSolve生成JSON文件")
 
+        # 对文件的路径进行处理
+        #  坑：EtherSolve不接受绝对地址的输出目录，因此将输入目录和输出目录改为相对目录
+        # 相对与当前文件的相对地址，然后在使用子进程进行处理时，指定工作目录为当前文件所在目录
+        # 即，对于EtherSolve的一切输出，将暂时输出到CfgOutput当中，后面我们再将它们移动到输出目录里
+        relSrcPathForEs = os.path.relpath(self.srcPath, os.path.dirname(__file__))  # 为EtherSolve确定的相对路径
+
+        # 生成JSON文件
         returnCode = 0
-
-        # 生成HTML用于观察测试
-        # cmd = "java -jar " + jarPath + " -c -H -o " + self.outputPath + self.srcName + "_cfg.html " + self.srcPath
-        # p = subprocess.Popen(cmd)
-        # try:
-        #     p.wait(timeout=self.timeOutLimit)
-        #     returnCode = p.returncode
-        # except:
-        #     cmd = "taskkill /F /PID " + str(p.pid)
-        #     os.system(cmd)  # 杀死子进程
-        #     returnCode = -1
-        #     self.log.fail("EtherSolve处理超时")
-        #     exit(-1)
-        # if returnCode != 0:
-        #     self.log.fail("EtherSolve处理出错")
-        #     exit(-1)
-        #
-        # cmd = "java -jar " + jarPath + " -r -H -o " + self.outputPath + self.srcName + "_constructor_cfg.html " + self.srcPath
-        # p = subprocess.Popen(cmd)
-        # try:
-        #     p.wait(timeout=self.timeOutLimit)
-        #     returnCode = p.returncode
-        # except:
-        #     cmd = "taskkill /F /PID " + str(p.pid)
-        #     os.system(cmd)  # 杀死子进程
-        #     returnCode = -1
-        #     self.log.fail("EtherSolve处理超时")
-        #     exit(-1)
-        # if returnCode != 0:
-        #     self.log.fail("EtherSolve处理出错")
-        #     exit(-1)
-
-        cmd = "java -jar " + jarPath + " -c -j -o " + self.outputPath + self.srcName + "_cfg.json " + self.srcPath
-        p = subprocess.Popen(cmd)
+        cmd = "java -jar EtherSolve.jar -c -j -o CfgOutput/" + self.srcName + "_cfg.json " + relSrcPathForEs
+        p = subprocess.Popen(cmd, cwd=os.path.dirname(__file__))
         try:
             p.wait(timeout=self.timeOutLimit)
             returnCode = p.returncode
@@ -89,10 +60,12 @@ class EtherSolver:
             self.log.fail("EtherSolve处理出错")
             exit(-1)
 
-        if self.genPng:
-            # 生成构建时cfg
-            cmd = "java -jar " + jarPath + " -r -d -o " + self.outputPath + self.srcName + "_constructor_cfg.gv " + self.srcPath
-            p = subprocess.Popen(cmd)
+        # 生成HTML用于观察测试
+        if self.outputHtml:
+            self.log.info("正在使用EtherSolve生成运行时CFG的HTML报告")
+
+            cmd = "java -jar EtherSolve.jar -c -H -o CfgOutput/" + self.srcName + "_runtime_cfg.html " + relSrcPathForEs
+            p = subprocess.Popen(cmd, cwd=os.path.dirname(__file__))
             try:
                 p.wait(timeout=self.timeOutLimit)
                 returnCode = p.returncode
@@ -106,9 +79,9 @@ class EtherSolver:
                 self.log.fail("EtherSolve处理出错")
                 exit(-1)
 
-            # 生成运行时cfg
-            cmd = "java -jar " + jarPath + " -c -d -o " + self.outputPath + self.srcName + "_cfg.gv " + self.srcPath
-            p = subprocess.Popen(cmd)
+            self.log.info("正在使用EtherSolve生成构造函数CFG的HTML报告")
+            cmd = "java -jar EtherSolve.jar -r -H -o CfgOutput/" + self.srcName + "_constructor_cfg.html " + relSrcPathForEs
+            p = subprocess.Popen(cmd, cwd=os.path.dirname(__file__))
             try:
                 p.wait(timeout=self.timeOutLimit)
                 returnCode = p.returncode
@@ -122,24 +95,29 @@ class EtherSolver:
                 self.log.fail("EtherSolve处理出错")
                 exit(-1)
 
-            # 读取构建函数的gv文件，生成png图片
-            with open(self.outputPath + self.srcName + "_constructor_cfg.gv ") as f:
-                g = f.read()
-            dot = graphviz.Source(g)
-            dot.render(outfile=self.outputPath + self.srcName + "_constructor_cfg.png", format='png')
+        # 使用输出文件构建CFG
+        self.__buildCfg()
 
-            # 读取运行时的gv文件，生成png图片
-            with open(self.outputPath + self.srcName + "_cfg.gv ") as f:
-                g = f.read()
-            dot = graphviz.Source(g)
-            dot.render(outfile=self.outputPath + self.srcName + "_cfg.png", format='png')
+        # 为了不占用iEvmOpt的大小，将所有的输出文件都移动到输出目录当中
+        # 如果原目录下已经存在同名的文件，则直接删除
+        if os.path.exists(self.outputPath + "/" + self.srcName + "_cfg.json"):
+            os.remove(self.outputPath + "/" + self.srcName + "_cfg.json")
+        shutil.move(os.path.dirname(__file__) + "/CfgOutput/" + self.srcName + "_cfg.json", self.outputPath)
+        if self.outputHtml:
+            if os.path.exists(self.outputPath + "/" + self.srcName + "_runtime_cfg.html"):
+                os.remove(self.outputPath + "/" + self.srcName + "_runtime_cfg.html")
+            shutil.move(os.path.dirname(__file__) + "/CfgOutput/" + self.srcName + "_runtime_cfg.html", self.outputPath)
+            if os.path.exists(self.outputPath + "/" + self.srcName + "_constructor_cfg.html"):
+                os.remove(self.outputPath + "/" + self.srcName + "_constructor_cfg.html")
+            shutil.move(os.path.dirname(__file__) + "/CfgOutput/" + self.srcName + "_constructor_cfg.html",
+                        self.outputPath)
 
         self.log.info("EtherSolve处理完毕")
 
     def __buildCfg(self):
         self.log.info("正在构建CFG")
         # 读入json文件
-        with open(self.outputPath + self.srcName + "_cfg.json ", 'r', encoding='UTF-8') as f:
+        with open(os.path.dirname(__file__) + "/CfgOutput/" + self.srcName + "_cfg.json ", 'r', encoding='UTF-8') as f:
             jsonInfo = json.load(f)
         f.close()
         # 读取构建信息
@@ -160,7 +138,7 @@ class EtherSolver:
 
         # 避个坑，这里检查一下是否存在invalid，如果都不存在invalid，则在这里就可以返回了，在Assertion里面检测到没有invalid,程序会结束
         if not self.cfg.invalidExist:
-            self.constructorDataSeg = "" # 设置一下，不然会报错
+            self.constructorDataSeg = ""  # 设置一下，不然会报错
             self.dataSeg = ""
             return
 
