@@ -2,15 +2,10 @@ import os
 import shutil
 import subprocess
 import json
-import sys
-
-import graphviz
-
 from AssertionOptimizer.TagStacks.TagStack import TagStack
 from Cfg.BasicBlock import BasicBlock
 from Cfg.Cfg import Cfg
 from Cfg.CfgRepairKit import CfgRepairKit
-from Utils import DotGraphGenerator
 from Utils.Logger import Logger
 
 
