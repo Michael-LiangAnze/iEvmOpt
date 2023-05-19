@@ -112,7 +112,7 @@ class EtherSolver:
     def __buildCfg(self):
         self.log.info("正在构建CFG")
         # 读入json文件
-        with open(os.path.dirname(__file__) + "/CfgOutput/" + self.srcName + "_cfg.json ", 'r', encoding='UTF-8') as f:
+        with open(os.path.dirname(__file__) + "/CfgOutput/" + self.srcName + "_cfg.json", 'r', encoding='UTF-8') as f:
             jsonInfo = json.load(f)
         f.close()
         # 读取构建信息
