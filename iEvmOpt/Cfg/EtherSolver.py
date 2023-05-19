@@ -41,7 +41,7 @@ class EtherSolver:
         # 生成JSON文件
         returnCode = 0
         cmd = "java -jar EtherSolve.jar -c -j -o CfgOutput/" + self.srcName + "_cfg.json " + relSrcPathForEs
-        p = subprocess.Popen(cmd, cwd=os.path.dirname(__file__))
+        p = subprocess.Popen(cmd, cwd=os.path.dirname(__file__),shell=True)
         try:
             p.wait(timeout=self.timeOutLimit)
             returnCode = p.returncode
@@ -60,7 +60,7 @@ class EtherSolver:
             self.log.info("正在使用EtherSolve生成运行时CFG的HTML报告")
 
             cmd = "java -jar EtherSolve.jar -c -H -o CfgOutput/" + self.srcName + "_runtime_cfg.html " + relSrcPathForEs
-            p = subprocess.Popen(cmd, cwd=os.path.dirname(__file__))
+            p = subprocess.Popen(cmd, cwd=os.path.dirname(__file__),shell=True)
             try:
                 p.wait(timeout=self.timeOutLimit)
                 returnCode = p.returncode
@@ -76,7 +76,7 @@ class EtherSolver:
 
             self.log.info("正在使用EtherSolve生成构造函数CFG的HTML报告")
             cmd = "java -jar EtherSolve.jar -r -H -o CfgOutput/" + self.srcName + "_constructor_cfg.html " + relSrcPathForEs
-            p = subprocess.Popen(cmd, cwd=os.path.dirname(__file__))
+            p = subprocess.Popen(cmd, cwd=os.path.dirname(__file__),shell=True)
             try:
                 p.wait(timeout=self.timeOutLimit)
                 returnCode = p.returncode
