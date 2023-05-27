@@ -264,8 +264,8 @@ class AssertionOptimizer:
         识别所有的函数
         给出三个基本假设：
         1. 同一个函数内的指令的地址都是从小到大连续的
-        2. 任何函数调用的起始边，必然是伴随这样两条指令产生的：PUSH 返回地址;JUMP
-        3. 任何函数调用的返回边，必然不是这样的结构：PUSH 返回地址;JUMP
+        2. 任何函数的调用节点，必然是现在本节点内push跳转地址再进行无条件跳转
+        3. 任何函数在进行返回的时候，必然不会再本节点内push跳转地址，而是使用栈上的某个已有的地址，最后进行无条件跳转
         给出一个求解前提：
            我们不关心函数调用关系产生的“错误的环”，因为这种错误的环我们可以在搜索路径时，可以通过符号执行或者返回地址栈解决掉
         """
@@ -335,26 +335,6 @@ class AssertionOptimizer:
             for pair in pairs:
                 self.edges[pair[0]].append(pair[1])
                 self.inEdges[pair[1]].append(pair[0])
-
-        # # 按组赋颜色
-        # groupId = 0
-        # groups = dict(zip(self.nodes, [0 for i in range(0, len(self.nodes))]))
-        # for rangeInfo in funcRange2Calls.keys():
-        #     offsetRange = json.loads(rangeInfo)
-        #     groupId += 1
-        #     for node in self.nodes:
-        #         if node in range(offsetRange[0], offsetRange[1] + 1):
-        #             # assert groups[node] == 0  # 不能是赋值过的
-        #             groups[node] = groupId
-        # # 不是common节点，赋上其他颜色。这样，没有和函数关联的节点，便是透明的
-        # groupId += 1
-        # for node in self.nodes:
-        #     if self.blocks[node].blockType != 'common':
-        #         groups[node] = groupId
-        # length = dict(zip(self.nodes, [b.length for b in self.blocks.values()]))
-        # # g3 = DotGraphGenerator(self.nodes, self.edges, groups, length)
-        # g3 = DotGraphGenerator(self.nodes, oldEdge, groups, length)
-        # g3.genDotGraph(sys.argv[0], "tmp")
 
         # 第五步，从一个函数的funcbody的起始block开始dfs遍历，只走offset范围在 [第一条指令所在的block的offset,最后一条指令所在的block的offset]之间的节点，尝试寻找出所有的函数节点
         for rangeInfo in funcRange2Calls.keys():  # 找到一个函数
@@ -471,7 +451,7 @@ class AssertionOptimizer:
             # 之前的假设是，在这里会压入一个返回地址，对于遇到的selfdestruct函数，也大多数成立
             # 现在观察到合约0xE0339e6EBd1CCC09232d1E979d50257268B977Ef在调用包含revert函数的时候，调用者节点中并没有push返回地址，而是在之前的几个节点中进行了push
             # 于是这里取消这个限制，只要是无入边节点的前一个节点，就可以视为潜在的调用者
-            # # 检查这个节点里面push，是否压入了相应的地址，没有则不进行处理
+            # 检查这个节点里面push，是否压入了相应的地址，没有则不进行处理
             # hasReturnAddr = False
             # for addr in callBlock.instrAddrs:
             #     i = addr - callBlock.offset
@@ -573,6 +553,8 @@ class AssertionOptimizer:
         # 第八步，因为dispatcher中也有可能存在scc，因此需要将它们也标记出来
         # 4.21新问题：dispatcher也可能被识别为函数体，如在KOLUSDTFund.bin的构造函数中，某些函数体就是由dispatcher节点构成的
         # 因此，讨论dispatcher中scc的问题时，应当考虑的是，非函数的非common节点
+        # 最新：不再对构造函数进行这样的处理，不必要对他们进行关系，这一步可以完全删除
+
         # 先生成子图
         nonCommonNodes = []  # 如果从0开始，一次走不完，则取一个非common节点开始（可能是common、fallback
         subGraphEdges = {}  # 子图的边
@@ -630,13 +612,9 @@ class AssertionOptimizer:
                                   self.node2FuncId, self.funcDict)
         generator.genPath()
         paths = generator.getPath()
-
         self.jumpEdgeInfo = generator.getJumpEdgeInfo()
         self.codeCopyInfo = generator.getCodecopyInfo()
-        # for p in paths:
-        #     p.printPath()
-        # for info in self.codeCopyInfo:
-        #     print(info)
+
 
         # 第三步，做一个检查信息，看codecopy指令是否只是用于复制运行时的代码，或者是用于访问数据段的信息
         # codecopy信息，格式: [[offset push的值，offset push的字节数，offset push指令的地址， offset push指令所在的block,
@@ -698,10 +676,6 @@ class AssertionOptimizer:
             self.invalidPaths[pathId] = path
             invNode = path.getLastNode()
             self.invalidNode2PathIds[invNode].append(pathId)
-        # for k, v in self.invalidNode2PathIds.items():
-        #     print("invalid node is:{}".format(k))
-        #     for pathId in v:
-        #         self.invalidPaths[pathId].printPath()
 
         # 第五步，对于一个Invalid节点，检查它的所有路径中，是否存在scc相关的节点
         # 若有，则这些路径对应的invalid将不会被分析
@@ -747,12 +721,6 @@ class AssertionOptimizer:
             self.invalidNode2CallChain[invNode] = []
             for callChain, pathIds in callChain2PathIds.items():
                 self.invalidNode2CallChain[invNode].append(pathIds)
-
-        # for k, v in self.invalidNode2PathIds.items():
-        #     print("invalid node is:{}".format(k))
-        #     for pathId in v:
-        #         self.invalidPaths[pathId].printPath()
-        # print(self.invalidNode2CallChain)
 
     def __reachabilityAnalysis(self):
         """
@@ -1530,7 +1498,14 @@ class AssertionOptimizer:
         为了重用之前写过的代码，直接将当前的cfg信息改成constructorcfg的信息，并初始化相关数据结构即可
         :return:None
         """
-        # print(self.runtimeDataSegOffset)
+        # 因为构造函数的CFG在不少情况下并不是完备的，很多节点会出现没有入边的情况
+        # 因此该函数已经作废，即不再对构造函数CFG使用和运行时CFG一样的方法去处理
+        # 现在的处理方法是：只修改构造函数中与CODECOPY相关的信息，详见__processCodecopyInConstructor函数
+        # 后续如果能够构建出完备的构造函数CFG，可以考虑使用本函数
+        # 现在所有与构造函数相关的代码，如self.isProcessingConstructor为true时的代码，均已作废
+        # 有兴趣可以参考一下，没有兴趣可以直接删除
+
+
         self.isProcessingConstructor = True
 
         # 第一步，将constructorcfg设置为cfg，并初始化相关信息

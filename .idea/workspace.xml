@@ -1,14 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="ChangeListManager">
-    <list default="true" id="26761b8b-d032-4bbd-8113-13d1181eb69a" name="变更" comment="">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/AssertionOptimizer/AssertionOptimizer.py" beforeDir="false" afterPath="$PROJECT_DIR$/iEvmOpt/AssertionOptimizer/AssertionOptimizer.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test6_cfg.json" beforeDir="false" afterPath="$PROJECT_DIR$/iEvmOpt/Cfg/CfgOutput/test6_cfg.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Cfg/EtherSolver.py" beforeDir="false" afterPath="$PROJECT_DIR$/iEvmOpt/Cfg/EtherSolver.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/iEvmOpt/Main.py" beforeDir="false" afterPath="$PROJECT_DIR$/iEvmOpt/Main.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/testOneContract.py" beforeDir="false" afterPath="$PROJECT_DIR$/testOneContract.py" afterDir="false" />
-    </list>
+    <list default="true" id="26761b8b-d032-4bbd-8113-13d1181eb69a" name="变更" comment="" />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />

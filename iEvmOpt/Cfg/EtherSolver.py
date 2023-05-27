@@ -1,5 +1,6 @@
 import os
 import shutil
+import signal
 import subprocess
 import json
 from AssertionOptimizer.TagStacks.TagStack import TagStack
@@ -7,7 +8,7 @@ from Cfg.BasicBlock import BasicBlock
 from Cfg.Cfg import Cfg
 from Cfg.CfgRepairKit import CfgRepairKit
 from Utils.Logger import Logger
-
+import platform
 
 class EtherSolver:
 
@@ -29,6 +30,9 @@ class EtherSolver:
         self.log = Logger()
         self.timeOutLimit = 300  # 5min
 
+        # 确定当前平台，以方便杀死子进程
+        self.plf = platform.system().lower() # 'windows'/ 'linux'
+
     def execSolver(self):
         self.log.info("正在使用EtherSolve生成JSON文件")
 
@@ -45,9 +49,12 @@ class EtherSolver:
         try:
             p.wait(timeout=self.timeOutLimit)
             returnCode = p.returncode
-        except:
-            cmd = "taskkill /F /PID " + str(p.pid)
-            os.system(cmd)  # 杀死子进程
+        except: # 超时
+            if self.plf == 'windows':
+                cmd = "taskkill /F /PID " + str(p.pid)
+                os.system(cmd)
+            elif self.plf == 'linux':
+                os.killpg(p.pid, signal.SIGKILL)
             returnCode = -1
             self.log.fail("EtherSolve处理超时")
             exit(-1)
@@ -65,8 +72,11 @@ class EtherSolver:
                 p.wait(timeout=self.timeOutLimit)
                 returnCode = p.returncode
             except:
-                cmd = "taskkill /F /PID " + str(p.pid)
-                os.system(cmd)  # 杀死子进程
+                if self.plf == 'windows':
+                    cmd = "taskkill /F /PID " + str(p.pid)
+                    os.system(cmd)
+                elif self.plf == 'linux':
+                    os.killpg(p.pid, signal.SIGKILL)
                 returnCode = -1
                 self.log.fail("EtherSolve处理超时")
                 exit(-1)
@@ -81,8 +91,11 @@ class EtherSolver:
                 p.wait(timeout=self.timeOutLimit)
                 returnCode = p.returncode
             except:
-                cmd = "taskkill /F /PID " + str(p.pid)
-                os.system(cmd)  # 杀死子进程
+                if self.plf == 'windows':
+                    cmd = "taskkill /F /PID " + str(p.pid)
+                    os.system(cmd)
+                elif self.plf == 'linux':
+                    os.killpg(p.pid, signal.SIGKILL)
                 returnCode = -1
                 self.log.fail("EtherSolve处理超时")
                 exit(-1)
@@ -151,15 +164,6 @@ class EtherSolver:
         #############               使用CfgRepairKit进行检测和修复              #############
         # 修复不一定是成功的，毕竟只是做简单的dfs
         # 只是输出Warning，后续还要对没有入边的节点做判断，看看是否属于是selfdestruct引起的，如果是，则尝试再次进行修复
-        # constructorKit = CfgRepairKit(self.constructorCfg)
-        # constructorKit.fix()
-        # if not constructorKit.isFixed():  # 修复失败
-        #     # 构造函数边修复失败，没必要继续往下走
-        #     self.log.fail("构造函数边修复失败")
-        #     exit(0)
-        # else:
-        #     self.log.info("构造函数边修复成功")
-        #     self.constructorCfg.edges, self.constructorCfg.inEdges = constructorKit.getRepairedEdges()
 
         runtimeKit = CfgRepairKit(self.cfg)
         runtimeKit.fix()
@@ -175,14 +179,12 @@ class EtherSolver:
         for offset, b in self.cfg.blocks.items():
             if b.jumpType == "unconditional":
                 b.jumpDest = list(self.cfg.edges[offset])
-                # b.printBlockInfo()
             elif b.jumpType == "conditional":
                 fallBlockOffset = b.offset + b.length
                 dests = list(self.cfg.edges[offset])
                 jumpiTrueOffset = dests[0] if dests[0] != fallBlockOffset else dests[1]
                 b.jumpiDest[True] = jumpiTrueOffset
                 b.jumpiDest[False] = fallBlockOffset
-                # b.printBlockInfo()
 
         for offset, b in self.constructorCfg.blocks.items():
             if b.jumpType == "unconditional":
