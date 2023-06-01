@@ -10,6 +10,7 @@ if __name__ == '__main__':
     argv参数：
     argv[1]: 输入字节码文件
     argv[2]: 输出目录
+    argv[3]: 输出文件名
     """
 
     h = Helper()
