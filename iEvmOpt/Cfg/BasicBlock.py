@@ -9,7 +9,7 @@ class BasicBlock:
         self.offset = int(blockInfo["offset"])
         self.length = int(blockInfo["length"])
         self.blockType = blockInfo["type"]
-        self.stackBalance = int(blockInfo["stackBalance"])  # 这是什么？
+        self.stackBalance = int(blockInfo["stackBalance"])
         self.bytecode = bytearray.fromhex(blockInfo["bytecodeHex"])  # 字节码，存储为字节数组
         self.bytecodeStr = blockInfo["bytecodeHex"]  # 字节码，存储为字符串
         self.instrs = str(blockInfo["parsedOpcodes"]).split('\n')  # 存储的指令汇编码
@@ -38,7 +38,8 @@ class BasicBlock:
         self.jumpiDest = {}  # 记录jumpi的块条件为True的跳转目标节点的offset，格式为 True:offset,False:offset
         self.jumpDest = []  # 记录jump的块的跳转目标节点的offset，格式为 [offset1,offset2...]
         self.instrAddrs = [int(instr.split(':')[0]) for instr in self.instrs]  # 存储的指令的地址，用于优化时使用
-        self.isModified = False  # 块内的字节码是否被修改过
+        self.removedByte = dict(
+            zip([i for i in range(self.length)], [False for i in range(self.length)]))  # 下标为i的字节是否需要删除，用于删除冗余序列
 
     def printBlockInfo(self):
         """ 打印基本块的信息
@@ -54,4 +55,3 @@ class BasicBlock:
         print("Block is INVALID:{}".format(self.isInvalid))
         print("Block jumpDest offset:{}".format(self.jumpDest))
         print("Block jumpiDest offset:{}".format(self.jumpiDest))
-        print("Block isModified:{}\n".format(self.isModified))

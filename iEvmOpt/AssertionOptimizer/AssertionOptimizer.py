@@ -89,7 +89,6 @@ class AssertionOptimizer:
 
         # 冗余assertion优化需要用到的信息
         self.domTree = {}  # 支配树。注意，为了方便从invalid节点往前做遍历，该支配树存储的是入边，格式为   to:from
-        self.removedRange = {}  # 记录每个block中被移除的区间，格式为: node: [[from1,to1),[from2,to2)]
 
         # 重定位需要用到的信息
         self.jumpEdgeInfo = []  # 跳转边信息，格式为:[[push的值，push的字节数，push指令的地址，push指令所在的block，jump所在的block，跳转的type(可选),新老函数体之间的offset(可选)]]
@@ -252,8 +251,6 @@ class AssertionOptimizer:
             zip(self.nodes, [False for i in range(0, len(self.nodes))]))  # 函数体头结点信息，用于后续做函数内环压缩时，判断某个函数是否存在递归的情况
         self.isLoopRelated = dict(zip(self.nodes, [False for i in range(0, len(self.nodes))]))  # 标记各个节点是否为loop-related
         self.isFuncCallLoopRelated = None  # 记录节点是否在函数调用环之内，该信息只能由路径搜索得
-        self.removedRange = dict(
-            zip(self.nodes, [[] for i in range(0, len(self.nodes))]))  # 记录每个block中被移除的区间，每个区间的格式为:[from,to)
 
     def __identifyAndCheckFunctions(self):
         """
@@ -605,7 +602,6 @@ class AssertionOptimizer:
         self.jumpEdgeInfo = generator.getJumpEdgeInfo()
         self.codeCopyInfo = generator.getCodecopyInfo()
 
-
         # 第三步，做一个检查信息，看codecopy指令是否只是用于复制运行时的代码，或者是用于访问数据段的信息
         # codecopy信息，格式: [[offset push的值，offset push的字节数，offset push指令的地址， offset push指令所在的block,
         #                       size push的值，size push的字节数，size push指令的地址， size push指令所在的block]]
@@ -882,12 +878,11 @@ class AssertionOptimizer:
                     endAddr = node + self.blocks[node].length
                     for i in range(beginAddr - node, endAddr - node):
                         self.blocks[node].bytecode[i] = 0x1f  # 置为空指令
-                    self.removedRange[node].append([beginAddr, endAddr])
+                        self.blocks[node].removedByte[i] = True  # 将字节标记为待删除
             if self.inEdges[invNode + 1].__len__() == 1:
                 # invalid的下一个block，只有一条入边，说明这个jumpdest也可以删除
-                self.removedRange[invNode + 1].append([invNode + 1, invNode + 2])
                 self.blocks[invNode + 1].bytecode[0] = 0x1f
-            # print(self.removedRange)
+                self.blocks[invNode + 1].removedByte[0] = True
 
         if self.abandonedFullyRedundantInvNodes.__len__() != 0:  # 有移除的invalid
             self.log.info(
@@ -952,7 +947,7 @@ class AssertionOptimizer:
                     break
                 node = self.domTree[node]
 
-            if targetAddr is None: # 没有找到程序状态相同的节点，放弃优化
+            if targetAddr is None:  # 没有找到程序状态相同的节点，放弃优化
                 self.abandonedpartiallyRedundantInvNodes.append(invNode)
                 continue
 
@@ -993,9 +988,9 @@ class AssertionOptimizer:
                 newBlockInfo["bytecodeHex"] = originalBlock.bytecodeStr
                 newBlockInfo["parsedOpcodes"] = originalBlock.instrsStr
                 newBlock = BasicBlock(newBlockInfo)  # 新建一个block
+                newBlock.removedByte = dict(originalBlock.removedByte)  # 将原函数体中已经存在的完全冗余删除序列信息，添加到新函数体中
                 self.nodes.append(beginOffset)
                 self.blocks[beginOffset] = newBlock
-                self.removedRange[beginOffset] = []
                 self.runtimeDataSegOffset += originalBlock.length  # 数据段后移
                 curLastNode = beginOffset
 
@@ -1004,17 +999,10 @@ class AssertionOptimizer:
                 info = func.getRemovedRangeInfo(invNode)
                 for node in funcBodyNodes:
                     if info[1] <= node < info[2]:  # 节点中存在要删除的序列
-                        beginAddr = max(node, info[0]) + offset
-                        endAddr = min(node + self.blocks[node].length, info[2]) + offset
-                        self.removedRange[node + offset].append([beginAddr, endAddr])
-
-            # 将原函数体中已经存在的完全冗余删除序列信息，添加到新函数体中
-            for node in funcBodyNodes:
-                for info in self.removedRange[node]:
-                    newInfo = list(info)
-                    newInfo[0] += offset
-                    newInfo[1] += offset
-                    self.removedRange[node + offset].append(newInfo)
+                        beginIndex = max(node, info[0]) - node
+                        endIndex = min(node + self.blocks[node].length, info[2]) - node
+                        for i in range(beginIndex, endIndex):
+                            self.blocks[node + offset].removedByte[i] = True
 
             # 找出各个冗余函数调用链的，新函数体的调用节点
             callerNodes = []
@@ -1041,8 +1029,9 @@ class AssertionOptimizer:
             #   跳转的type为3，说明push不在但jump在新函数体,而且callerNodeJumpAddr+1==push的值（新函数体返回），此时需要将4号位加上offset即可
             #   跳转的type为4，说明push在但jump不在新函数体（新函数体对其他函数的调用后返回），此时需要将0、2、3号位信息加上offset，并重新计算字节数
             newJumpEdgeInfo = []  # 要新添加的跳转边信息
-            removedEdgeInfo = [] # 需要删除的跳转边信息，即原来调用包含了冗余assertion函数体的调用边信息
-            originalFuncRange = range(funcBodyNodes[0], funcBodyNodes[-1] + self.blocks[funcBodyNodes[-1]].length) # 原函数体的地址范围
+            removedEdgeInfo = []  # 需要删除的跳转边信息，即原来调用包含了冗余assertion函数体的调用边信息
+            originalFuncRange = range(funcBodyNodes[0],
+                                      funcBodyNodes[-1] + self.blocks[funcBodyNodes[-1]].length)  # 原函数体的地址范围
             for info in self.jumpEdgeInfo:
                 newInfo = list(info)
                 checker = 0  # 将三个信息映射到一个数字
@@ -1063,7 +1052,7 @@ class AssertionOptimizer:
                         newJumpEdgeInfo.append(newInfo)
                     case 0b001:  # 2
                         if info[4] in callerNodes:  # 是部分冗余assertion函数体的调用边
-                            removedEdgeInfo.append(info) # 需要删除旧的调用边
+                            removedEdgeInfo.append(info)  # 需要删除旧的调用边
                             newInfo.append(2)
                             newInfo.append(offset)
                             newJumpEdgeInfo.append(newInfo)
@@ -1094,10 +1083,10 @@ class AssertionOptimizer:
         tempBytecode = bytearray()
         for i in range(tempExitBlock.length):
             tempBytecode.append(0x1f)  # 空指令
+            tempExitBlock.removedByte[i] = False
         tempExitBlock.bytecode = tempBytecode
         self.cfg.exitBlockId = newBlockOffset
         self.blocks[newBlockOffset] = tempExitBlock  # 复用之前的exit block
-        self.removedRange[newBlockOffset] = []
 
     def __regenerateRuntimeBytecode(self):
         """
@@ -1123,20 +1112,11 @@ class AssertionOptimizer:
             newInfo.append(self.runtimeDataSegOffset)
             self.jumpEdgeInfo.append(newInfo)
 
-
         # 第二步，对跳转信息去重
-        # 因为添加了从codecopy转换而来的跳转信息，而这些新添加的信息
+        # 在路径搜索器当中，已经对跳转信息进行过去重了
+        # 但是因为添加了从codecopy转换而来的跳转信息，而这些新添加的信息
         # 有可能是重复的，因此需要再对跳转信息做一次去重
         # 注意，对后者的去重只能现在做，因为信息中可能包含None，会触发json.loads错误
-        for node in self.nodes:
-            if self.removedRange[node].__len__() == 0:
-                continue
-            tempSet = set()
-            for _range in self.removedRange[node]:
-                tempSet.add(_range.__str__())  # 存为字符串
-            self.removedRange[node] = []  # 置空
-            for rangeStr in tempSet:
-                self.removedRange[node].append(json.loads(rangeStr))  # 再还原为list
         tempSet = set()
         for info in self.jumpEdgeInfo:
             tempSet.add(info.__str__())
@@ -1188,27 +1168,14 @@ class AssertionOptimizer:
                     case 5 | 6:
                         continue
             jumpAddr = jumpBlock + self.blocks[jumpBlock].length - 1
-            delPush = False
-            delJump = False
-            for _range in self.removedRange[pushBlock]:
-                if _range[0] <= pushAddr < _range[1]:  # push语句位于删除序列内
-                    delPush = True
-                    break
-            for _range in self.removedRange[jumpBlock]:
-                if _range[0] <= jumpAddr < _range[1]:  # jump/jumpi/codecopy语句位于删除序列内
-                    delJump = True
-                    break
-            # 解释一下为什么要做这个assert:因为这一个跳转信息是根据返回地址栈得出的
-            # 也就是说，如果要删除push，则jump必须也要被删除，否则当出现这个函数调用关系时，
-            # 在jump的时候会找不到返回地址
-            # 4.27新处理：要么只删除jump，要么两个同时删除
-            assert delPush == delJump
+            delPush = self.blocks[pushBlock].removedByte[pushAddr-pushBlock]
+            delJump = self.blocks[jumpBlock].removedByte[jumpAddr-jumpBlock]
+            assert delPush == delJump # 如果要删除push，则jump必须也要被删除
             if delPush:  # 确定要删除
                 removedInfo.append(info)
 
         for info in removedInfo:
             self.jumpEdgeInfo.remove(info)  # 删除对应的信息
-        # print(self.jumpEdgeInfo)
 
         # 第四步，对每一个block，删除空指令，同时还要记录旧地址到新地址的映射
         self.nodes.sort()  # 确保是从小到大排序的
@@ -1216,18 +1183,14 @@ class AssertionOptimizer:
         for node in self.nodes:
             blockLen = self.blocks[node].length
             newBlockLen = blockLen  # block的新长度
-            isDelete = [False for i in range(blockLen)]
-            # 设置要删除的下标，以及计算新的block长度
-            for _range in self.removedRange[node]:  # 查看这一个block的删除区间
-                for i in range(_range[0] - node, _range[1] - node):
-                    isDelete[i] = True  # 设置要删除的下标
-                newBlockLen -= _range[1] - _range[0]
+            isDelete = self.blocks[node].removedByte
             # 重新生成字节码，并计算地址映射
             bytecode = self.blocks[node].bytecode
             newBytecode = bytearray()
             for i in range(blockLen):
                 self.originalToNewAddr[i + node] = mappedAddr
                 if isDelete[i]:  # 这一个字节是需要被删除的
+                    newBlockLen -= 1
                     continue
                 newBytecode.append(bytecode[i])
                 mappedAddr += 1
