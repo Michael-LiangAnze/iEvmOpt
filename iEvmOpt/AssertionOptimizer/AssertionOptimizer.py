@@ -1024,12 +1024,12 @@ class AssertionOptimizer:
                     pathNodes = self.invalidPaths[pathId].pathNodes
                     for node in reversed(pathNodes):
                         curNodeFuncId = self.node2FuncId[node]
-                        if curNodeFuncId != funcId:  # 出了invalid的函数
+                        if curNodeFuncId != funcId:  # 出了invalid所在的函数
                             callerNodes.append(node)
                             break
             returnedNodes = [node + self.blocks[node].length for node in callerNodes]  # 应当返回的节点
 
-            # 添加跳转边信息，注意，这些边中有需要被移除的，只是暂时不处理，后面生成字节码的时候，会把出现在删除序列中的跳转信息删除掉
+            # 添加跳转边信息，注意，这些边中与冗余序列相关的边，先不删除，后面在重新生成字节码的时候，会对这些边进行删除
             # [[push的值，push的字节数，push指令的地址，push指令所在的block，jump所在的block，跳转的type(可选),新老函数体之间的offset(可选)]]
             # 这里给一个设定：
             # 在重定位时，一旦出现了第六个和第七个参数，即说明这是新构造函数体的相关跳转信息
@@ -1041,15 +1041,16 @@ class AssertionOptimizer:
             #   跳转的type为3，说明push不在但jump在新函数体,而且callerNodeJumpAddr+1==push的值（新函数体返回），此时需要将4号位加上offset即可
             #   跳转的type为4，说明push在但jump不在新函数体（新函数体对其他函数的调用后返回），此时需要将0、2、3号位信息加上offset，并重新计算字节数
             newJumpEdgeInfo = []  # 要新添加的跳转边信息
-            originalFuncRange = range(funcBodyNodes[0], funcBodyNodes[-1] + self.blocks[funcBodyNodes[-1]].length)
+            removedEdgeInfo = [] # 需要删除的跳转边信息，即原来调用包含了冗余assertion函数体的调用边信息
+            originalFuncRange = range(funcBodyNodes[0], funcBodyNodes[-1] + self.blocks[funcBodyNodes[-1]].length) # 原函数体的地址范围
             for info in self.jumpEdgeInfo:
                 newInfo = list(info)
                 checker = 0  # 将三个信息映射到一个数字
-                if info[3] in originalFuncRange:  # push在
+                if info[3] in originalFuncRange:  # push在原函数体的地址范围
                     checker |= 4
-                if info[4] in originalFuncRange:  # jump在
+                if info[4] in originalFuncRange:  # jump在原函数体的地址范围
                     checker |= 2
-                if info[0] in originalFuncRange:  # push的值在
+                if info[0] in originalFuncRange:  # push的值在原函数体的地址范围
                     checker |= 1
                 match checker:
                     case 0b110:  # 0
@@ -1061,7 +1062,8 @@ class AssertionOptimizer:
                         newInfo.append(offset)
                         newJumpEdgeInfo.append(newInfo)
                     case 0b001:  # 2
-                        if info[4] in callerNodes:  # 是新函数体的调用边
+                        if info[4] in callerNodes:  # 是部分冗余assertion函数体的调用边
+                            removedEdgeInfo.append(info) # 需要删除旧的调用边
                             newInfo.append(2)
                             newInfo.append(offset)
                             newJumpEdgeInfo.append(newInfo)
@@ -1079,6 +1081,8 @@ class AssertionOptimizer:
                     # 否则，不需要修改这条边信息
             for info in newJumpEdgeInfo:
                 self.jumpEdgeInfo.append(info)
+            for info in removedEdgeInfo:
+                self.jumpEdgeInfo.remove(info)
 
         # 第六步，将exit block放在函数字节码的最后面，用于填充原来的数据段的位置，防止codecopy重定位时，因为offset位于数据段而出错
         # 新坑：codecopy的offset刚好为整个字节码的长度，因此，exitBlock的长度设置为数据段的长度+1
@@ -1100,8 +1104,6 @@ class AssertionOptimizer:
         重新生成运行时的字节码，同时完成重定位
         :return:None
         """
-        # for info in self.codeCopyInfo:
-        #     print(info)
 
         # 第一步，将codecopy信息转换成jump的信息，方便统一处理
         # 格式: [[offset push的值，offset push的字节数，offset push指令的地址， offset push指令所在的block,
@@ -1232,11 +1234,6 @@ class AssertionOptimizer:
 
             self.blocks[node].length = newBlockLen  # 设置新的block长度
             self.blocks[node].bytecode = newBytecode  # 设置新的block字节码
-        # print(self.removedRange)
-        # for k,v in self.originalToNewAddr.items():
-        #     print(k,v)
-        # for b in self.blocks.values():
-        #     b.printBlockInfo()
 
         # 第五步，尝试将跳转地址填入
         # 每一次都是做试填入，不能保证一定可以填入成功，地址可能会过长或者过短
@@ -1270,7 +1267,9 @@ class AssertionOptimizer:
         sortedJumpEdgeInfo = []
         for addr in sortedAddrs:
             sortedJumpEdgeInfo.append(pushAddrToInfo[addr])
-        # print(sortedJumpEdgeInfo)
+        # for i in sortedJumpEdgeInfo:
+        #     print(i)
+
         # 然后尝试对每一个跳转信息，进行试填入
         finishFilling = False
         while not finishFilling:  # 只有所有的info都能成功填入，才能停止
