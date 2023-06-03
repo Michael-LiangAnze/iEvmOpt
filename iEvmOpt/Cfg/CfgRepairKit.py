@@ -6,7 +6,7 @@ from Utils.Logger import Logger
 class CfgRepairKit:
     def __init__(self, cfg: Cfg):
         """
-        cnmd sb ethersolve，一眼都能看出的跳转边你都分析不出来:
+        cnmd sb ethersolve，一眼都能看出的跳转边你都分析不出来
         test14 block16 :
         push 0x4a
         push 0x1000...
@@ -15,7 +15,7 @@ class CfgRepairKit:
         swap1
         div
         jump
-        一眼跳到0x4a，你跟我说跳到exit block？
+        你跟我说跳到exit block？
 
         :param cfg:
         """

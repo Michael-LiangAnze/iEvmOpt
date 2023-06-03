@@ -141,8 +141,6 @@ class PathGenerator:
             assert pushInfo[0] in self.nodes  # 必须是一个block的offset
             pushInfo.append(curNode)  # 添加一条信息，就是jump所在的block
             self.jumpEdgeInfo.append(pushInfo)
-            # if curNode == 636:
-            #     print(pushInfo)
         elif self.blocks[curNode].jumpType == "terminal":  # 应当立即返回，不必再往下走
             if self.isLoopRelated[curNode]:
                 self.sccVisiting[curReturnAddrStackStr][curNode] = False

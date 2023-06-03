@@ -68,7 +68,6 @@ class AssertionOptimizer:
         self.node2FuncId = {}  # 记录节点属于哪个函数，格式为：  node：funcId
         self.isFuncBodyHeadNode = {}  # 函数体头结点信息，用于后续做函数内环压缩时，判断某个函数是否存在递归的情况
         self.isLoopRelated = {}  # 标记各个节点是否为loop-related
-        self.isFuncCallLoopRelated = None  # 记录节点是否在函数调用环之内，该信息只能由路径搜索得到
 
         # 路径搜索需要用到的信息
         self.invalidNodeList = []  # 记录所有invalid节点的offset
@@ -113,7 +112,8 @@ class AssertionOptimizer:
         self.dataSegLength = 0
 
         # copdcopy信息，格式: [[offset push的值，offset push的字节数，offset push指令的地址， offset push指令所在的block,
-        #                       size push的值，size push的字节数，size push指令的地址， size push指令所在的block，codecopy所在的block]]
+        #                       size push的值，size push的字节数，size push指令的地址， size push指令所在的block，
+        #                       codecopy所在的block]]
         self.codeCopyInfo = None
         # 构造函数重定位需要用到的信息
         self.runtimeDataSegOffset = 0  # 运行时的数据段的移动偏移量，即运行时的函数体总长度变化的偏移量
@@ -191,11 +191,6 @@ class AssertionOptimizer:
 
         # 重新生成构造函数的字节码序列
         self.log.info("正在重新生成构造函数字节码序列")
-        # self.__regenerateConstructorBytecode()
-        # 两套方案：
-        #   一套是尝试修复构造函数，然后用处理运行时函数的步骤来处理构造函数
-        #   一套是只改构造函数内的codecopy
-        # 要切换回第一套方案，只需要使用上面的函数，并在ethersolver里取消修复构造函数的注释即可
         self.__processCodecopyInConstructor()
         self.log.info("构造函数字节码序列生成完毕")
 
@@ -250,7 +245,6 @@ class AssertionOptimizer:
         self.isFuncBodyHeadNode = dict(
             zip(self.nodes, [False for i in range(0, len(self.nodes))]))  # 函数体头结点信息，用于后续做函数内环压缩时，判断某个函数是否存在递归的情况
         self.isLoopRelated = dict(zip(self.nodes, [False for i in range(0, len(self.nodes))]))  # 标记各个节点是否为loop-related
-        self.isFuncCallLoopRelated = None  # 记录节点是否在函数调用环之内，该信息只能由路径搜索得
 
     def __identifyAndCheckFunctions(self):
         """
@@ -278,15 +272,8 @@ class AssertionOptimizer:
             if n.jumpType == "unconditional":
                 _from = n.offset
                 for _to in self.edges[_from]:  # 可能有几个出边
-                    # 这里做一个assert，防止出现匹配到两个节点都在dispatcher里面的情况，但是真的有吗？先不处理
-                    # 真的有，见test12
-                    # assert not (n.blockType == "dispatcher" and self.cfg.blocks[_to].blockType == "dispatcher")
-                    # if n.blockType == "dispatcher" and self.cfg.blocks[_to].blockType == "dispatcher": # 两个点都在dispatcher里，不认为是函数
-                    #     continue
                     e = JumpEdge(n, self.cfg.blocks[_to])
                     self.uncondJumpEdge.append(e)
-        # for e in self.uncondJumpEdge:
-        #     e.output()
 
         # 第三步，两两之间进行匹配
         funcRange2Calls = {}  # 一个映射，格式为:
@@ -345,21 +332,7 @@ class AssertionOptimizer:
                     if out not in visited.keys() and out in range(offsetRange[0], offsetRange[1]):
                         stack.push(out)
                         visited[out] = True
-            # 先做一个检查，如果并没能找出所有的函数节点，则:
-            #   1.如果：
-            #       使用没有入边的节点可以填补这一空缺
-            #       没有入边的节点是JUMPDEST
-            #       没有入边的节点对应的offset，没有被push过
-            #      则使用这个节点进行填充，同时将这个节点从nodeWithoutInedge中pop
-            #   2.如果发现无法填补空缺，则放弃这一个函数，因为下面会尝试寻找selfdestruct、revert引起的函数
-            # 检查方式是，对节点进行排序，看前一个节点的offset+length是否等于后一个节点的offset，同时统计长度是否和预期的相同
-            # offsetRange[1] -= 1
-            # funcLen = offsetRange[1] + self.cfg.blocks[offsetRange[1]].length - offsetRange[0]
-            # tempLen = 0
-            # for n in funcBody:
-            #     tempLen += self.cfg.blocks[n].length
-            # if funcLen != tempLen:  # 没能找全节点
-            #     continue
+
             offsetRange[1] -= 1
             missingBlocks = []  # 缺失的block
             funcBody.sort()
@@ -440,8 +413,7 @@ class AssertionOptimizer:
                 continue
             # 之前的假设是，在这里会压入一个返回地址，对于遇到的selfdestruct函数，也大多数成立
             # 现在观察到合约0xE0339e6EBd1CCC09232d1E979d50257268B977Ef在调用包含revert函数的时候，调用者节点中并没有push返回地址，而是在之前的几个节点中进行了push
-            # 于是这里取消这个限制，只要是无入边节点的前一个节点，就可以视为潜在的调用者
-            # 检查这个节点里面push，是否压入了相应的地址，没有则不进行处理
+            # 于是这里取消这个限制，只检查无入边节点的前一个节点是否为可能的调用者节点
             # hasReturnAddr = False
             # for addr in callBlock.instrAddrs:
             #     i = addr - callBlock.offset
@@ -805,8 +777,6 @@ class AssertionOptimizer:
         2.将targetAddr到invalid之间的所有指令置为空指令，同时记录删除信息
         :return:
         """
-        # for pid, t in self.redundantType.items():
-        #     print(pid, t)
         executor = SymbolicExecutor(self.cfg)
         for invNode in self.fullyRedundantInvNodes:  # 取出一个invalid节点
             # 首先做一个检查，检查是否为jumpi的失败边走向Invalid，且该invalid节点只有一个入边
@@ -1097,13 +1067,11 @@ class AssertionOptimizer:
         # 第一步，将codecopy信息转换成jump的信息，方便统一处理
         # 格式: [[offset push的值，offset push的字节数，offset push指令的地址， offset push指令所在的block,
         #          size push的值，size push的字节数，size push指令的地址， size push指令所在的block，codecopy所在的block]]
-        # 如果处理的是运行时代码的信息，则转换的方式为：将前四个信息变成jump信息中的前四个，最后将codecopy指令的地址变成jump信息的第五个（即jump所在的block）。此时offset会发生剧烈的变化
+        # 如果处理的是运行时代码的信息，则转换的方式为：将前四个信息变成jump信息中的前四个，最后将codecopy指令的地址变成jump信息的第五个（即jump所在的block）
         # 如果处理的是构造函数中信息，因为可能涉及到函数体后数据段的访问、运行时代码的复制，此时size会发生剧烈的变化
-        # 因此，添加两个长度为7的跳转信息，专门用来处理这种情况：
+        # 因此，添加一个长度为7的跳转信息，专门用来处理这种情况：
         # 类型5：该信息是由codecopy中的offset信息修改而来的，在该情况下，push的addr需要加上offset，在第一次处理到这条信息时，会做试填入
         #       填入完成之后，变回成长度为5的普通信息
-        # 类型6：该信息时由codecopy中的size信息修改而来，在该情况下，push的addr（即codecopy的size）需要加上offset，但是需要注意
-        #       该信息不会被修改成长度为5的信息，同时，也不使用新旧地址的映射进行处理，因为size就是一个固定的值，不会随着代码的移动而发生变化
         # [[push的值，push的字节数，push指令的地址，push指令所在的block，jump所在的block，跳转的type(可选), 新老函数体之间的offset(可选)]]
         for info in self.codeCopyInfo:
             newInfo = list(info[:4])
@@ -1136,9 +1104,7 @@ class AssertionOptimizer:
         #   跳转的type为3，说明push不在但jump在新函数体,而且callerNodeJumpAddr+1==push的值（新函数体返回），此时需要将4号位加上offset即可
         #   跳转的type为4，说明push在但jump不在新函数体（新函数体对其他函数的调用后返回），此时需要将0、2、3号位信息加上offset，并重新计算字节数
         #   跳转的type为5，该信息是由codecopy中的offset信息修改而来的，在该情况下，push的addr需要加上offset，在第一次处理到这条信息时，会做试填入。填入完成之后，变回成长度为5的普通信息
-        #   跳转的type为6，该信息时由codecopy中的size信息修改而来，在该情况下，push的addr（即codecopy的size）需要加上offset，但是需要注意
-        #         #       该信息不会被修改成长度为5的信息，同时，也不使用新旧地址的映射进行处理，因为size就是一个固定的值，不会随着代码的移动而发生变化
-        #   类型5和6不需要做任何处理
+        #   类型5
         removedInfo = []
         for info in self.jumpEdgeInfo:
             # 首先做一个检查
@@ -1165,7 +1131,7 @@ class AssertionOptimizer:
                         addr += info[6]
                         pushAddr += info[6]
                         pushBlock += info[6]
-                    case 5 | 6:
+                    case 5:
                         continue
             jumpAddr = jumpBlock + self.blocks[jumpBlock].length - 1
             delPush = self.blocks[pushBlock].removedByte[pushAddr-pushBlock]
@@ -1212,7 +1178,6 @@ class AssertionOptimizer:
         #   跳转的type为3，说明push不在但jump在新函数体,而且callerNodeJumpAddr+1==push的值（新函数体返回），此时需要将4号位加上offset即可
         #   跳转的type为4，说明push在但jump不在新函数体（新函数体对其他函数的调用后返回），此时需要将0、2、3号位信息加上offset，并重新计算字节数
         #   跳转的type为5，该信息是由codecopy中的offset信息修改而来的，在该情况下，push的addr需要加上offset，在第一次处理到这条信息时，会做试填入。填入完成之后，变回成长度为5的普通信息
-        #   跳转的type为6，该信息时由codecopy中的size信息修改而来，在该情况下，push的addr（即codecopy的size）需要加上offset，但是需要注意
 
         # 首先要根据push指令所在的地址，对这些信息进行一个排序(在路径生成器中已去重)
         pushAddrToInfo = {}
@@ -1230,8 +1195,6 @@ class AssertionOptimizer:
         sortedJumpEdgeInfo = []
         for addr in sortedAddrs:
             sortedJumpEdgeInfo.append(pushAddrToInfo[addr])
-        # for i in sortedJumpEdgeInfo:
-        #     print(i)
 
         # 然后尝试对每一个跳转信息，进行试填入
         finishFilling = False
@@ -1247,7 +1210,6 @@ class AssertionOptimizer:
                 #   跳转的type为3，说明push不在但jump在新函数体（新函数体返回），此时需要将4号位加上offset即可
                 #   跳转的type为4，说明push在但jump不在新函数体（新函数体对其他函数的调用后返回），此时需要将0、2、3号位信息加上offset，并重新计算字节数
                 #   跳转的type为5，该信息是由codecopy中的offset信息修改而来的，在该情况下，push的addr需要加上offset，在第一次处理到这条信息时，会做试填入。填入完成之后，变回成长度为5的普通信息
-                #   跳转的type为6，该信息时由codecopy中的size信息修改而来，在该情况下，push的addr（即codecopy的size）需要加上offset，但是需要注意
                 if info.__len__() == 7:  # 第一次读取到这种信息，需要重新计算
                     tempAddr = info[0]
                     tempPushAddr = info[2]
@@ -1287,10 +1249,6 @@ class AssertionOptimizer:
                             info[0] = tempAddr + offset
                             newAddr = self.originalToNewAddr[info[0]]
                             info = info[:5]
-                        case 6:
-                            # 注意，该类型既不做地址映射（size保持不变），也不变成普通信息（否则会做地址映射）# 注意，该类型既不做地址映射（size保持不变），也不变成普通信息（否则会做地址映射）
-                            info[0] = tempAddr + offset
-                            newAddr = info[0]
                 else:
                     newAddr = self.originalToNewAddr[info[0]]
                 pushAddr = self.originalToNewAddr[info[2]]  # push指令的新地址
@@ -1309,37 +1267,24 @@ class AssertionOptimizer:
                 offset = newByteNum - originalByteNum
                 if offset <= 0:  # 原有的字节数已经足够表示新地址，不需要移动，直接填入新内容即可
                     newAddrBytes = deque()  # 新地址的字节码
-                    # if pushBlock == 1093:
-                    #     print(pushBlock, info[2], info[0], newAddr, info[1], newByteNum, pushAddr - pushBlockOffset)
                     while newAddr != 0:
                         newAddrBytes.appendleft(newAddr & 0xff)  # 取低八位
                         newAddr >>= 8
                     for i in range(-offset):  # 高位缺失的字节用0填充
                         newAddrBytes.appendleft(0x00)
                     for i in range(originalByteNum):  # 按原来的字节数填
-                        # print(len(self.blocks[pushBlock].bytecode),pushAddr - pushBlockOffset + 1 + i,originalByteNum,offset)
-                        # self.blocks[1093].printBlockInfo()
-                        # if pushBlock == 1093:
-                        #     print(pushAddr - pushBlockOffset + 1 + i, len(self.blocks[pushBlock].bytecode))
-                        #     self.blocks[1093].printBlockInfo()
-                        self.blocks[pushBlock].bytecode[pushAddr - pushBlockOffset + 1 + i] = newAddrBytes[
-                            i]  # 改的是地址，因此需要+1
+                        self.blocks[pushBlock].bytecode[pushAddr - pushBlockOffset + 1 + i] = newAddrBytes[i]  # 改的是地址，因此需要+1
                 else:  # 新内容不能直接填入，原位置空间不够，需要移动字节码
                     self.log.warning("原push位置:{}不能直接填入新地址:{}，需要移动字节码".format(pushAddr, newAddr))
                     # 先改push的操作码
                     originalOpcode = 0x60 + originalByteNum - 1
                     newOpcode = originalOpcode + offset
-                    # print(originalOpcode, newOpcode)
                     assert 0x60 <= newOpcode <= 0x7f
                     self.blocks[pushBlock].bytecode[pushAddr - pushBlockOffset] = newOpcode
 
+                    # 插入足够的位置，但是不填入地址，因为在下一轮试填入一定会填进新的地址
                     for i in range(offset):
-                        self.blocks[pushBlock].bytecode.insert(pushAddr - pushBlockOffset + 1, 0x00)  # 插入足够的位置
-                    # 改地址
-                    # for i in range(newByteNum):
-                    #     self.blocks[pushBlock].bytecode[pushAddr - pushBlockOffset + 1 + i] = newAddrBytes[
-                    #         i]  # 改的是地址，因此需要+1
-                    # 不改地址，因为会进行下一次的试填入，而且下一次试填入时必然是可以填入的，会填入正确的新地址
+                        self.blocks[pushBlock].bytecode.insert(pushAddr - pushBlockOffset + 1, 0x00)
 
                     # 接着，需要修改新旧地址映射，以及跳转信息中的字节量（供下一次试填入使用)
                     for original in self.originalToNewAddr.keys():
