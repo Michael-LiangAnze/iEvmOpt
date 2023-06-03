@@ -25,9 +25,10 @@ class SymbolicExecutor:
         self.jumpCond = None  # 如果当前的Block为无条件Jump，记录跳转的条件
 
 
+
     def clearExecutor(self):
         '''
-        清空符号执行器
+        清空符号执行器，并重置上下文
         :return: None
         '''
         self.curBlock = None

@@ -20,9 +20,13 @@ from Cfg.EtherSolver import EtherSolver
 from GraphTools import DominatorTreeBuilder
 from GraphTools.GraphMapper import GraphMapper
 from GraphTools.TarjanAlgorithm import TarjanAlgorithm
-from Utils import Stack, DotGraphGenerator
+from Utils import Stack
 import json
 from Utils.Logger import Logger
+
+from multiprocessing import Process, Queue, Pool
+import multiprocessing
+import threading
 
 fullyRedundant = "fullyRedundant"
 partiallyRedundant = "partiallyRedundant"
@@ -71,7 +75,7 @@ class AssertionOptimizer:
 
         # 路径搜索需要用到的信息
         self.invalidNodeList = []  # 记录所有invalid节点的offset
-        self.invalidPaths = {}  # 用于记录不同invalid对应的路径集合，格式为：  invalidPathId:Path
+        self.invalidPaths = {}  # 用于记录不同invalid对应的路径集合，格式为：  invalidPathId:Path对象
         self.invalidNode2PathIds = {}  # 记录每个invalid节点包含的路径，格式为：  invalidNodeOffset:[pathId1,pathId2]
         self.invalidNode2CallChain = {}  # 记录每个invalid节点包含的调用链，格式为： invalidNodeOffset:[[callchain1中的pathid],[callchain2中的pathid]]
 
@@ -82,9 +86,10 @@ class AssertionOptimizer:
         self.fullyRedundantInvNodes = []  # 全部的完全冗余的invalid节点
         self.partiallyRedundantInvNodes = []  # 全部的部分冗余的invalid节点
         self.abandonedFullyRedundantInvNodes = []  # 放弃优化的完全冗余invalid节点
-        self.abandonedpartiallyRedundantInvNodes = []  # 放弃优化的部分冗余invalid节点
+        self.abandonedPartiallyRedundantInvNodes = []  # 放弃优化的部分冗余invalid节点
         self.nonRedundantInvNodes = []  # 不冗余的invalid节点
         self.invNodeToRedundantCallChain = {}  # 每个invalid节点对应的，冗余的函数调用链，格式为： invNode:[[pid1,pid2],[pid3,pid4]]
+        self.checkInvNode = {}  # 对某个invalid node，是否进行分析。因为在求解过程中，可能会出现超时，一旦出现超时，就把这个invNode的所有路径，都设置成不分析
 
         # 冗余assertion优化需要用到的信息
         self.domTree = {}  # 支配树。注意，为了方便从invalid节点往前做遍历，该支配树存储的是入边，格式为   to:from
@@ -145,7 +150,8 @@ class AssertionOptimizer:
             self.log.info("没有找到Assertion，优化结束")
             return
         self.log.info(
-            "路径搜索完毕，一共找到{}个Assertion:{}".format(self.invalidNodeList.__len__(), self.invalidNodeList))
+            "路径搜索完毕，一共找到{}个Assertion:{},{}条路径".format(self.invalidNodeList.__len__(), self.invalidNodeList,
+                                                      len(self.invalidPaths.keys())))
 
         # 求解各条路径是否可行
         self.log.info("正在分析路径可达性")
@@ -564,7 +570,7 @@ class AssertionOptimizer:
         for node in self.blocks.values():
             if node.isInvalid:
                 self.invalidNodeList.append(node.offset)
-        # print(self.invalidList)
+                self.checkInvNode[node.offset] = True  # 默认对所有的invalid都做可达性分析
 
         # 第二步，从起点开始做dfs遍历，完成提到的三个任务
         generator = PathGenerator(self.cfg, self.uncondJumpEdge, self.isLoopRelated,
@@ -609,6 +615,7 @@ class AssertionOptimizer:
             self.invalidPaths[pathId] = path
             invNode = path.getLastNode()
             self.invalidNode2PathIds[invNode].append(pathId)
+            self.invalidPaths[pathId].setInvNode(invNode)
 
         # 第五步，对于一个Invalid节点，检查它的所有路径中，是否存在scc相关的节点
         # 若有，则这些路径对应的invalid将不会被分析
@@ -657,59 +664,59 @@ class AssertionOptimizer:
 
     def __reachabilityAnalysis(self):
         """
-        可达性分析：对于一个invalid节点，检查它的所有路径是否可达，并根据这些可达性信息判断冗余类型
+        多线程可达性分析：对于一个invalid节点，检查它的所有路径是否可达，并根据这些可达性信息判断冗余类型
         :return:None
         """
 
-        # 第一步，使用求解器判断各条路径是否是可达的
-        pathId2Constrains = {}
+        # 第一步，使用多线程对路径进行可达性分析
         self.invNodeReachable = dict(zip(self.invalidNodeList, [False for i in range(self.invalidNodeList.__len__())]))
-        executor = SymbolicExecutor(self.cfg)
-        for invNode in self.invalidNodeList:  # 对一个invalid节点
-            for pathId in self.invalidNode2PathIds[invNode]:  # 取出一条路径
-                self.pathReachable[pathId] = False
-                executor.clearExecutor()
-                nodeList = self.invalidPaths[pathId].pathNodes
-                isSolve = True  # 默认是做约束检查的。如果发现路径走到了一个不应该到达的节点，则不做check，相当于是优化了过程
-                constrains = []  # 路径上的约束
-                for nodeIndex in range(0, nodeList.__len__() - 1):  # invalid节点不计入计算
-                    node = nodeList[nodeIndex]  # 取出一个节点
-                    executor.setBeginBlock(node)
-                    while not executor.allInstrsExecuted():  # block还没有执行完
-                        executor.execNextOpCode()
-                    jumpType = executor.getBlockJumpType()
-                    if jumpType == "conditional":
-                        # 先判断，是否为确定的跳转地址
-                        curNode = nodeList[nodeIndex]
-                        nextNode = nodeList[nodeIndex + 1]
-                        isCertainJumpDest, jumpCond = executor.checkIsCertainJumpDest()
-                        if isCertainJumpDest:  # 是一个固定的跳转地址
-                            # 检查预期的跳转地址是否和栈的信息匹配
-                            expectedTarget = self.cfg.blocks[curNode].jumpiDest[jumpCond]
-                            if nextNode != expectedTarget:  # 不匹配，直接置为不可达，后续不做check
-                                self.pathReachable[pathId] = False
-                                isSolve = False  # 不对这一条路径使用约束求解了
-                                if self.outputProcessInfo:  # 需要输出处理信息
-                                    self.log.processing(
-                                        "路径{}在实际运行中不可能出现：在节点{}处本应跳转到{}，却跳转到了{}".format(pathId, curNode, expectedTarget,
-                                                                                       nextNode))
-                                break
-                        else:  # 不是确定的跳转地址
-                            if nextNode == self.cfg.blocks[curNode].jumpiDest[True]:
-                                constrains.append(executor.getJumpCond(True))
-                            elif nextNode == self.cfg.blocks[curNode].jumpiDest[False]:
-                                constrains.append(executor.getJumpCond(False))
-                            else:
-                                assert 0
-                if isSolve:
-                    if self.outputProcessInfo:  # 需要输出处理信息
-                        self.log.processing("正在计算路径{}的约束".format(pathId))
-                    s = Solver()
-                    self.pathReachable[pathId] = s.check(constrains) == sat
-                    if self.outputProcessInfo:  # 需要输出处理信息
-                        self.log.processing("路径{}约束求解完毕".format(pathId))
+        manager = multiprocessing.Manager()
+        pool = Pool()
+        pathLock, resLock = manager.Lock(), manager.Lock()
+        pathQueue, resQueue = manager.Queue(), manager.Queue()
+        subProcessNum = multiprocessing.cpu_count() - 2  # 创建cpu数量-2的子进程
+        self.log.info("启动{}个子进程进行约束求解".format(subProcessNum))
+
+        for i in range(subProcessNum):
+            pool.apply_async(strainWorker,
+                             args=(self.cfg, pathQueue, pathLock, resQueue, resLock))
+
+        # 创建一个线程用来获取数据
+        collector = threading.Thread(target=self.__resCollector, args=(resQueue,))
+        collector.start()
+
+        # 使用多线程进行约束求解
+        for pathId, path in self.invalidPaths.items():  # 取出一条路径
+            # 对于路径超时了的invalid，照样将路径放入队列，这些路径已经被设置为了不分析状态，求解进程会直接返回一个timeout = True
+            while True:  # 往队列中放入所有的路径
+                pathLock.acquire()
+                if pathQueue.full():
+                    pathLock.release()
+                    time.sleep(1)
+                else:
+                    pathQueue.put(path)
+                    pathLock.release()
+                    break
+
+        # 等待结果，结果收集完毕之后，发送特殊的路径信息，用以结束子进程
+        collector.join()
+        tempPath = Path(-1, [None])
+        putNum = 0
+        while putNum < subProcessNum:
+            pathLock.acquire()
+            if pathQueue.full():
+                pathLock.release()
+                time.sleep(1)
+            else:
+                pathQueue.put(tempPath)
+                putNum += 1
+                pathLock.release()
+        pool.close()
+        pool.join()
+        self.log.info("所有约束求解子进程已关闭")
 
         # 第二步，根据各个函数调用链的可达性，判断每个invalid节点的冗余类型
+        # 对于超时的invalid，它的所有路径被设置为可达的，不会被判断为冗余。详见求解结果收集函数
         for invNode in self.invalidNodeList:
             self.invNodeToRedundantCallChain[invNode] = []
             hasReachable = False  # 一个invalid的路径中是否包含可达的路径
@@ -733,6 +740,85 @@ class AssertionOptimizer:
                 else:  # 没有冗余的调用链
                     self.redundantType[invNode] = nonRedundant
                     self.nonRedundantInvNodes.append(invNode)
+
+    # def __reachabilityAnalysis(self):
+    #     """
+    #     可达性分析：对于一个invalid节点，检查它的所有路径是否可达，并根据这些可达性信息判断冗余类型
+    #     :return:None
+    #     """
+    #
+    #     # 第一步，使用求解器判断各条路径是否是可达的
+    #     pathId2Constrains = {}
+    #     self.invNodeReachable = dict(zip(self.invalidNodeList, [False for i in range(self.invalidNodeList.__len__())]))
+    #     executor = SymbolicExecutor(self.cfg)
+    #     for invNode in self.invalidNodeList:  # 对一个invalid节点
+    #         for pathId in self.invalidNode2PathIds[invNode]:  # 取出一条路径
+    #             self.pathReachable[pathId] = False
+    #             executor.clearExecutor()
+    #             nodeList = self.invalidPaths[pathId].pathNodes
+    #             isSolve = True  # 默认是做约束检查的。如果发现路径走到了一个不应该到达的节点，则不做check，相当于是优化了过程
+    #             constrains = []  # 路径上的约束
+    #             for nodeIndex in range(0, nodeList.__len__() - 1):  # invalid节点不计入计算
+    #                 node = nodeList[nodeIndex]  # 取出一个节点
+    #                 executor.setBeginBlock(node)
+    #                 while not executor.allInstrsExecuted():  # block还没有执行完
+    #                     executor.execNextOpCode()
+    #                 jumpType = executor.getBlockJumpType()
+    #                 if jumpType == "conditional":
+    #                     # 先判断，是否为确定的跳转地址
+    #                     curNode = nodeList[nodeIndex]
+    #                     nextNode = nodeList[nodeIndex + 1]
+    #                     isCertainJumpDest, jumpCond = executor.checkIsCertainJumpDest()
+    #                     if isCertainJumpDest:  # 是一个固定的跳转地址
+    #                         # 检查预期的跳转地址是否和栈的信息匹配
+    #                         expectedTarget = self.cfg.blocks[curNode].jumpiDest[jumpCond]
+    #                         if nextNode != expectedTarget:  # 不匹配，直接置为不可达，后续不做check
+    #                             self.pathReachable[pathId] = False
+    #                             isSolve = False  # 不对这一条路径使用约束求解了
+    #                             if self.outputProcessInfo:  # 需要输出处理信息
+    #                                 self.log.processing(
+    #                                     "路径{}在实际运行中不可能出现：在节点{}处本应跳转到{}，却跳转到了{}".format(pathId, curNode, expectedTarget,
+    #                                                                                    nextNode))
+    #                             break
+    #                     else:  # 不是确定的跳转地址
+    #                         if nextNode == self.cfg.blocks[curNode].jumpiDest[True]:
+    #                             constrains.append(executor.getJumpCond(True))
+    #                         elif nextNode == self.cfg.blocks[curNode].jumpiDest[False]:
+    #                             constrains.append(executor.getJumpCond(False))
+    #                         else:
+    #                             assert 0
+    #             if isSolve:
+    #                 if self.outputProcessInfo:  # 需要输出处理信息
+    #                     self.log.processing("正在计算路径{}的约束".format(pathId))
+    #                 s = Solver()
+    #                 self.pathReachable[pathId] = s.check(constrains) == sat
+    #                 if self.outputProcessInfo:  # 需要输出处理信息
+    #                     self.log.processing("路径{}约束求解完毕".format(pathId))
+    #
+    #     # 第二步，根据各个函数调用链的可达性，判断每个invalid节点的冗余类型
+    #     for invNode in self.invalidNodeList:
+    #         self.invNodeToRedundantCallChain[invNode] = []
+    #         hasReachable = False  # 一个invalid的路径中是否包含可达的路径
+    #         hasRedundantCallChain = False  # 一个invalid的所有函数调用链，是否都是冗余的
+    #         for pathIds in self.invalidNode2CallChain[invNode]:  # 取出一条函数调用链中的所有路径
+    #             isRedundantCallChain = True
+    #             for pathId in pathIds:  # 取出一条路径
+    #                 if self.pathReachable[pathId]:  # 找到一条可达的
+    #                     hasReachable = True
+    #                     isRedundantCallChain = False  # 该调用链不是冗余的
+    #             if isRedundantCallChain:  # 调用链是冗余的
+    #                 hasRedundantCallChain = True
+    #                 self.invNodeToRedundantCallChain[invNode].append(pathIds)
+    #         if not hasReachable:  # 没有一条路径可达，是完全冗余
+    #             self.redundantType[invNode] = fullyRedundant
+    #             self.fullyRedundantInvNodes.append(invNode)
+    #         else:  # 有可达的路径，不是完全冗余
+    #             if hasRedundantCallChain:  # 有冗余的函数调用链
+    #                 self.redundantType[invNode] = partiallyRedundant
+    #                 self.partiallyRedundantInvNodes.append(invNode)
+    #             else:  # 没有冗余的调用链
+    #                 self.redundantType[invNode] = nonRedundant
+    #                 self.nonRedundantInvNodes.append(invNode)
 
     def __buildDominatorTree(self):
         # 因为支配树算法中，节点是按1~N进行标号的，因此需要先做一个标号映射，并处理映射后的边，才能进行支配树的生成
@@ -918,7 +1004,7 @@ class AssertionOptimizer:
                 node = self.domTree[node]
 
             if targetAddr is None:  # 没有找到程序状态相同的节点，放弃优化
-                self.abandonedpartiallyRedundantInvNodes.append(invNode)
+                self.abandonedPartiallyRedundantInvNodes.append(invNode)
                 continue
 
             assert self.cfg.blocks[targetNode].blockType != "dispatcher"  # 不应该出现在dispatcher中
@@ -933,9 +1019,9 @@ class AssertionOptimizer:
             else:  # 不止一个入边，不删jumpdest
                 self.funcDict[targetFuncId].addRemovedRangeInfo(invNode, [targetAddr, targetNode, invNode + 1])
 
-        if self.abandonedpartiallyRedundantInvNodes.__len__() != 0:  # 有移除的invalid
+        if self.abandonedPartiallyRedundantInvNodes.__len__() != 0:  # 有移除的invalid
             self.log.info(
-                "放弃优化有副作用的Assertion:{}".format(",".join([str(n) for n in self.abandonedpartiallyRedundantInvNodes])))
+                "放弃优化有副作用的Assertion:{}".format(",".join([str(n) for n in self.abandonedPartiallyRedundantInvNodes])))
 
         # 第五步，对每一个包含部分冗余的函数体，都构造一个新函数体，其中去除了assertion相关的字节码
         # 同时，将旧函数体节点的对应信息，添加到新函数体中去
@@ -1134,9 +1220,9 @@ class AssertionOptimizer:
                     case 5:
                         continue
             jumpAddr = jumpBlock + self.blocks[jumpBlock].length - 1
-            delPush = self.blocks[pushBlock].removedByte[pushAddr-pushBlock]
-            delJump = self.blocks[jumpBlock].removedByte[jumpAddr-jumpBlock]
-            assert delPush == delJump # 如果要删除push，则jump必须也要被删除
+            delPush = self.blocks[pushBlock].removedByte[pushAddr - pushBlock]
+            delJump = self.blocks[jumpBlock].removedByte[jumpAddr - jumpBlock]
+            assert delPush == delJump  # 如果要删除push，则jump必须也要被删除
             if delPush:  # 确定要删除
                 removedInfo.append(info)
 
@@ -1273,7 +1359,8 @@ class AssertionOptimizer:
                     for i in range(-offset):  # 高位缺失的字节用0填充
                         newAddrBytes.appendleft(0x00)
                     for i in range(originalByteNum):  # 按原来的字节数填
-                        self.blocks[pushBlock].bytecode[pushAddr - pushBlockOffset + 1 + i] = newAddrBytes[i]  # 改的是地址，因此需要+1
+                        self.blocks[pushBlock].bytecode[pushAddr - pushBlockOffset + 1 + i] = newAddrBytes[
+                            i]  # 改的是地址，因此需要+1
                 else:  # 新内容不能直接填入，原位置空间不够，需要移动字节码
                     self.log.warning("原push位置:{}不能直接填入新地址:{}，需要移动字节码".format(pushAddr, newAddr))
                     # 先改push的操作码
@@ -1452,3 +1539,117 @@ class AssertionOptimizer:
         with open(self.outputPath + self.outputName, "w+") as f:
             f.write(
                 constructorStr + self.constructorDataSegStr + newFuncBodyStr + self.dataSegStr)
+
+    def __resCollector(self, resQueue):
+        '''
+        多线程收集求解结果
+        :param resQueue: 结果队列，用来接收子进程的求解结果
+        :return:
+        '''
+        self.log.info("约束收集线程已启动")
+        resNum = 0  # 获取到的结果数量
+        totalNum = len(self.invalidPaths)
+        while resNum < totalNum:
+            pathId, reachable, isTimeout = resQueue.get()  # 直接用阻塞的方法去获取
+
+            if isTimeout:
+                # 出现了超时，该invalid会被置为不分析状态，它的所有路径都会被置为可达，因此不会被当做冗余
+                invNode = self.invalidPaths[pathId].getInvNode()
+                if self.checkInvNode[invNode]:  # 还没有设置为不分析
+                    self.checkInvNode[invNode] = False
+                    for pathId in self.invalidNode2PathIds[invNode]:
+                        self.pathReachable[pathId] = True
+                        self.invalidPaths[pathId].setUndo()
+            else:
+                self.pathReachable[pathId] = reachable
+            resNum += 1
+            if self.outputProcessInfo:  # 需要输出处理信息
+                self.log.processing("收集到求解结果:{}/{}".format(resNum, totalNum))
+
+        self.log.info("约束收集线程已关闭")
+
+
+def strainWorker(cfg: Cfg, pathQueue, pathLock, resQueue, resLock):
+    '''
+
+    :param cfg: 控制流程图
+    :param pathQueue: 路径队列，传递约束路径
+    :param pathLock: 路径队列锁，一次只能有一个子进程对队列进行访问
+    :param resQueue: 结果队列，返回结果
+    :param resLock: 结果队列锁，一次只能有一个结果子进程传递返回结果
+    :return:
+    '''
+    executor = SymbolicExecutor(cfg)
+    reachable = False  # 路径是否可达
+    isTimeout = False
+    timeoutLimit = 10000  # 10s
+
+    while True:
+        # 获取路径
+        pathLock.acquire()
+        if pathQueue.empty():
+            pathLock.release()
+            time.sleep(1)
+            continue
+        path = pathQueue.get()
+        pathLock.release()
+
+        # 获取路径信息
+        nodeList = path.getPathNodes()
+        pathId = path.getId()
+        if pathId == -1:  # 所有路径约束已经求解完毕，可以结束子进程
+            break
+        if not path.doCheck():  # 这个路径已经被设置为了不分析，直接返回一个timeout的结果给收集器
+            resLock.acquire()
+            resQueue.put([pathId, True, True])
+            resLock.release()
+            continue
+
+        # 使用符号执行和求解器进行求解
+        executor.clearExecutor()
+        isSolve = True  # 默认是做约束求解的。如果发现路径走到了一个不应该到达的节点，则不做check，相当于是优化了过程
+        constrains = []  # 路径上的约束
+        for nodeIndex in range(0, len(nodeList) - 1):  # invalid节点不计入计算
+            node = nodeList[nodeIndex]  # 取出一个节点
+            executor.setBeginBlock(node)
+            while not executor.allInstrsExecuted():  # block还没有执行完
+                executor.execNextOpCode()
+            jumpType = executor.getBlockJumpType()
+            if jumpType == "conditional":
+                # 先判断，是否为确定的跳转地址
+                curNode = nodeList[nodeIndex]
+                nextNode = nodeList[nodeIndex + 1]
+                isCertainJumpDest, jumpCond = executor.checkIsCertainJumpDest()
+                if isCertainJumpDest:  # 是一个固定的跳转地址
+                    # 检查预期的跳转地址是否和栈的信息匹配
+                    expectedTarget = cfg.blocks[curNode].jumpiDest[jumpCond]
+                    if nextNode != expectedTarget:  # 不匹配，直接置为不可达，后续不做check
+                        reachable = False
+                        isSolve = False  # 不对这一条路径使用约束求解了
+                        break
+                else:  # 不是确定的跳转地址
+                    if nextNode == cfg.blocks[curNode].jumpiDest[True]:
+                        constrains.append(executor.getJumpCond(True))
+                    elif nextNode == cfg.blocks[curNode].jumpiDest[False]:
+                        constrains.append(executor.getJumpCond(False))
+                    else:
+                        assert 0
+        if isSolve:
+            s = Solver()
+            s.set("timeout", timeoutLimit)
+            res = s.check(constrains)
+            if res == sat:  # 约束可满足
+                reachable = True
+                isTimeout = False
+            elif res == unknown:  # 约束求解超时
+                reachable = True
+                isTimeout = True
+            else:  # 约束不可满足
+                reachable = False
+                isTimeout = False
+
+        # 返回可达性信息
+        # 格式为：[pathId,是否可达,是否超时]
+        resLock.acquire()
+        resQueue.put([pathId, reachable, isTimeout])
+        resLock.release()
