@@ -38,7 +38,6 @@ class CfgRepairKit:
         # 首先检查是否需要做修复
         self.__check()
         if not self.fixNeeded:
-            self.log.info("EtherSolve分析正确，不需要进行修复")
             return
 
         # 从起始节点开始，使用tagStack，进行简单的dfs遍历，尝试进行修复

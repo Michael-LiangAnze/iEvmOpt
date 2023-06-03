@@ -730,7 +730,8 @@ class AssertionOptimizer:
         # 4.27新问题：如果有多个没有入边的节点，会导致算法不收敛
         # 最简单的触发办法：domTree.initGraph(3, [[1, 3], [2, 3], [1, 2]])
         # 下面改变原来策略，如果是没有入边的节点，而且不是init block，都会在计算支配树时被移除，而且对应的边也移除
-        # 因为已经经过了函数检查，此时没有入边，而且没有不是Init的block都是不会出现的返回节点，不影响程序的正确性
+        # 因为已经经过了函数检查，此时没有入边，而且没有不是Init的block都是被修复过的，要么是返回节点
+        # 要么是没有入边的JUMPDEST，不影响程序的正确性
         newNode = list(self.nodes)
         tmpEdge = {}
         for k, v in self.edges.items():
