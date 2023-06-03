@@ -654,6 +654,7 @@ class AssertionOptimizer:
 
         # 第一步，使用多线程对路径进行可达性分析
         self.invNodeReachable = dict(zip(self.invalidNodeList, [False for i in range(self.invalidNodeList.__len__())]))
+        multiprocessing.set_start_method('spawn')  # win和linux下创建子进程的默认方式不一致，这里强制其为win下的创建方式
         manager = multiprocessing.Manager()
         pool = Pool()
         pathLock, resLock = manager.Lock(), manager.Lock()
