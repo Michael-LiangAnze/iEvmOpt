@@ -323,9 +323,9 @@ class AssertionOptimizer:
                 self.inEdges[pair[1]].append(pair[0])
 
         # 第五步，从一个函数的funcbody的起始block开始dfs遍历，只走offset范围在 [第一条指令所在的block的offset,最后一条指令所在的block的offset]之间的节点，尝试寻找出所有的函数节点
+        # 因为函数中可能包含没有入边的JUMPDEST，下面会先收集缺失的block，这些block只能是没有入边的JUMPDEST
         for rangeInfo in funcRange2Calls.keys():  # 找到一个函数
             offsetRange = json.loads(rangeInfo)  # 还原之前的list
-            offsetRange[1] += 1  # 不用每次调用range函数的时候都加
             funcBody = []
             stack = Stack()
             visited = {}
@@ -335,11 +335,9 @@ class AssertionOptimizer:
                 top = stack.pop()
                 funcBody.append(top)
                 for out in self.edges[top]:
-                    if out not in visited.keys() and out in range(offsetRange[0], offsetRange[1]):
+                    if out not in visited.keys() and out in range(offsetRange[0], offsetRange[1] + 1):
                         stack.push(out)
                         visited[out] = True
-
-            offsetRange[1] -= 1
             missingBlocks = []  # 缺失的block
             funcBody.sort()
             isProcess = True
@@ -349,13 +347,13 @@ class AssertionOptimizer:
                     continue
                 elif funcBody[i] + length + 1 == funcBody[i + 1]:  # 刚好缺一个字节的长度
                     missingBlocks.append(funcBody[i] + length)
-                else:  # 缺一个不是jumpdest的block，放弃处理这个函数
+                else:  # 缺一个不是一个字节的block，放弃处理这个函数
                     isProcess = False
                     break
             if not isProcess:  # 放弃处理这个函数
                 continue
 
-            # 检查找到的所有缺失的block，是否都是满足条件的
+            # 检查找到的所有缺失的block，是否都是只有一个JUMPDEST
             for missingBlockOffset in missingBlocks:
                 if self.blocks[missingBlockOffset].length != 1:
                     isProcess = False
@@ -367,15 +365,14 @@ class AssertionOptimizer:
                     isProcess = False
                     break
                 if missingBlockOffset in self.cfg.pushedData:
-                    # 这暂时是不被允许的，因为这里能识别出来的是，没有push过返回地址的jumpdest
-                    # 这种jumpdest并不影响程序的正确性
+                    # 这暂时是不被允许的，因为这里能修复的是，没有push过返回地址的jumpdest
                     # 具体如何触发见readme
                     self.log.fail("未能找全函数节点，放弃优化")
                     exit(0)
             if not isProcess:
                 continue
 
-            # 经过检查，可以通过加jumpdest来使函数保持完整.找全了函数节点，存储函数信息
+            # 经过检查，可以通过加入没有入边的jumpdest来使函数保持完整.找全了函数节点，存储函数信息
             for missingBlockOffset in missingBlocks:
                 funcBody.append(missingBlockOffset)
                 nodeWithoutInedge.remove(missingBlockOffset)
@@ -398,17 +395,10 @@ class AssertionOptimizer:
 
         # 第六步，尝试处理没有返回边selfdestruct、revert函数
         # 注意，有些selfdestruct函数是有返回边的，我们处理的是没有返回边的情况
-        # 一个假设：selfdestruct、revert函数若没有返回边，则应当返回的节点（编译器生成的，但是实际上不会走到的block）应当是：JUMPDEST；STOP
-        # 同时，为了及早放弃优化一些没有入边的合约，这里顺带记录没有入边的节点，如果最后发现存在没有入边的节点，它并不具备selfdestruct、revert的特征
-        # 则直接放弃优化
-
-        # 4.27 新发现：应当返回的节点不一定是JUMPDEST；STOP，见readme
-        # 因此，只要发现不是只有一条jumpdest的block，都应该做一遍这个过程
-
         self.nodes.sort()
         removedNode = []
         for node in nodeWithoutInedge:
-            # 找出这个可疑节点的上一个节点，它有可能是selfdestruct的调用节点
+            # 找出这个可疑节点的上一个节点，它有可能是调用节点
             callBlock = None
             for b in self.blocks.values():
                 if b.offset + b.length == node:
@@ -417,7 +407,7 @@ class AssertionOptimizer:
             # 检查这个节点是否为为可能的调用者节点
             if not callBlock.couldBeCaller:
                 continue
-            # 之前的假设是，在这里会压入一个返回地址，对于遇到的selfdestruct函数，也大多数成立
+            # 之前的假设是，在调用者节点里会压入一个返回地址。对于遇到的大多数情况确实成立
             # 现在观察到合约0xE0339e6EBd1CCC09232d1E979d50257268B977Ef在调用包含revert函数的时候，调用者节点中并没有push返回地址，而是在之前的几个节点中进行了push
             # 于是这里取消这个限制，只检查无入边节点的前一个节点是否为可能的调用者节点
             # hasReturnAddr = False
@@ -433,21 +423,20 @@ class AssertionOptimizer:
             # if not hasReturnAddr:
             #     continue
             # 从起始节点开始做dfs，看是否能够走完这个函数
-            assert len(self.edges[callBlock.offset]) == 1  # 假设是push addr;jump因此只有一条出边
+            assert len(self.edges[callBlock.offset]) == 1  # 假设是"push addr;jump"因此只有一条出边
             funcBegin = self.edges[callBlock.offset][0]
             if self.node2FuncId[funcBegin] is not None:
-                self.log.fail("未能找全函数节点，放弃优化")
-                exit(0)
-            endNode = None
+                continue  # 函数起始节点已经被标记为某个函数？真的有这个情况吗？不确定，但是不影响结果
+            funcEnd = None  # 先找出这个函数的可能范围，即从funcBegin开始的，没有被标记为任何函数节点的一个连续序列(不包含exit block)
             for n in self.nodes:  # 已排序
                 if n <= funcBegin:
                     continue
                 elif self.node2FuncId[n] is None and n != self.cfg.exitBlockId:
                     continue
                 else:  # 要么到了Exit，要么到了一个被标记为函数的节点
-                    endNode = n
-            assert endNode is not None
-            funcRange = range(funcBegin, endNode)
+                    funcEnd = n
+            assert funcEnd is not None
+            funcRange = range(funcBegin, funcEnd)
             funcBody = []
             stack = Stack()
             visited = {}
@@ -460,10 +449,10 @@ class AssertionOptimizer:
                     if out not in visited.keys() and out in funcRange and self.node2FuncId[out] is None:  # 不能是已经标记过的函数
                         stack.push(out)
                         visited[out] = True
-            # 检查找出的是否为同一个函数内的节点
+            # 检查找出的是否为一个连续的字节码序列
             funcBody.sort()
             findAll = True
-            for i in range(funcBody.__len__() - 1):
+            for i in range(len(funcBody) - 1):
                 curBlock, nextBlock = self.blocks[funcBody[i]], self.blocks[funcBody[i + 1]]
                 if curBlock.offset + curBlock.length != nextBlock.offset:
                     findAll = False
@@ -473,7 +462,7 @@ class AssertionOptimizer:
                 self.log.fail("未能找全函数节点，放弃优化")
                 exit(0)
 
-            # 找到了selfdestruct、revert函数，将其标出
+            # 找全了函数节点，将其标出
             self.funcCnt += 1
             f = Function(self.funcCnt, funcBody[0], funcBody[-1], funcBody, self.edges)
             self.funcDict[self.funcCnt] = f
@@ -486,6 +475,7 @@ class AssertionOptimizer:
             nodeWithoutInedge.remove(node)
 
         # 最后还要做一个检查，检查是否所有的common节点都被标记为了函数，以及没有入边的节点是否已经被处理干净
+        # 检查通过才能进行优化，否则拒绝优化合约
         for offset, b in self.blocks.items():
             if b.blockType == "common" and self.node2FuncId[offset] is None:
                 self.log.fail("未能找全函数节点，放弃优化")
@@ -506,14 +496,6 @@ class AssertionOptimizer:
                         if self.isFuncBodyHeadNode[node]:  # 函数头存在于scc，出现了递归的情况
                             self.log.fail("检测到函数递归调用的情况，该字节码无法被优化!")
                             exit(0)
-        # 这里再做一个检查，看是否所有的common节点都被标记为了函数相关的节点
-        for offset, block in self.blocks.items():
-            if block.blockType == "common":
-                if self.node2FuncId[offset] == None:  # 没有标记
-                    self.log.fail("未能找全函数节点，放弃优化")
-                    exit(0)
-                else:
-                    continue
 
         # 第八步，因为dispatcher中也有可能存在scc，因此需要将它们也标记出来
         # 4.21新问题：dispatcher也可能被识别为函数体，如在KOLUSDTFund.bin的构造函数中，某些函数体就是由dispatcher节点构成的
@@ -742,85 +724,6 @@ class AssertionOptimizer:
                 else:  # 没有冗余的调用链
                     self.redundantType[invNode] = nonRedundant
                     self.nonRedundantInvNodes.append(invNode)
-
-    # def __reachabilityAnalysis(self):
-    #     """
-    #     可达性分析：对于一个invalid节点，检查它的所有路径是否可达，并根据这些可达性信息判断冗余类型
-    #     :return:None
-    #     """
-    #
-    #     # 第一步，使用求解器判断各条路径是否是可达的
-    #     pathId2Constrains = {}
-    #     self.invNodeReachable = dict(zip(self.invalidNodeList, [False for i in range(self.invalidNodeList.__len__())]))
-    #     executor = SymbolicExecutor(self.cfg)
-    #     for invNode in self.invalidNodeList:  # 对一个invalid节点
-    #         for pathId in self.invalidNode2PathIds[invNode]:  # 取出一条路径
-    #             self.pathReachable[pathId] = False
-    #             executor.clearExecutor()
-    #             nodeList = self.invalidPaths[pathId].pathNodes
-    #             isSolve = True  # 默认是做约束检查的。如果发现路径走到了一个不应该到达的节点，则不做check，相当于是优化了过程
-    #             constrains = []  # 路径上的约束
-    #             for nodeIndex in range(0, nodeList.__len__() - 1):  # invalid节点不计入计算
-    #                 node = nodeList[nodeIndex]  # 取出一个节点
-    #                 executor.setBeginBlock(node)
-    #                 while not executor.allInstrsExecuted():  # block还没有执行完
-    #                     executor.execNextOpCode()
-    #                 jumpType = executor.getBlockJumpType()
-    #                 if jumpType == "conditional":
-    #                     # 先判断，是否为确定的跳转地址
-    #                     curNode = nodeList[nodeIndex]
-    #                     nextNode = nodeList[nodeIndex + 1]
-    #                     isCertainJumpDest, jumpCond = executor.checkIsCertainJumpDest()
-    #                     if isCertainJumpDest:  # 是一个固定的跳转地址
-    #                         # 检查预期的跳转地址是否和栈的信息匹配
-    #                         expectedTarget = self.cfg.blocks[curNode].jumpiDest[jumpCond]
-    #                         if nextNode != expectedTarget:  # 不匹配，直接置为不可达，后续不做check
-    #                             self.pathReachable[pathId] = False
-    #                             isSolve = False  # 不对这一条路径使用约束求解了
-    #                             if self.outputProcessInfo:  # 需要输出处理信息
-    #                                 self.log.processing(
-    #                                     "路径{}在实际运行中不可能出现：在节点{}处本应跳转到{}，却跳转到了{}".format(pathId, curNode, expectedTarget,
-    #                                                                                    nextNode))
-    #                             break
-    #                     else:  # 不是确定的跳转地址
-    #                         if nextNode == self.cfg.blocks[curNode].jumpiDest[True]:
-    #                             constrains.append(executor.getJumpCond(True))
-    #                         elif nextNode == self.cfg.blocks[curNode].jumpiDest[False]:
-    #                             constrains.append(executor.getJumpCond(False))
-    #                         else:
-    #                             assert 0
-    #             if isSolve:
-    #                 if self.outputProcessInfo:  # 需要输出处理信息
-    #                     self.log.processing("正在计算路径{}的约束".format(pathId))
-    #                 s = Solver()
-    #                 self.pathReachable[pathId] = s.check(constrains) == sat
-    #                 if self.outputProcessInfo:  # 需要输出处理信息
-    #                     self.log.processing("路径{}约束求解完毕".format(pathId))
-    #
-    #     # 第二步，根据各个函数调用链的可达性，判断每个invalid节点的冗余类型
-    #     for invNode in self.invalidNodeList:
-    #         self.invNodeToRedundantCallChain[invNode] = []
-    #         hasReachable = False  # 一个invalid的路径中是否包含可达的路径
-    #         hasRedundantCallChain = False  # 一个invalid的所有函数调用链，是否都是冗余的
-    #         for pathIds in self.invalidNode2CallChain[invNode]:  # 取出一条函数调用链中的所有路径
-    #             isRedundantCallChain = True
-    #             for pathId in pathIds:  # 取出一条路径
-    #                 if self.pathReachable[pathId]:  # 找到一条可达的
-    #                     hasReachable = True
-    #                     isRedundantCallChain = False  # 该调用链不是冗余的
-    #             if isRedundantCallChain:  # 调用链是冗余的
-    #                 hasRedundantCallChain = True
-    #                 self.invNodeToRedundantCallChain[invNode].append(pathIds)
-    #         if not hasReachable:  # 没有一条路径可达，是完全冗余
-    #             self.redundantType[invNode] = fullyRedundant
-    #             self.fullyRedundantInvNodes.append(invNode)
-    #         else:  # 有可达的路径，不是完全冗余
-    #             if hasRedundantCallChain:  # 有冗余的函数调用链
-    #                 self.redundantType[invNode] = partiallyRedundant
-    #                 self.partiallyRedundantInvNodes.append(invNode)
-    #             else:  # 没有冗余的调用链
-    #                 self.redundantType[invNode] = nonRedundant
-    #                 self.nonRedundantInvNodes.append(invNode)
 
     def __buildDominatorTree(self):
         # 因为支配树算法中，节点是按1~N进行标号的，因此需要先做一个标号映射，并处理映射后的边，才能进行支配树的生成
