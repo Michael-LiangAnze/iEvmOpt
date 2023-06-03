@@ -1,6 +1,8 @@
 # 用于生成有向图中任意两点之间的所有路径
 # 返回的格式为：[[路径1从起点到终点经过的点],[路径1从起点到终点经过的点]...]
 # 需要注意，图中是没有有向环的
+import sys
+
 from AssertionOptimizer.Path import Path
 from Cfg.Cfg import Cfg
 from Utils import Stack
@@ -31,8 +33,7 @@ class PathGenerator:
         self.node2FuncId = node2FuncId  # 用于检测递归调用和scc访问控制，注意，不是函数的节点会被标成None
         self.funcBodyDict = funcBodyDict  # 用于检测递归调用
         self.isInvalidNode = dict(zip(self.nodes, [False for i in range(self.nodes.__len__())]))  # 某个节点是否是invalid
-        # self.sccVisiting = dict(zip(self.nodes, [False for i in range(0, len(self.nodes))]))  # 记录某个函数内scc是否正在被访问
-        self.sccVisiting = {}  # 基于返回地址栈的访问控制，格式： 返回地址栈字符串:访问控制dict
+        self.sccVisiting = {}  # 基于返回地址栈的访问控制，格式： 函数调用链字符串:访问控制dict
         # 解释一下，不能使用基于函数调用链的scc访问控制，否则当出现循环内调用函数的时候，会出现死循环
 
         self.jumpEdgeInfo = []  # 跳转边信息，格式为:[[push的值，push的字节数，push指令的地址，push指令所在的block,jump所在的block]]
@@ -44,8 +45,8 @@ class PathGenerator:
 
         self.codecopyInfo = []
         self.log = Logger()
-        # print(self.node2FuncId)
-        # print(self.isLoopRelated)
+
+        sys.setrecursionlimit(3500) # 设置最大递归深度
 
     def genPath(self):
         '''
@@ -57,7 +58,7 @@ class PathGenerator:
         '''
         # dfs寻路
 
-        self.__dfs(self.beginNode, TagStack(self.cfg), Stack(), Stack())
+        self.__dfs(self.beginNode, TagStack(self.cfg), Stack(), Stack(), [-1])  # 函数调用链放个-1，防止为空，实际是从0开始的
 
         # 因为得到的跳转信息和codecopy信息有可能是重复的，这里需要做一个去重处理
         tempDict = {}
@@ -68,21 +69,17 @@ class PathGenerator:
         for info in self.codecopyInfo:
             tempDict[info.__str__()] = info
         self.codecopyInfo = list(tempDict.values())
-        # for b in self.blocks.values():
-        #     b.printBlockInfo()
-        # for e in self.uncondJumpEdges.values():
-        #     e.output()
         # 再检查一下得到的跳转边信息是否有漏缺
         infoNum = 0
         for block in self.blocks.values():
-            # block.printBlockInfo()
             if block.jumpType == "unconditional":  # 可能有多个出边，每一个出边都应该由一个push和一个jump来组成
                 infoNum += block.jumpDest.__len__()
             elif block.jumpType == "conditional":  # 只有两个出边
                 infoNum += 1  # 一次push即可
         assert infoNum == self.jumpEdgeInfo.__len__(), "{},{}".format(infoNum, self.jumpEdgeInfo.__len__())
 
-    def __dfs(self, curNode: int, parentTagStack: TagStack, parentReturnAddrStack: Stack, parentPathRecorder: Stack):
+    def __dfs(self, curNode: int, parentTagStack: TagStack, parentReturnAddrStack: Stack, parentPathRecorder: Stack,
+              curCallChain: list):
         """
         路径记录：每访问一个新节点，则将其加入到路径栈，离开时pop一次(其实就是pop自己)
         访问控制：每访问一个新节点，则将其设置为true状态，退出时设置为false
@@ -97,12 +94,12 @@ class PathGenerator:
         curPathRecorder.push(curNode)
 
         # 第一步，检查当前是否进入了scc，若是，则要修改访问控制
-        curReturnAddrStackStr = curReturnAddrStack.getStack().__str__()  # 返回地址栈的字符串
+        curCallChainStr = curCallChain.__str__()  # 函数调用链的字符串
         if self.isLoopRelated[curNode]:  # 当前访问的是一个scc，需要将其标记为true，防止死循环
-            if curReturnAddrStackStr not in self.sccVisiting.keys():  # 还没有建立访问控制
-                self.sccVisiting[curReturnAddrStackStr] = dict(
+            if curCallChainStr not in self.sccVisiting.keys():  # 还没有建立访问控制
+                self.sccVisiting[curCallChainStr] = dict(
                     zip(self.nodes, [False for i in range(0, len(self.nodes))]))
-            self.sccVisiting[curReturnAddrStackStr][curNode] = True
+            self.sccVisiting[curCallChainStr][curNode] = True
 
         # 第二步，进行tagstack执行，这一步需要复制父节点的tagstack信息
         curTagStack.setBeginBlock(curNode)
@@ -114,9 +111,8 @@ class PathGenerator:
                 self.paths.append(path)
                 self.pathId += 1
                 # 不必往下走，直接返回
-                # curPathRecorder.pop()
                 if self.isLoopRelated[curNode]:
-                    self.sccVisiting[curReturnAddrStackStr][curNode] = False
+                    self.sccVisiting[curCallChainStr][curNode] = False
                 return
             elif opcode == 0x39:  # codecopy
                 tmpOffset = curTagStack.getTagStackItem(1)
@@ -128,7 +124,6 @@ class PathGenerator:
                 tmpOffset.append(curNode)
                 self.codecopyInfo.append(tmpOffset)
             if curTagStack.isLastInstr() and self.blocks[curNode].jumpType not in ["terminal", "fall"]:
-                # terminal、fall可能会没有栈信息
                 pushInfo = curTagStack.getTagStackTop()  # [push的值，push的字节数,push指令的地址，push指令所在的block]
             curTagStack.execNextOpCode()
 
@@ -143,7 +138,7 @@ class PathGenerator:
             self.jumpEdgeInfo.append(pushInfo)
         elif self.blocks[curNode].jumpType == "terminal":  # 应当立即返回，不必再往下走
             if self.isLoopRelated[curNode]:
-                self.sccVisiting[curReturnAddrStackStr][curNode] = False
+                self.sccVisiting[curCallChainStr][curNode] = False
             return
 
         # 第四步，查看每一条出边
@@ -151,38 +146,23 @@ class PathGenerator:
         # 否则，需要进行出边遍历
         for node in self.edges[curNode]:  # 查看每一个出边
             if self.isLoopRelated[node]:  # 是一个环相关节点
-                if curReturnAddrStackStr in self.sccVisiting.keys():
-                    if self.sccVisiting[curReturnAddrStackStr][node]:  # 这个点已经访问过
+                if curCallChainStr in self.sccVisiting.keys():
+                    if self.sccVisiting[curCallChainStr][node]:  # 这个点已经访问过
                         continue
             key = [curNode, node].__str__()
             if key in self.uncondJumpEdges.keys():  # 这是一条uncondjump边，但是不确定是调用边还是返回边
                 e = self.uncondJumpEdges[key]
                 if e.isCallerEdge:  # 是一条调用边
-                    # 可以是环相关的点，循环内调用函数也可以
-                    # if self.isLoopRelated[node]:  # 不能是环相关的点，例如循环内调用函数，会出现无限递归的情况
-                    #     continue
-                    if curReturnAddrStack.hasItem(
-                            e.tetrad[1]):  # 如果是已经调用过的函数，则说明出现了环形函数调用的情况，此时需要放弃优化
-                        # 找出所有环相关的函数，用于报错
-                        callFuncId = self.node2FuncId[e.targetNode]
-                        callLoopRelatedFuncId = {}  # 用字典只是为了过滤相同的函数id
-                        tempPathRecorder = Stack()
-                        tempPathRecorder.setStack(curPathRecorder.getStack())
-                        isStop = False
-                        while not isStop:
-                            n = tempPathRecorder.pop()
-                            if self.node2FuncId[n] == callFuncId and self.node2FuncId[
-                                tempPathRecorder.getTop()] != callFuncId:  # 已经彻底退出环了
-                                isStop = True
-                            callLoopRelatedFuncId[self.node2FuncId[n]] = None
-                        self.log.fail(
-                            "检测到环形函数调用链的情况，涉及的函数id有：{}，字节码无法被优化".format([i for i in callLoopRelatedFuncId.keys()]))
+                    if curReturnAddrStack.hasItem(e.tetrad[1]):
+                        # 如果栈中有返回地址，则说明这个函数被调用过而且还没被返回，出现了环形函数调用的情况，此时需要放弃优化
+                        self.log.fail("检测到环形函数调用链的情况，字节码无法被优化")
                         exit(0)
-                        # 程序已经结束了
                     curReturnAddrStack.push(e.tetrad[1])  # push返回地址
-                    self.__dfs(node, curTagStack, curReturnAddrStack, curPathRecorder)
-                    # 已经走完了，返回信息栈需要pop掉这一个返回信息
-                    curReturnAddrStack.pop()
+                    newCallChain = list(curCallChain)
+                    newCallChain.append(self.node2FuncId[e.targetNode])  # 将新函数的函数id加入函数调用链
+                    self.__dfs(node, curTagStack, curReturnAddrStack, curPathRecorder, newCallChain)
+                    curReturnAddrStack.pop()  # 已经走完了，返回信息栈需要pop掉这一个返回信息
+
                 elif e.isReturnEdge:  # 是一条返回边
                     if curReturnAddrStack.empty():  # 栈里必须还有地址
                         continue
@@ -190,16 +170,15 @@ class PathGenerator:
                         continue
                     stackItems = curReturnAddrStack.getStack()  # 保存之前的栈，防止栈因为走向终止节点而被清空
                     curReturnAddrStack.pop()  # 模拟返回后的效果
-                    self.__dfs(node, curTagStack, curReturnAddrStack, curPathRecorder)  # 返回
+                    self.__dfs(node, curTagStack, curReturnAddrStack, curPathRecorder, list(curCallChain))  # 返回
                     curReturnAddrStack.setStack(stackItems)  # 恢复之前的栈状态
                 else:  # 是一条普通的uncondjump边
-                    self.__dfs(node, curTagStack, curReturnAddrStack, curPathRecorder)
+                    self.__dfs(node, curTagStack, curReturnAddrStack, curPathRecorder, list(curCallChain))
             else:  # 不是unconditional jump
-                self.__dfs(node, curTagStack, curReturnAddrStack, curPathRecorder)
+                self.__dfs(node, curTagStack, curReturnAddrStack, curPathRecorder, list(curCallChain))
 
-        # curReturnAddrStack.pop()
         if self.isLoopRelated[curNode]:
-            self.sccVisiting[curReturnAddrStackStr][curNode] = False
+            self.sccVisiting[curCallChainStr][curNode] = False
 
     def getPath(self):
         return self.paths

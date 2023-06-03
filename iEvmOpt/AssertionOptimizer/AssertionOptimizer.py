@@ -147,7 +147,7 @@ class AssertionOptimizer:
         self.__searchPaths()
 
         if self.invalidNodeList.__len__() == 0:
-            self.log.info("没有找到Assertion，优化结束")
+            self.log.info("没有找到可优化的Assertion，优化结束")
             return
         self.log.info(
             "路径搜索完毕，一共找到{}个Assertion:{},{}条路径".format(self.invalidNodeList.__len__(), self.invalidNodeList,
@@ -639,6 +639,8 @@ class AssertionOptimizer:
         for node in removedInvNodes:
             self.invalidNodeList.remove(node)
             self.invalidNode2PathIds.pop(node)
+        if len(removedInvNodes) > 0:
+            self.log.info("放弃优化路径中包含SCC节点的Assertion:{}".format(removedInvNodes))
 
         # 第六步，对于每个可优化的invalid节点，将其所有路径根据函数调用链进行划分
         for invNode in self.invalidNodeList:  # 取出一个invalid节点
@@ -875,8 +877,8 @@ class AssertionOptimizer:
             # 第一步，获取路径上所有指令位置的程序状态
             # 根据evmopt中的注释，需要辨别路径上是否有SHA3指令，有则从SHA3指令开始，不保留内存状态
             # 这是例子：contracts/0x054bfcd07b64575c23c0045615b37b297e2e2929/bin/TokenERC20.bin
-            # 如果谁看到了这里，并愿意修复这个问题，我在这里提前感谢了！
-            # 我的代码暂时还是比evmopt里比较内存的部分优秀一点点的，毕竟它是直接放弃内存状态 :D
+            # 这是个很无语的问题，如果要严格优化，那么包含了sha3指令路径的invalid就应该放弃优化
+            # 但是实际上，很多路径都会包含sha3指令，也就是说，如果放弃的话，优化率会很难看
             pathNodes = self.invalidPaths[pathsOfCallChain[0]].pathNodes  # 随意取出一条路径
             sha3Exist = False
             for node in pathNodes:
@@ -907,7 +909,6 @@ class AssertionOptimizer:
             targetState = stateMap[invNode]
             node = self.domTree[invNode]
             while node != 0:
-                # self.blocks[node].printBlockInfo()
                 addrs = self.blocks[node].instrAddrs
                 for addr in reversed(addrs):  # 从后往前遍历
                     if stateMap[addr] == targetState:  # 找到一个状态相同的点
@@ -923,7 +924,6 @@ class AssertionOptimizer:
             if targetAddr is None:
                 self.abandonedFullyRedundantInvNodes.append(invNode)
                 continue  # 放弃当前Assertion的优化
-            # print(targetAddr, targetNode, pathNodes)
             if self.outputProcessInfo:  # 需要输出处理信息
                 self.log.processing("找到和节点{}程序状态相同的地址:{}，对应的节点为:{}".format(invNode, targetAddr, targetNode))
 
