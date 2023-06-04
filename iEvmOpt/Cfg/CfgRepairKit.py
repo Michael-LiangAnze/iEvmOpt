@@ -118,14 +118,6 @@ class CfgRepairKit:
                     self.edges[curNode].append(jumpInfoDigit)
                     self.inEdge[jumpInfoDigit].append(curNode)
 
-        # 继续dfs
-        # 因为出边的数量可能在遍历的时候增加/减少，因此采用下标的方式遍历
-        # i = 0
-        # while i < len(self.edges[curNode]):
-        #     nextNode = self.edges[curNode][i]
-        #     self.__dfs(nextNode, curTagStack)
-        #     i += 1
-
         # 不顾原来的边关系，直接做dfs
         if jumpInfoDigit is None:  # 从栈中无法找到地址
             assert self.blocks[curNode].jumpType not in ["conditional", "unconditional"]
@@ -141,7 +133,5 @@ class CfgRepairKit:
                 self.__dfs(curNode + self.blocks[curNode].length, curTagStack)
             else:  # terminal only
                 assert 0  # 返回
-        # if curNode in [587,785]:
-        #     print(curNode,jumpInfoDigit)
 
         self.visiting[curNode] = False

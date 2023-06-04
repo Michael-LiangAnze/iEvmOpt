@@ -1,5 +1,6 @@
 import multiprocessing
 import pickle
+import sys
 import threading
 import time
 from collections import deque
@@ -539,6 +540,19 @@ class AssertionOptimizer:
             for pair in pairs:
                 self.edges[pair[0]].remove(pair[1])
                 self.inEdges[pair[1]].remove(pair[0])
+
+        # # 生成颜色图
+        # group = {}
+        # for node,id in self.node2FuncId.items():
+        #     if id is not None:
+        #         group[node] = id + 1
+        #     else:
+        #         group[node] = 0
+        # length = {}
+        # for offset,b in self.blocks.items():
+        #     length[offset] = b.length
+        # dg = DotGraphGenerator(self.nodes,self.edges,group,length)
+        # dg.genDotGraph(sys.argv[0],"temp")
 
     def __searchPaths(self):
         """
