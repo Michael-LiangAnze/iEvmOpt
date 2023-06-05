@@ -1,12 +1,14 @@
 import multiprocessing
 import pickle
+import queue
+import signal
 import sys
 import threading
 import time
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from threading import Thread
-
+import eventlet
 from z3 import *
 
 from AssertionOptimizer.Function import Function
@@ -45,7 +47,6 @@ class AssertionOptimizer:
         :param outputProcessInfo:是否输出处理过程信息，默认为不输出
         :param outputHtml:是否输出HTML报告
         """
-
         # 输入输出路径文件
         self.inputFile = inputFile
         self.outputPath = outputPath
@@ -91,6 +92,8 @@ class AssertionOptimizer:
         self.nonRedundantInvNodes = []  # 不冗余的invalid节点
         self.invNodeToRedundantCallChain = {}  # 每个invalid节点对应的，冗余的函数调用链，格式为： invNode:[[pid1,pid2],[pid3,pid4]]
         self.checkInvNode = {}  # 对某个invalid node，是否进行分析。因为在求解过程中，可能会出现超时，一旦出现超时，就把这个invNode的所有路径，都设置成不分析
+        self.resLock = multiprocessing.Manager().Lock()
+        self.pathIds = []
 
         # 冗余assertion优化需要用到的信息
         self.domTree = {}  # 支配树。注意，为了方便从invalid节点往前做遍历，该支配树存储的是入边，格式为   to:from
@@ -668,51 +671,67 @@ class AssertionOptimizer:
 
         # 第一步，使用多线程对路径进行可达性分析
         self.invNodeReachable = dict(zip(self.invalidNodeList, [False for i in range(self.invalidNodeList.__len__())]))
-        multiprocessing.set_start_method('spawn')  # win和linux下创建子进程的默认方式不一致，这里强制其为win下的创建方式
-        manager = multiprocessing.Manager()
-        pool = Pool()
-        pathLock, resLock = manager.Lock(), manager.Lock()
-        pathQueue, resQueue = manager.Queue(), manager.Queue()
-        subProcessNum = multiprocessing.cpu_count() - 2  # 创建cpu数量-2的子进程
+        # multiprocessing.set_start_method('spawn')  # win和linux下创建子进程的默认方式不一致，这里强制其为win下的创建方式
+        # manager = multiprocessing.Manager()
+        # pool = Pool()
+        # pathLock, resLock = manager.Lock(), manager.Lock()
+        # pathQueue, resQueue = manager.Queue(), manager.Queue()
+        # # subProcessNum = multiprocessing.cpu_count() - 2  # 创建cpu数量-2的子进程
+        # subProcessNum = 8
+        # self.log.info("启动{}个子进程进行约束求解".format(subProcessNum))
+        #
+        # for i in range(subProcessNum):
+        #     pool.apply_async(strainWorker,
+        #                      args=(i, self.cfg, pathQueue, pathLock, resQueue, resLock))
+        #
+        # # 创建一个线程用来获取数据
+        # collector = threading.Thread(target=self.__resCollector, args=(resQueue, resLock))
+        # collector.start()
+        #
+        # # 使用多线程进行约束求解
+        # for pathId, path in self.invalidPaths.items():  # 取出一条路径
+        #     # 对于路径超时了的invalid，照样将路径放入队列，这些路径已经被设置为了不分析状态，求解进程会直接返回一个timeout = True
+        #     while True:  # 往队列中放入所有的路径
+        #         pathLock.acquire()
+        #         if pathQueue.full():
+        #             pathLock.release()
+        #             time.sleep(0.5)
+        #         else:
+        #             pathQueue.put(path)
+        #             pathLock.release()
+        #             break
+        #
+        # # 等待结果，结果收集完毕之后，发送特殊的路径信息，用以结束子进程
+        # collector.join()
+        # tempPath = Path(-1, [None])
+        # putNum = 0
+        # while putNum < subProcessNum:
+        #     pathLock.acquire()
+        #     if pathQueue.full():
+        #         pathLock.release()
+        #         time.sleep(0.5)
+        #     else:
+        #         pathQueue.put(tempPath)
+        #         putNum += 1
+        #         pathLock.release()
+        # pool.close()
+        # pool.join()
+        # self.log.info("所有约束求解子进程已关闭")
+        multiprocessing.set_start_method('spawn',force=True)  # win和linux下创建子进程的默认方式不一致，这里强制其为win下的创建方式
+        cpuNum = multiprocessing.cpu_count()
+        subProcessNum = cpuNum // 2# 更多的线程，并不是好事，反而会造成cpu拥堵，使得超时变多
+
+        self.pathIds = list(self.invalidPaths.keys())
         self.log.info("启动{}个子进程进行约束求解".format(subProcessNum))
 
+        threads = []
         for i in range(subProcessNum):
-            pool.apply_async(strainWorker,
-                             args=(self.cfg, pathQueue, pathLock, resQueue, resLock))
+            threads.append(threading.Thread(target=self.__constrainWorkerThread))
+        for t in threads:
+            t.start()
 
-        # 创建一个线程用来获取数据
-        collector = threading.Thread(target=self.__resCollector, args=(resQueue,))
-        collector.start()
-
-        # 使用多线程进行约束求解
-        for pathId, path in self.invalidPaths.items():  # 取出一条路径
-            # 对于路径超时了的invalid，照样将路径放入队列，这些路径已经被设置为了不分析状态，求解进程会直接返回一个timeout = True
-            while True:  # 往队列中放入所有的路径
-                pathLock.acquire()
-                if pathQueue.full():
-                    pathLock.release()
-                    time.sleep(1)
-                else:
-                    pathQueue.put(path)
-                    pathLock.release()
-                    break
-
-        # 等待结果，结果收集完毕之后，发送特殊的路径信息，用以结束子进程
-        collector.join()
-        tempPath = Path(-1, [None])
-        putNum = 0
-        while putNum < subProcessNum:
-            pathLock.acquire()
-            if pathQueue.full():
-                pathLock.release()
-                time.sleep(1)
-            else:
-                pathQueue.put(tempPath)
-                putNum += 1
-                pathLock.release()
-        pool.close()
-        pool.join()
-        self.log.info("所有约束求解子进程已关闭")
+        for t in threads:
+            t.join()
 
         # 第二步，根据各个函数调用链的可达性，判断每个invalid节点的冗余类型
         # 对于超时的invalid，它的所有路径被设置为可达的，不会被判断为冗余。详见求解结果收集函数
@@ -1459,116 +1478,239 @@ class AssertionOptimizer:
             f.write(
                 constructorStr + self.constructorDataSegStr + newFuncBodyStr + self.dataSegStr)
 
-    def __resCollector(self, resQueue):
-        '''
-        多线程收集求解结果
-        :param resQueue: 结果队列，用来接收子进程的求解结果
-        :return:
-        '''
-        self.log.info("约束收集线程已启动")
-        resNum = 0  # 获取到的结果数量
-        totalNum = len(self.invalidPaths)
-        while resNum < totalNum:
-            pathId, reachable, isTimeout = resQueue.get()  # 直接用阻塞的方法去获取
+    # def __resCollector(self, resQueue, resLock):
+    #     '''
+    #     多线程收集求解结果
+    #     :param resQueue: 结果队列，用来接收子进程的求解结果
+    #     :param resLock: 结果队列的访问控制锁
+    #     :return:
+    #     '''
+    #     self.log.info("约束收集线程已启动")
+    #     resNum = 0  # 获取到的结果数量
+    #     totalNum = len(self.invalidPaths)
+    #     while resNum < totalNum:
+    #         resLock.acquire()
+    #         # print("收集器获取到结果锁")
+    #         if resQueue.empty():
+    #             # print("结果队列为空，收集器释放结果锁")
+    #             resLock.release()
+    #             time.sleep(0.5)
+    #             continue
+    #         pathId, reachable, isTimeout = resQueue.get()  # 直接用阻塞的方法去获取
+    #         print("收集器获取到结果:{}".format(pathId))
+    #         resLock.release()
+    #
+    #         if isTimeout:
+    #             # 出现了超时，该invalid会被置为不分析状态，它的所有路径都会被置为可达，因此不会被当做冗余
+    #             invNode = self.invalidPaths[pathId].getInvNode()
+    #             if self.checkInvNode[invNode]:  # 还没有设置为不分析
+    #                 self.checkInvNode[invNode] = False
+    #                 for pathId in self.invalidNode2PathIds[invNode]:
+    #                     self.pathReachable[pathId] = True
+    #                     self.invalidPaths[pathId].setUndo()
+    #         else:
+    #             self.pathReachable[pathId] = reachable
+    #         resNum += 1
+    #         if self.outputProcessInfo:  # 需要输出处理信息
+    #             self.log.processing("收集到求解结果:{}/{}".format(resNum, totalNum))
+    #
+    #     self.log.info("约束收集线程已关闭")
 
-            if isTimeout:
-                # 出现了超时，该invalid会被置为不分析状态，它的所有路径都会被置为可达，因此不会被当做冗余
-                invNode = self.invalidPaths[pathId].getInvNode()
-                if self.checkInvNode[invNode]:  # 还没有设置为不分析
-                    self.checkInvNode[invNode] = False
+    def __constrainWorkerThread(self):
+        manager = multiprocessing.Manager()
+        resQueue = manager.Queue()
+        timeoutLimit = 20  # 20s
+
+        # 用于输出辅助信息
+        totalPathNum = total = len(self.invalidPaths.keys())
+        remainPathNum = 0
+
+        while True:
+            self.resLock.acquire()
+            if len(self.pathIds) == 0:
+                self.resLock.release()
+                break
+            else:
+                path = self.invalidPaths[self.pathIds.pop()]
+                remainPathNum = len(self.pathIds)
+            self.resLock.release()
+
+            if not path.doCheck():
+                self.pathReachable[path.getId()] = True
+            else:
+                p = Process(target=constrainWorkerProcess, args=(self.cfg, path, resQueue))
+                p.start()
+                try:
+                    reachable = resQueue.get(timeout=timeoutLimit)
+                except queue.Empty:  # 超时
+                    reachable = True
+                    invNode = self.invalidPaths[path.getId()].getInvNode()
                     for pathId in self.invalidNode2PathIds[invNode]:
                         self.pathReachable[pathId] = True
                         self.invalidPaths[pathId].setUndo()
-            else:
-                self.pathReachable[pathId] = reachable
-            resNum += 1
-            if self.outputProcessInfo:  # 需要输出处理信息
-                self.log.processing("收集到求解结果:{}/{}".format(resNum, totalNum))
+                p.kill()
+                p.terminate()
+                self.pathReachable[path.getId()] = reachable
 
-        self.log.info("约束收集线程已关闭")
+            if self.outputProcessInfo:
+                self.log.processing(
+                    "收集到路径：{} ({}/{})的求解结果".format(path.getId(), totalPathNum - remainPathNum, totalPathNum))
 
 
-def strainWorker(cfg: Cfg, pathQueue, pathLock, resQueue, resLock):
+def constrainWorkerProcess(cfg: Cfg, path: Path, resQueue):
     '''
-
-    :param cfg: 控制流程图
-    :param pathQueue: 路径队列，传递约束路径
-    :param pathLock: 路径队列锁，一次只能有一个子进程对队列进行访问
-    :param resQueue: 结果队列，返回结果
-    :param resLock: 结果队列锁，一次只能有一个结果子进程传递返回结果
+    子进程求解约束
+    :param context:
+    :param constrains:
     :return:
     '''
     executor = SymbolicExecutor(cfg)
-    reachable = False  # 路径是否可达
-    isTimeout = False
-    timeoutLimit = 20000  # 20s
+    if not path.doCheck():  # 这个路径已经被设置为了不分析
+        return True
+    nodeList = path.getPathNodes()
+    # 使用符号执行和求解器进行求解
+    executor.clearExecutor()
+    isSolve = True  # 默认是做约束求解的。如果发现路径走到了一个不应该到达的节点，则不做check，相当于是优化了过程
+    constrains = []  # 路径上的约束
+    for nodeIndex in range(0, len(nodeList) - 1):  # invalid节点不计入计算
+        node = nodeList[nodeIndex]  # 取出一个节点
+        executor.setBeginBlock(node)
+        while not executor.allInstrsExecuted():  # block还没有执行完
+            executor.execNextOpCode()
+        jumpType = cfg.blocks[node].jumpType
+        if jumpType == "conditional":
+            # 先判断，是否为确定的跳转地址
+            curNode = nodeList[nodeIndex]
+            nextNode = nodeList[nodeIndex + 1]
+            isCertainJumpDest, jumpCond = executor.checkIsCertainJumpDest()
+            if isCertainJumpDest:  # 是一个固定的跳转地址
+                # 检查预期的跳转地址是否和栈的信息匹配
+                expectedTarget = cfg.blocks[curNode].jumpiDest[jumpCond]
+                if nextNode != expectedTarget:  # 不匹配，直接置为不可达，后续不做check
+                    reachable = False
+                    isSolve = False  # 不对这一条路径使用约束求解了
+                    break
+            else:  # 不是确定的跳转地址
+                if nextNode == cfg.blocks[curNode].jumpiDest[True]:
+                    constrains.append(executor.getJumpCond(True))
+                elif nextNode == cfg.blocks[curNode].jumpiDest[False]:
+                    constrains.append(executor.getJumpCond(False))
+                else:
+                    assert 0
+    if isSolve:
+        s = Solver(ctx=executor.getCtx())
+        reachable = s.check(constrains) == sat
+    resQueue.put(reachable)
 
-    while True:
-        # 获取路径
-        pathLock.acquire()
-        if pathQueue.empty():
-            pathLock.release()
-            time.sleep(1)
-            continue
-        path = pathQueue.get()
-        pathLock.release()
 
-        # 获取路径信息
-        nodeList = path.getPathNodes()
-        pathId = path.getId()
-        if pathId == -1:  # 所有路径约束已经求解完毕，可以结束子进程
-            break
-        if not path.doCheck():  # 这个路径已经被设置为了不分析，直接返回一个timeout的结果给收集器
-            resLock.acquire()
-            resQueue.put([pathId, True, True])
-            resLock.release()
-            continue
-
-        # 使用符号执行和求解器进行求解
-        executor.clearExecutor()
-        isSolve = True  # 默认是做约束求解的。如果发现路径走到了一个不应该到达的节点，则不做check，相当于是优化了过程
-        constrains = []  # 路径上的约束
-        for nodeIndex in range(0, len(nodeList) - 1):  # invalid节点不计入计算
-            node = nodeList[nodeIndex]  # 取出一个节点
-            executor.setBeginBlock(node)
-            while not executor.allInstrsExecuted():  # block还没有执行完
-                executor.execNextOpCode()
-            jumpType = cfg.blocks[node].jumpType
-            if jumpType == "conditional":
-                # 先判断，是否为确定的跳转地址
-                curNode = nodeList[nodeIndex]
-                nextNode = nodeList[nodeIndex + 1]
-                isCertainJumpDest, jumpCond = executor.checkIsCertainJumpDest()
-                if isCertainJumpDest:  # 是一个固定的跳转地址
-                    # 检查预期的跳转地址是否和栈的信息匹配
-                    expectedTarget = cfg.blocks[curNode].jumpiDest[jumpCond]
-                    if nextNode != expectedTarget:  # 不匹配，直接置为不可达，后续不做check
-                        reachable = False
-                        isSolve = False  # 不对这一条路径使用约束求解了
-                        break
-                else:  # 不是确定的跳转地址
-                    if nextNode == cfg.blocks[curNode].jumpiDest[True]:
-                        constrains.append(executor.getJumpCond(True))
-                    elif nextNode == cfg.blocks[curNode].jumpiDest[False]:
-                        constrains.append(executor.getJumpCond(False))
-                    else:
-                        assert 0
-        if isSolve:
-            s = Solver(ctx=executor.getCtx())
-            s.set("timeout", timeoutLimit)
-            res = s.check(constrains)
-            if res == sat:  # 约束可满足
-                reachable = True
-                isTimeout = False
-            elif res == unknown:  # 约束求解超时
-                reachable = True
-                isTimeout = True
-            else:  # 约束不可满足
-                reachable = False
-                isTimeout = False
-
-        # 返回可达性信息
-        # 格式为：[pathId,是否可达,是否超时]
-        resLock.acquire()
-        resQueue.put([pathId, reachable, isTimeout])
-        resLock.release()
+# def strainWorker(workerId: int, cfg: Cfg, pathQueue, pathLock, resQueue, resLock):
+#     '''
+#
+#     :param cfg: 控制流程图
+#     :param pathQueue: 路径队列，传递约束路径
+#     :param pathLock: 路径队列锁，一次只能有一个子进程对队列进行访问
+#     :param resQueue: 结果队列，返回结果
+#     :param resLock: 结果队列锁，一次只能有一个结果子进程传递返回结果
+#     :return:
+#     '''
+#     executor = SymbolicExecutor(cfg)
+#     reachable = False  # 路径是否可达
+#     isTimeout = False
+#     timeoutLimit = 20000  # 20s
+#     log = Logger()
+#
+#     while True:
+#         # 获取路径
+#         pathLock.acquire()
+#         # print("求解器：{} 获取到路径锁".format(workerId))
+#         if pathQueue.empty():
+#             pathLock.release()
+#             # print("求解器：{} 获取路径失败，路径队列为空，释放路径锁".format(workerId))
+#             time.sleep(0.5)
+#             continue
+#         path = pathQueue.get()
+#         # print("求解器：{} 获取到路径：{} ".format(workerId,path.getId()))
+#         pathLock.release()
+#
+#         # 获取路径信息
+#         nodeList = path.getPathNodes()
+#         pathId = path.getId()
+#         if pathId == -1:  # 所有路径约束已经求解完毕，可以结束子进程
+#             break
+#         if not path.doCheck():  # 这个路径已经被设置为了不分析，直接返回一个timeout的结果给收集器
+#             resLock.acquire()
+#             # print("正在对路径:{} 进行求解".format(pathId))
+#             resQueue.put([pathId, True, True])
+#             # print("路径:{} 求解完毕".format(pathId))
+#             resLock.release()
+#             continue
+#
+#         # 使用符号执行和求解器进行求解
+#         executor.clearExecutor()
+#         isSolve = True  # 默认是做约束求解的。如果发现路径走到了一个不应该到达的节点，则不做check，相当于是优化了过程
+#         constrains = []  # 路径上的约束
+#         for nodeIndex in range(0, len(nodeList) - 1):  # invalid节点不计入计算
+#             node = nodeList[nodeIndex]  # 取出一个节点
+#             executor.setBeginBlock(node)
+#             while not executor.allInstrsExecuted():  # block还没有执行完
+#                 executor.execNextOpCode()
+#             jumpType = cfg.blocks[node].jumpType
+#             if jumpType == "conditional":
+#                 # 先判断，是否为确定的跳转地址
+#                 curNode = nodeList[nodeIndex]
+#                 nextNode = nodeList[nodeIndex + 1]
+#                 isCertainJumpDest, jumpCond = executor.checkIsCertainJumpDest()
+#                 if isCertainJumpDest:  # 是一个固定的跳转地址
+#                     # 检查预期的跳转地址是否和栈的信息匹配
+#                     expectedTarget = cfg.blocks[curNode].jumpiDest[jumpCond]
+#                     if nextNode != expectedTarget:  # 不匹配，直接置为不可达，后续不做check
+#                         reachable = False
+#                         isSolve = False  # 不对这一条路径使用约束求解了
+#                         break
+#                 else:  # 不是确定的跳转地址
+#                     if nextNode == cfg.blocks[curNode].jumpiDest[True]:
+#                         constrains.append(executor.getJumpCond(True))
+#                     elif nextNode == cfg.blocks[curNode].jumpiDest[False]:
+#                         constrains.append(executor.getJumpCond(False))
+#                     else:
+#                         assert 0
+#         if isSolve:
+#             set_option(timeout=20000)
+#             s = Solver(ctx=executor.getCtx())
+#             s.set("timeout", 20000)
+#             res = s.check(constrains)
+#             #
+#             # signal.signal(signal.SIGALRM, _handle_timeout)
+#             # signal.alarm(20)
+#             # try:
+#             #     res = s.check(constrains)
+#             # except Exception as e:
+#             #     res = unknown
+#             # finally:
+#             #     signal.alarm(0)
+#
+#             # eventlet.monkey_patch()
+#             # try:
+#             #     with eventlet.Timeout(20, True):
+#             #         # log.info("开始对路径：{} 进行求解".format(pathId))
+#             #         res = s.check(constrains)
+#             # except eventlet.timeout.Timeout:
+#             #     res = unknown
+#             # log.info("路径：{} 求解超时".format(pathId))
+#
+#             if res == sat:  # 约束可满足
+#                 reachable = True
+#                 isTimeout = False
+#             elif res == unknown:  # 约束求解超时
+#                 # log.info("路径：{} 求解超时".format(pathId))
+#                 reachable = True
+#                 isTimeout = True
+#             else:  # 约束不可满足
+#                 reachable = False
+#                 isTimeout = False
+#         # print("路径:{} 求解完毕".format(pathId))
+#         # 返回可达性信息
+#         # 格式为：[pathId,是否可达,是否超时]
+#         resLock.acquire()
+#         resQueue.put([pathId, reachable, isTimeout])
+#         resLock.release()

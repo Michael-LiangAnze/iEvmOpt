@@ -6,10 +6,10 @@ import subprocess
 import sys
 import time
 
-# 跑选定的测试数据集
+# 测试用
 if __name__ == "__main__":
 
-    dataPath = 'contracts1'
+    dataPath = 'testContracts'
     dataFileList = os.listdir(dataPath)
     timeoutTime = 1200 # 20min
     totalContract = 0  # 合约数
@@ -40,10 +40,7 @@ if __name__ == "__main__":
         if os.path.exists(reportFile):
             os.remove(reportFile)
 
-        reportFile = outputPath + "/" + binFile + "_report.txt"
-        oldStdOut, oldStdErr = sys.stdout, sys.stderr
-        fp = open(reportFile, "w")
-        p = subprocess.Popen(cmd, stdout=fp, stderr=fp, shell=True, close_fds=True, preexec_fn=os.setsid)
+        p = subprocess.Popen(cmd, shell=True, close_fds=True, preexec_fn=os.setsid)
 
         returnCode = 0
         start = time.perf_counter()
@@ -55,16 +52,14 @@ if __name__ == "__main__":
                 failList.append(dataDir)
         except Exception as ex:
             print("Timeout: " + cmd)
+
+            # os.killpg(p.pid, signal.SIGKILL)
             os.killpg(os.getpgid(p.pid), signal.SIGKILL)
-            # os.killpg(p.pid, signal.SIGINT)
             returnCode = -1
             timeoutCnt += 1
             timeOutList.append(dataDir)
         end = time.perf_counter()
 
-        fp.close()
-        sys.stdout = oldStdOut
-        sys.stderr = oldStdErr
         processInfo[binFile] = str(returnCode)
         if returnCode == 0:
             sucessFile.append(dataDir)

@@ -164,10 +164,9 @@ class PathGenerator:
                 pushInfo = curTagStack.getTagStackTop()  # [push的值，push的字节数,push指令的地址，push指令所在的block]
                 # 检查一下，两个栈的值相不相等
                 stackTopInfo = curExecutor.getTagStackTop()
-                stackTopInfo = stackTopInfo.__str__()
-                assert stackTopInfo.isdigit(),stackTopInfo  # 应该是一个确定的数
+                assert stackTopInfo is not None  # 应该是一个确定的数
                 assert pushInfo[0] in self.nodes  # 必须是一个block的offset
-                assert int(stackTopInfo) == pushInfo[0]  # 两个执行器的结果应该一致
+                assert stackTopInfo == pushInfo[0]  # 两个执行器的结果应该一致
             curExecutor.execNextOpCode()
             curTagStack.execNextOpCode()
 
