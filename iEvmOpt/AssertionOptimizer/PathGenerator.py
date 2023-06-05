@@ -49,7 +49,7 @@ class PathGenerator:
 
         # 控制搜索深度，增加超时/路径爆炸限制
         sys.setrecursionlimit(3500)  # 设置最大递归深度
-        self.timeoutLimit = 180 # 最大搜索时间，设置为3min
+        self.timeoutLimit = 600 # 最大搜索时间，设置为10min
         self.beginTime = None  # 开始搜索时间
         self.maxPathNum = 400000  # 40w
 

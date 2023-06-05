@@ -1501,7 +1501,7 @@ def strainWorker(cfg: Cfg, pathQueue, pathLock, resQueue, resLock):
     executor = SymbolicExecutor(cfg)
     reachable = False  # 路径是否可达
     isTimeout = False
-    timeoutLimit = 10000  # 10s
+    timeoutLimit = 20000  # 20s
 
     while True:
         # 获取路径
