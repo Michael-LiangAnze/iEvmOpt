@@ -147,5 +147,7 @@ ethersolve1.py
 /Optimized/*
 /*.dot
 /*.svg
-/data
+test2.py
+/contracts1
+/contracts3
 Bytecode

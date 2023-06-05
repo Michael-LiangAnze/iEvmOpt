@@ -1,7 +1,7 @@
 import sys
 
 from AssertionOptimizer.SymbolicExecutor import SymbolicExecutor
-from AssertionOptimizer.TagStacks.TagStackForCfgRepairKit import TagStackForCfgRepairKit
+from AssertionOptimizer.TagStacks.SimplifiedExecutor import SimplifiedExecutor
 from Cfg import *
 from Cfg.EtherSolver import EtherSolver
 

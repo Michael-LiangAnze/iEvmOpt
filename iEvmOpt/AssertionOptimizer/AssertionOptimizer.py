@@ -1533,7 +1533,7 @@ def strainWorker(cfg: Cfg, pathQueue, pathLock, resQueue, resLock):
             executor.setBeginBlock(node)
             while not executor.allInstrsExecuted():  # block还没有执行完
                 executor.execNextOpCode()
-            jumpType = executor.getBlockJumpType()
+            jumpType = cfg.blocks[node].jumpType
             if jumpType == "conditional":
                 # 先判断，是否为确定的跳转地址
                 curNode = nodeList[nodeIndex]
@@ -1554,7 +1554,7 @@ def strainWorker(cfg: Cfg, pathQueue, pathLock, resQueue, resLock):
                     else:
                         assert 0
         if isSolve:
-            s = Solver()
+            s = Solver(ctx=executor.getCtx())
             s.set("timeout", timeoutLimit)
             res = s.check(constrains)
             if res == sat:  # 约束可满足

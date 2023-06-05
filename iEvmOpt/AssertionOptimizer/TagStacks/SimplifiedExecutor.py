@@ -6,12 +6,13 @@ from Utils import Stack
 from Utils.Logger import Logger
 
 
-class TagStackForCfgRepairKit:
+class SimplifiedExecutor:
     """
     为修复边关系打造的版本，区别为：
-    只在确定的值之间做符号执行
-    一旦不确定的值参与了运算，则置为None
-    栈中所有的元素，要么是None，要么是表达式
+    1.只在确定的值之间做符号执行
+    2.一旦None参与了运算，则置为None
+    3.栈中所有的元素，要么是None，要么是数值
+    4.只对地址参与的指令进行了设计，包括op1、op2,其余指令一律将结果置为None
     """
 
     def __init__(self, cfg: Cfg):
@@ -44,10 +45,10 @@ class TagStackForCfgRepairKit:
     def isLastInstr(self):
         return self.PC == self.lastInstrAddrOfBlock
 
-    def getTagStack(self):
+    def getExecutorState(self):
         return self.stack.getStack()
 
-    def setTagStack(self, stackInfo: list):
+    def setExecutorState(self, stackInfo: list):
         self.stack.setStack(stackInfo)
 
     def setBeginBlock(self, curBlockId: int):
@@ -259,281 +260,184 @@ class TagStackForCfgRepairKit:
 
     def __execAdd(self):  # 0x01
         a, b = self.stack.pop(), self.stack.pop()
-        assert not is_bool(a) and not is_bool(b)
-        self.stack.push(simplify(a + b))
+        if a is None or b is None:
+            self.stack.push(None)
+        else:
+            self.stack.push(a+b)
 
     def __execMul(self):  # 0x02
         a, b = self.stack.pop(), self.stack.pop()
-        if is_bool(a):  # a是一个逻辑表达式
-            a = If(a, BitVecVal(1, 256), BitVecVal(0, 256))
-        if is_bool(b):  # b是一个逻辑表达式
-            b = If(b, BitVecVal(1, 256), BitVecVal(0, 256))
-        self.stack.push(simplify(a * b))
+        if a is None or b is None:
+            self.stack.push(None)
+        else:
+            self.stack.push(a * b)
 
     def __execSub(self):  # 0x03
         a, b = self.stack.pop(), self.stack.pop()
-        assert not is_bool(a) and not is_bool(b)
-        self.stack.push(simplify(a - b))
+        if a is None or b is None:
+            self.stack.push(None)
+        else:
+            self.stack.push(a - b)
 
     def __execDiv(self):  # 0x04
         a, b = self.stack.pop(), self.stack.pop()
-        assert not is_bool(a) and not is_bool(b)
-        self.stack.push(simplify(UDiv(a, b)))
+        if a is None or b is None:
+            self.stack.push(None)
+        else:
+            self.stack.push(a / b)
 
     def __execSDiv(self):  # 0x05
-        # 两个例子
-        #     结果为2：
-        #         PUSH32 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF
-        #         PUSH32 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFE
-        #         SDIV
-        #     结果为-2(0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe)：
-        #         PUSH32 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF
-        #         PUSH32 0x0000000000000000000000000000000000000000000000000000000000000002
-        #         SDIV
-        a, b = self.stack.pop(), self.stack.pop()
-        assert not is_bool(a) and not is_bool(b)
-        self.stack.push(simplify(a / b))
+        self.stack.pop()
+        self.stack.pop()
+        self.stack.push(None)
 
     def __execMod(self):  # 0x06
-        a, b = self.stack.pop(), self.stack.pop()
-        assert not is_bool(a) and not is_bool(b)
-        self.stack.push(simplify(If(b == 0, BitVecVal(0, 256), URem(a, b))))
+        self.stack.pop()
+        self.stack.pop()
+        self.stack.push(None)
 
     def __execSMod(self):  # 0x07
-        a, b = self.stack.pop(), self.stack.pop()
-        assert not is_bool(a) and not is_bool(b)
-        self.stack.push(simplify(If(b == 0, BitVecVal(0, 256), SRem(a, b))))
+        self.stack.pop()
+        self.stack.pop()
+        self.stack.push(None)
 
     def __execAddMod(self):  # 0x08
-        a, b, c = self.stack.pop(), self.stack.pop(), self.stack.pop()
-        assert not is_bool(a) and not is_bool(b) and not is_bool(c)  # abc都不能是条件表达式
-        zero = BitVecVal(0, 1)  # a+b可能超出2^256-1，需要先调整为257位的比特向量
-        a = Concat(zero, a)
-        b = Concat(zero, b)
-        c = Concat(zero, c)
-        res = simplify(a + b)  # 先计算出a+b
-        res = simplify(If(c == 0, BitVecVal(0, 257), URem(res, c)))  # 再计算(a+b) % c
-        self.stack.push(simplify(Extract(255, 0, res)))  # 先做截断再push
+        self.stack.pop()
+        self.stack.pop()
+        self.stack.pop()
+        self.stack.push(None)
 
     def __execMulMod(self):  # 0x09
-        a, b, c = self.stack.pop(), self.stack.pop(), self.stack.pop()
-        assert not is_bool(a) and not is_bool(b) and not is_bool(c)  # abc都不能是条件表达式
-        zero = BitVecVal(0, 256)  # a*b可能超出范围，需要先调整为512位的比特向量
-        a = Concat(zero, a)
-        b = Concat(zero, b)
-        c = Concat(zero, c)
-        res = simplify(a * b)  # 先计算出a*b
-        res = simplify(If(c == 0, BitVecVal(0, 512), URem(res, c)))  # 再计算(a*b) % c
-        self.stack.push(simplify(Extract(255, 0, res)))  # 先做截断再push
+        self.stack.pop()
+        self.stack.pop()
+        self.stack.pop()
+        self.stack.push(None)
 
     def __execExp(self):  # 0x0a
-        a, b = self.stack.pop(), self.stack.pop()
-        assert (not is_bool(a)) and (not is_bool(b))
-        if is_bv_value(a) and is_bv_value(b):
-            res = BitVecVal(pow(int(a.__str__()), int(b.__str__())), 256)
-            self.stack.push(res)
-        else:
-            res = BitVec("exp#" + a.__str__() + "#" + b.__str__(), 256)
-            self.stack.push(res)
+        self.stack.pop()
+        self.stack.pop()
+        self.stack.push(None)
 
     def __execSignExtend(self):  # 0x0b
-        a, b = self.stack.pop(), self.stack.pop()
-        assert (not is_bool(a)) and (not is_bool(b))
-        if is_bv_value(a) and is_bv_value(b):  # 两个都是值
-            a = int(a.__str__())
-            if a < 0 or a >= 32:  # 原数字保持不变
-                self.stack.push(b)
-            else:
-                b = int(b.__str__())
-                flag = 1 << (8 * a + 7)
-                sign = flag & b
-                if sign == 0:  # 高位全是0，低位取原数
-                    mask = flag - 1
-                    tmp = BitVecVal(mask & b, 256)
-                    self.stack.push(tmp)
-                else:  # 高位全是1，低位取原数
-                    mask = 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff  # 2 ^ 256 - 1
-                    mask &= flag - 1
-                    mask = ~mask
-                    tmp = BitVecVal(mask | b, 256)
-                    self.stack.push(tmp)
-        else:
-            tmp = BitVec("signextend#" + a.__str__() + "#" + b.__str__(), 256)
-            self.stack.push(tmp)
+        self.stack.pop()
+        self.stack.pop()
+        self.stack.push(None)
 
     def __execLT(self):  # 0x10
-        a, b = self.stack.pop(), self.stack.pop()
-        # 就算a,b是具体的数值，存储的也是一个bool表达式(z3.z3.BoolRef)，而不是基本变量True
-        self.stack.push(simplify(ULT(a, b)))
+        self.stack.pop()
+        self.stack.pop()
+        self.stack.push(None)
 
     def __execGt(self):  # 0x11
-        a, b = self.stack.pop(), self.stack.pop()
-        if is_bool(a):
-            a = If(a, BitVecVal(1, 256), BitVecVal(0, 256))
-        if is_bool(b):
-            b = If(b, BitVecVal(1, 256), BitVecVal(0, 256))
-        self.stack.push(simplify(UGT(a, b)))
+        self.stack.pop()
+        self.stack.pop()
+        self.stack.push(None)
 
     def __execSlt(self):  # 0x12
-        a, b = self.stack.pop(), self.stack.pop()
-        self.stack.push(simplify(a < b))
+        self.stack.pop()
+        self.stack.pop()
+        self.stack.push(None)
 
     def __execSgt(self):  # 0x13
-        a, b = self.stack.pop(), self.stack.pop()
-        self.stack.push(simplify(a > b))
+        self.stack.pop()
+        self.stack.pop()
+        self.stack.push(None)
 
     def __execEq(self):  # 0x14
-        a, b = self.stack.pop(), self.stack.pop()
-        if (is_bool(a) and is_bool(b)) or (is_bv(a) and is_bv(b)):
-            self.stack.push(simplify(a == b))
-        else:
-            if is_bool(a):
-                a = If(a, BitVecVal(1, 256), BitVecVal(0, 256))
-            elif is_bool(b):
-                b = If(b, BitVecVal(1, 256), BitVecVal(0, 256))
-            else:
-                assert 0
-            self.stack.push(simplify(a == b))
+        self.stack.pop()
+        self.stack.pop()
+        self.stack.push(None)
 
     def __execIsZero(self):  # 0x15
-        a = self.stack.pop()
-        if is_bool(a):
-            self.stack.push(simplify(Not(a)))
-        elif is_bv(a):
-            self.stack.push(simplify(a == 0))
-        else:
-            assert 0
+        self.stack.pop()
+        self.stack.push(None)
 
     def __execAnd(self):  # 0x16
         a, b = self.stack.pop(), self.stack.pop()
-        # assert (is_bv(a) and is_bv(b)) or (is_bool(a) and is_bool(b))
-        # if is_bv(a):
-        #     self.stack.push(simplify(a & b))
-        # else:  # bool
-        #     self.stack.push(simplify(And(a, b)))
-        aIsBool, aIsBV = is_bool(a), is_bv(a)
-        bIsBool, bIsBV = is_bool(b), is_bv(b)
-        if aIsBV and bIsBV:
-            self.stack.push(simplify(a & b))
-        elif aIsBool and bIsBool:
-            self.stack.push(simplify(And(a, b)))
-        elif aIsBV and bIsBool:
-            self.stack.push(simplify(a & If(b, BitVecVal(1, 256), BitVecVal(0, 256))))
-        elif aIsBool and bIsBV:
-            self.stack.push(simplify(If(a, BitVecVal(1, 256), BitVecVal(0, 256) & b)))
+        if a is None or b is None:
+            self.stack.push(None)
         else:
-            assert 0
+            self.stack.push(a & b)
 
     def __execOr(self):  # 0x17
         a, b = self.stack.pop(), self.stack.pop()
-        aIsBool, aIsBV = is_bool(a), is_bv(a)
-        bIsBool, bIsBV = is_bool(b), is_bv(b)
-        if aIsBV and bIsBV:
-            self.stack.push(simplify(a | b))
-        elif aIsBool and bIsBool:
-            self.stack.push(simplify(Or(a, b)))
-        elif aIsBV and bIsBool:
-            self.stack.push(simplify(a | If(b, BitVecVal(1, 256), BitVecVal(0, 256))))
-        elif aIsBool and bIsBV:
-            self.stack.push(simplify(If(a, BitVecVal(1, 256), BitVecVal(0, 256) | b)))
+        if a is None or b is None:
+            self.stack.push(None)
         else:
-            assert 0
+            self.stack.push(a | b)
 
     def __execXor(self):  # 0x18
         a, b = self.stack.pop(), self.stack.pop()
-        assert is_bv(a) and is_bv(b)
-        self.stack.push(simplify(a ^ b))
+        if a is None or b is None:
+            self.stack.push(None)
+        else:
+            self.stack.push(a ^ b)
 
     def __execNot(self):  # 0x19
-        a = self.stack.pop()
-        self.stack.push(simplify(~a))
+        self.stack.pop()
+        self.stack.push(None)
 
     def __execByte(self):  # 0x1a
-        a, b = self.stack.pop(), self.stack.pop()
-        assert is_bv(a) and is_bv(b)
-        mask = BitVecVal(0xff, 256)
-        self.stack.push(simplify(mask & (b >> (31 - a) * 8)))
+        self.stack.pop()
+        self.stack.pop()
+        self.stack.push(None)
 
     def __execShl(self):  # 0x1b
         a, b = self.stack.pop(), self.stack.pop()
-        self.stack.push(simplify(b << a))
+        if a is None or b is None:
+            self.stack.push(None)
+        else:
+            self.stack.push(b << a)
 
     def __execShr(self):  # 0x1c
         a, b = self.stack.pop(), self.stack.pop()
-        self.stack.push(simplify(LShR(b, a)))
+        if a is None or b is None:
+            self.stack.push(None)
+        else:
+            self.stack.push(b >> a)
 
     def __execSar(self):  # 0x1d
-        a, b = self.stack.pop(), self.stack.pop()
-        self.stack.push(simplify(b >> a))
+        self.stack.pop()
+        self.stack.pop()
+        self.stack.push(None)
 
     def __execNonOp(self):  # 0x1f 空指令
         pass
 
     def __execSha3(self):  # 0x20
-        # _offset, _size = self.stack.pop(), self.stack.pop()
-        # if _size.__str__().isdigit() and int(_size.__str__()) != 0:  # size是数据，而且不是0
-        #     _size = int(_size.__str__())
-        #     content = BitVecVal(0, 1)
-        #     for i in range(0, _size, 32):
-        #         startAddr = simplify(_offset + i)
-        #         endAddr = min(i + 32, _size)
-        #         startAddr, endAddr = startAddr.__str__(), endAddr.__str__()
-        #         addr = startAddr + "$" + endAddr
-        #         if addr in self.memory.keys():
-        #             content = Concat(content, self.memory[addr])
-        #         else:
-        #             tmp = BitVec("mem_" + addr, 256)
-        #             content = Concat(content, tmp)
-        #     content = simplify(Extract(_size * 8 - 1, 0, content))
-        #     tmp = BitVec(content.__str__(), 256)
-        #     self.stack.push(tmp)
-        # else:  # 对于string类型的keccak操作
-        #     tmp = BitVec("sha3_" + self.sha3Cnt, 256)
-        #     self.stack.push(tmp)
-        #     self.sha3Cnt += 1
-
-        # 有必要搞这个复杂？
-        a, b = self.stack.pop(), self.stack.pop()
-        tmp = BitVec("sha3_" + a.__str__() + "_" + b.__str__(), 256)
-        self.stack.push(tmp)
+        self.stack.pop()
+        self.stack.pop()
+        self.stack.push(None)
 
     def __execAddress(self):  # 0x30
-        tmp = BitVec("ADDRESS", 256)
-        self.stack.push(tmp)
+        self.stack.push(None)
 
     def __execBalance(self):  # 0x31
-        a = self.stack.pop()
-        tmp = BitVec("balance#" + a.__str__(), 256)
-        self.stack.push(tmp)
+        self.stack.pop()
+        self.stack.push(None)
 
     def __execOrigin(self):  # 0x32
-        tmp = BitVec("ORIGIN", 256)
-        self.stack.push(tmp)
+        self.stack.push(None)
 
     def __execCaller(self):  # 0x33
-        tmp = BitVec("CALLER", 256)
-        self.stack.push(tmp)
+        self.stack.push(None)
 
     def __execCallValue(self):  # 0x34
-        tmp = BitVec("CALLVALUE", 256)
-        self.stack.push(tmp)
+        self.stack.push(None)
 
     def __execCallDataLoad(self):  # 0x35
-        a = self.stack.pop()
-        tmp = BitVec("CALLDATALOAD_" + a.__str__(), 256)
-        self.stack.push(tmp)
+        self.stack.pop()
+        self.stack.push(None)
 
     def __execCallDataSize(self):  # 0x36
-        tmp = BitVec("CALLDATASIZE", 256)
-        self.stack.push(tmp)
+        self.stack.push(None)
 
     def __execCallDataCopy(self):  # 0x37
         for i in range(3):
             self.stack.pop()
 
     def __execCodesize(self):  # 0x38
-        tmp = BitVec("CODESIZE", 256)
-        self.stack.push(tmp)
+        self.stack.push(None)
 
     def __execCodecopy(self):  # 0x39
         # 这里不对其进行分析，因为符号执行只在冗余分析的时候做
@@ -542,13 +446,11 @@ class TagStackForCfgRepairKit:
         self.stack.pop()
 
     def __execGasPrice(self):  # 0x3a
-        tmp = BitVec("GASPRICE", 256)
-        self.stack.push(tmp)
+        self.stack.push(None)
 
     def __execExtCodeSize(self):  # 0x3b
-        a = self.stack.pop()
-        tmp = BitVec("EXTCODESIZE_" + a.__str__(), 256)
-        self.stack.push(tmp)
+        self.stack.pop()
+        self.stack.push(None)
 
     def __execExtCodeCopy(self):  # 0x3c
         self.stack.pop()
@@ -557,8 +459,7 @@ class TagStackForCfgRepairKit:
         self.stack.pop()
 
     def __execReturnDataSize(self):  # 0x3d
-        tmp = BitVec("RETURNDATASIZE" , 256)
-        self.stack.push(tmp)
+        self.stack.push(None)
 
     def __execReturnDataCopy(self):  # 0x3e
         self.stack.pop()
@@ -566,55 +467,43 @@ class TagStackForCfgRepairKit:
         self.stack.pop()
 
     def __execExtCodeHash(self):  # 0x3f
-        a = self.stack.pop()
-        tmp = BitVec("CODEHASH_" + a.__str__(), 256)
-        self.stack.push(tmp)
+        self.stack.pop()
+        self.stack.push(None)
 
     def __execBlockHash(self):  # 0x40
-        a = self.stack.pop()
-        tmp = BitVec("BLOCKHASH_" + a.__str__(), 256)
-        self.stack.push(tmp)
+        self.stack.pop()
+        self.stack.push(None)
 
     def __execCoinBase(self):  # 0x41
-        tmp = BitVec("COINBASE", 256)
-        self.stack.push(tmp)
+        self.stack.push(None)
 
     def __execTimeStamp(self):  # 0x42
-        tmp = BitVec("TIMESTAMP", 256)
-        self.stack.push(tmp)
+        self.stack.push(None)
 
     def __execNumber(self):  # 0x43
-        tmp = BitVec("BLOCK_NUMBER", 256)
-        self.stack.push(tmp)
+        self.stack.push(None)
 
     def __execPrevrandao(self):  # 0x44
-        tmp = BitVec("PREVRANDAO", 256)
-        self.stack.push(tmp)
+        self.stack.push(None)
 
     def __execGasLimit(self):  # 0x45
-        tmp = BitVec("GAS_LIMIT", 256)
-        self.stack.push(tmp)
+        self.stack.push(None)
 
     def __execChainId(self):  # 0x46
-        tmp = BitVec("CHAIN_ID", 256)
-        self.stack.push(tmp)
+        self.stack.push(None)
 
     def __execSelfBalance(self):  # 0x47
-        tmp = BitVec("SELF_BALANCE", 256)
-        self.stack.push(tmp)
+        self.stack.push(None)
 
     def __execBaseFee(self):  # 0x48
-        tmp = BitVec("BASE_FEE", 256)
-        self.stack.push(tmp)
+        self.stack.push(None)
 
     def __execPop(self):  # 0x50
         self.stack.pop()
 
     def __execMLoad(self):  # 0x51
-        startAddr = self.stack.pop()
-        endAddr = simplify(startAddr + 32)
-        addr = startAddr.__str__() + '$' + endAddr.__str__()
-        self.stack.push(BitVec("MLOAD_" + addr, 256))
+        self.stack.pop()
+        self.stack.push(None)
 
     def __execMStore(self):  # 0x52
         self.stack.pop()
@@ -626,10 +515,8 @@ class TagStackForCfgRepairKit:
         self.stack.pop()
 
     def __execSLoad(self):  # 0x54
-        addr = self.stack.pop()
-        addr = addr.__str__()
-        tmp = BitVec("SLOAD_" + addr, 256)
-        self.stack.push(tmp)
+        self.stack.pop()
+        self.stack.push(None)
 
     def __execSStore(self):  # 0x55
         self.stack.pop()
@@ -640,24 +527,18 @@ class TagStackForCfgRepairKit:
 
     def __execJumpi(self):  # 0x57
         self.stack.pop()
-        cond = self.stack.pop()
-        if is_bv(cond):
-            self.jumpCond = simplify(cond != 0)
-        else:
-            assert is_bool(cond)
-            self.jumpCond = cond
+        self.stack.pop()
 
     def __execPc(self):  # 0x58
-        self.stack.push(BitVecVal(self.PC, 256))
+        self.stack.push(None)
 
     def __execMSize(self):  # 0x59
-        tmp = BitVec("MSIZE_" + self.mSizeCnt, 256)
-        self.stack.push(tmp)
+        self.stack.push(None)
         self.mSizeCnt += 1
 
     def __execGas(self):  # 0x5a
         self.gasOpcCnt += 1
-        self.stack.push(BitVec("GAS_" + str(self.gasOpcCnt), 256))
+        self.stack.push(None)
 
     def __execJumpDest(self):  # 0x5b
         pass
@@ -669,13 +550,10 @@ class TagStackForCfgRepairKit:
             num <<= 8
             self.PC += 1  # 指向最高位的字节
             num |= self.curBlock.bytecode[self.PC - self.curBlock.offset]  # 低位加上相应的字节
-        # print("push num:{},byte num:{}".format(hex(num), byteNum))
-        num = BitVecVal(num, 256)
         self.stack.push(num)
 
     def __execDup(self, opCode):  # 0x80
         pos = opCode - 0x80
-        # print(pos)
         self.stack.push(self.stack.getItem(self.stack.size() - 1 - pos))
 
     def __execSwap(self, opCode):  # 0x90 <= opCode <= 0x9f
@@ -694,8 +572,7 @@ class TagStackForCfgRepairKit:
         self.stack.pop()
         self.stack.pop()
         self.stack.pop()
-        tmp = BitVec("create_" + str(self.createCnt), 256)
-        self.stack.push(tmp)
+        self.stack.push(None)
         self.createCnt += 1
 
     def __execCall(self):  # 0xf1
@@ -704,10 +581,9 @@ class TagStackForCfgRepairKit:
         self.stack.pop()
         self.stack.pop()
         self.stack.pop()
-        retOffset = self.stack.pop()
-        retSize = self.stack.pop()
-        tmp = Bool("call_" + str(self.callCnt))
-        self.stack.push(tmp)
+        self.stack.pop()
+        self.stack.pop()
+        self.stack.push(None)
         self.callCnt += 1
 
     def __execCallCode(self):  # 0xf2
@@ -716,10 +592,9 @@ class TagStackForCfgRepairKit:
         self.stack.pop()
         self.stack.pop()
         self.stack.pop()
-        retOffset = self.stack.pop()
-        retSize = self.stack.pop()
-        tmp = Bool("call_" + str(self.callCnt))
-        self.stack.push(tmp)
+        self.stack.pop()
+        self.stack.pop()
+        self.stack.push(None)
         self.callCnt += 1
 
     def __execReturn(self):  # 0xf3
@@ -732,10 +607,9 @@ class TagStackForCfgRepairKit:
         self.stack.pop()
         self.stack.pop()
         self.stack.pop()
-        retOffset = self.stack.pop()
-        retSize = self.stack.pop()
-        tmp = Bool("call_" + str(self.callCnt))
-        self.stack.push(tmp)
+        self.stack.pop()
+        self.stack.pop()
+        self.stack.push(None)
         self.callCnt += 1
 
     def __execCreate2(self):  # 0xf5
@@ -743,8 +617,7 @@ class TagStackForCfgRepairKit:
         self.stack.pop()
         self.stack.pop()
         self.stack.pop()
-        tmp = BitVec("create_" + str(self.createCnt), 256)
-        self.stack.push(tmp)
+        self.stack.push(None)
         self.createCnt += 1
 
     def __execStaticCall(self):  # 0xfa
@@ -752,10 +625,9 @@ class TagStackForCfgRepairKit:
         self.stack.pop()
         self.stack.pop()
         self.stack.pop()
-        retOffset = self.stack.pop()
-        retSize = self.stack.pop()
-        tmp = Bool("call_" + str(self.callCnt))
-        self.stack.push(tmp)
+        self.stack.pop()
+        self.stack.pop()
+        self.stack.push(None)
         self.callCnt += 1
 
     def __execRevert(self):  # 0xfd
