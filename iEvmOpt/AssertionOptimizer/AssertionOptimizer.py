@@ -87,6 +87,7 @@ class AssertionOptimizer:
         self.redundantType = {}  # 每个invalid节点的冗余类型，类型包括fullyredundant和partiallyredundant，格式为： invNode: type
         self.fullyRedundantInvNodes = []  # 全部的完全冗余的invalid节点
         self.partiallyRedundantInvNodes = []  # 全部的部分冗余的invalid节点
+        self.abandonedLoopRelatedInvNodes = []  # 放弃优化的路径中包含循环体的invalid节点
         self.abandonedFullyRedundantInvNodes = []  # 放弃优化的完全冗余invalid节点
         self.abandonedPartiallyRedundantInvNodes = []  # 放弃优化的部分冗余invalid节点
         self.nonRedundantInvNodes = []  # 不冗余的invalid节点
@@ -124,8 +125,8 @@ class AssertionOptimizer:
         #                       size push的值，size push的字节数，size push指令的地址， size push指令所在的block，
         #                       codecopy所在的block]]
         self.codeCopyInfo = None
-        # 构造函数重定位需要用到的信息
         self.runtimeDataSegOffset = 0  # 运行时的数据段的移动偏移量，即运行时的函数体总长度变化的偏移量
+        self.modifiedBytecodes = False  # 是否对字节码进行过任何修改？
 
     def optimize(self):
         self.log.info("开始进行字节码分析")
@@ -150,12 +151,12 @@ class AssertionOptimizer:
         self.log.info("开始进行路径搜索")
         self.__searchPaths()
 
-        if self.invalidNodeList.__len__() == 0:
-            self.log.info("没有找到可优化的Assertion，优化结束")
-            return
         self.log.info(
             "路径搜索完毕，一共找到{}个Assertion:{},{}条路径".format(self.invalidNodeList.__len__(), self.invalidNodeList,
                                                       len(self.invalidPaths.keys())))
+        if self.invalidNodeList.__len__() == 0:
+            self.log.info("不存在可优化的Assertion，优化结束")
+            return
 
         # 求解各条路径是否可行
         self.log.info("正在分析路径可达性")
@@ -163,13 +164,15 @@ class AssertionOptimizer:
         self.log.info("可达性分析完毕")
 
         self.log.info(
-            "分析结果：{}个完全冗余{}，{}个部分冗余{}，{}个不冗余{}".format(
+            "分析结果：{}个完全冗余{}，{}个部分冗余{}，{}个不冗余{}，{}个被放弃{}".format(
                 self.fullyRedundantInvNodes.__len__(),
                 self.fullyRedundantInvNodes.__str__(),
                 self.partiallyRedundantInvNodes.__len__(),
                 self.partiallyRedundantInvNodes.__str__(),
                 self.nonRedundantInvNodes.__len__(),
-                self.nonRedundantInvNodes.__str__())
+                self.nonRedundantInvNodes.__str__(),
+                self.abandonedLoopRelatedInvNodes.__len__(),
+                self.abandonedLoopRelatedInvNodes.__str__())
         )
         if self.fullyRedundantInvNodes.__len__() == 0 and self.partiallyRedundantInvNodes.__len__() == 0:
             self.log.info("不存在可优化的Assertion，优化结束")
@@ -193,6 +196,12 @@ class AssertionOptimizer:
             self.log.info("正在对部分冗余的Assertion进行优化")
             self.__optimizePartiallyRedundantAssertion()
             self.log.info("部分冗余Assertion优化完毕")
+
+        # 因为在优化冗余assertion过程中，可能出现有的assertion有函数副作用
+        # 因此，如果没有对字节码进行过修改的话，应该退出程序，而不是输出一个和原文件一模一样的字节码文件
+        if not self.modifiedBytecodes:
+            self.log.info("不存在可优化的Assertion，优化结束")
+            return
 
         # 重新生成运行时的字节码序列
         self.log.info("正在重新生成运行时字节码序列")
@@ -616,10 +625,16 @@ class AssertionOptimizer:
             self.invalidNode2PathIds[invNode].append(pathId)
             self.invalidPaths[pathId].setInvNode(invNode)
 
-        # 第五步，对于一个Invalid节点，检查它的所有路径中，是否存在scc相关的节点
+    def __reachabilityAnalysis(self):
+        """
+        多线程可达性分析：对于一个invalid节点，检查它的所有路径是否可达，并根据这些可达性信息判断冗余类型
+        :return:None
+        """
+
+        # 第一步，对于一个Invalid节点，检查它的所有路径中，是否存在scc相关的节点
         # 若有，则这些路径对应的invalid将不会被分析
+        # 如果去除这些invalid之后，没有可分析的invalid，则直接返回
         removedInvPaths = []
-        removedInvNodes = []
         for invNode in self.invalidNodeList:
             isProcess = True
             for pathId in self.invalidNode2PathIds[invNode]:
@@ -630,18 +645,20 @@ class AssertionOptimizer:
                 if not isProcess:
                     break
             if not isProcess:
-                removedInvNodes.append(invNode)
+                self.abandonedLoopRelatedInvNodes.append(invNode)
                 for pathId in self.invalidNode2PathIds[invNode]:
                     removedInvPaths.append(pathId)
         for pathId in removedInvPaths:
             self.invalidPaths.pop(pathId)
-        for node in removedInvNodes:
+        for node in self.abandonedLoopRelatedInvNodes:
             self.invalidNodeList.remove(node)
             self.invalidNode2PathIds.pop(node)
-        if len(removedInvNodes) > 0:
-            self.log.info("放弃优化路径中包含SCC节点的Assertion:{}".format(removedInvNodes))
+        if len(self.abandonedLoopRelatedInvNodes) != 0:
+            self.log.info("放弃优化路径中包含循环体的Assertion:{}".format(self.abandonedLoopRelatedInvNodes))
+        if len(self.invalidNodeList) == 0:  # 没有可分析的invalid
+            return
 
-        # 第六步，对于每个可优化的invalid节点，将其所有路径根据函数调用链进行划分
+        # 第二步，对于每个可优化的invalid节点，将其所有路径根据函数调用链进行划分
         for invNode in self.invalidNodeList:  # 取出一个invalid节点
             callChain2PathIds = {}  # 记录调用链内所有的点,格式： 调用链 : [pathId1,pathId2]
             for pathId in self.invalidNode2PathIds[invNode]:  # 取出他所有路径的id
@@ -663,63 +680,11 @@ class AssertionOptimizer:
             for callChain, pathIds in callChain2PathIds.items():
                 self.invalidNode2CallChain[invNode].append(pathIds)
 
-    def __reachabilityAnalysis(self):
-        """
-        多线程可达性分析：对于一个invalid节点，检查它的所有路径是否可达，并根据这些可达性信息判断冗余类型
-        :return:None
-        """
-
-        # 第一步，使用多线程对路径进行可达性分析
+        # 第三步，使用多线程对路径进行可达性分析
         self.invNodeReachable = dict(zip(self.invalidNodeList, [False for i in range(self.invalidNodeList.__len__())]))
-        # multiprocessing.set_start_method('spawn')  # win和linux下创建子进程的默认方式不一致，这里强制其为win下的创建方式
-        # manager = multiprocessing.Manager()
-        # pool = Pool()
-        # pathLock, resLock = manager.Lock(), manager.Lock()
-        # pathQueue, resQueue = manager.Queue(), manager.Queue()
-        # # subProcessNum = multiprocessing.cpu_count() - 2  # 创建cpu数量-2的子进程
-        # subProcessNum = 8
-        # self.log.info("启动{}个子进程进行约束求解".format(subProcessNum))
-        #
-        # for i in range(subProcessNum):
-        #     pool.apply_async(strainWorker,
-        #                      args=(i, self.cfg, pathQueue, pathLock, resQueue, resLock))
-        #
-        # # 创建一个线程用来获取数据
-        # collector = threading.Thread(target=self.__resCollector, args=(resQueue, resLock))
-        # collector.start()
-        #
-        # # 使用多线程进行约束求解
-        # for pathId, path in self.invalidPaths.items():  # 取出一条路径
-        #     # 对于路径超时了的invalid，照样将路径放入队列，这些路径已经被设置为了不分析状态，求解进程会直接返回一个timeout = True
-        #     while True:  # 往队列中放入所有的路径
-        #         pathLock.acquire()
-        #         if pathQueue.full():
-        #             pathLock.release()
-        #             time.sleep(0.5)
-        #         else:
-        #             pathQueue.put(path)
-        #             pathLock.release()
-        #             break
-        #
-        # # 等待结果，结果收集完毕之后，发送特殊的路径信息，用以结束子进程
-        # collector.join()
-        # tempPath = Path(-1, [None])
-        # putNum = 0
-        # while putNum < subProcessNum:
-        #     pathLock.acquire()
-        #     if pathQueue.full():
-        #         pathLock.release()
-        #         time.sleep(0.5)
-        #     else:
-        #         pathQueue.put(tempPath)
-        #         putNum += 1
-        #         pathLock.release()
-        # pool.close()
-        # pool.join()
-        # self.log.info("所有约束求解子进程已关闭")
-        multiprocessing.set_start_method('spawn',force=True)  # win和linux下创建子进程的默认方式不一致，这里强制其为win下的创建方式
+        multiprocessing.set_start_method('spawn', force=True)  # win和linux下创建子进程的默认方式不一致，这里强制其为win下的创建方式
         cpuNum = multiprocessing.cpu_count()
-        subProcessNum = cpuNum // 2# 更多的线程，并不是好事，反而会造成cpu拥堵，使得超时变多
+        subProcessNum = cpuNum // 2  # 更多的线程，并不是好事，反而会造成cpu拥堵，使得超时变多
 
         self.pathIds = list(self.invalidPaths.keys())
         self.log.info("启动{}个子进程进行约束求解".format(subProcessNum))
@@ -733,8 +698,8 @@ class AssertionOptimizer:
         for t in threads:
             t.join()
 
-        # 第二步，根据各个函数调用链的可达性，判断每个invalid节点的冗余类型
-        # 对于超时的invalid，它的所有路径被设置为可达的，不会被判断为冗余。详见求解结果收集函数
+        # 第四步，根据各个函数调用链的可达性，判断每个invalid节点的冗余类型
+        # 对于超时的invalid，它的所有路径被设置为可达的，不会被判断为冗余
         for invNode in self.invalidNodeList:
             self.invNodeToRedundantCallChain[invNode] = []
             hasReachable = False  # 一个invalid的路径中是否包含可达的路径
@@ -862,6 +827,7 @@ class AssertionOptimizer:
             if targetAddr is None:
                 self.abandonedFullyRedundantInvNodes.append(invNode)
                 continue  # 放弃当前Assertion的优化
+            self.modifiedBytecodes = True  # 该assertion是可以被优化的，会对字节码产生修改
             if self.outputProcessInfo:  # 需要输出处理信息
                 self.log.processing("找到和节点{}程序状态相同的地址:{}，对应的节点为:{}".format(invNode, targetAddr, targetNode))
 
@@ -945,6 +911,7 @@ class AssertionOptimizer:
                 self.abandonedPartiallyRedundantInvNodes.append(invNode)
                 continue
 
+            self.modifiedBytecodes = True  # 该assertion是可以被优化的，会对字节码产生修改
             assert self.cfg.blocks[targetNode].blockType != "dispatcher"  # 不应该出现在dispatcher中
             if self.outputProcessInfo:  # 需要输出处理信息
                 self.log.processing("找到和节点{}程序状态相同的地址:{}，对应的节点为:{}".format(invNode, targetAddr, targetNode))
@@ -1478,44 +1445,6 @@ class AssertionOptimizer:
             f.write(
                 constructorStr + self.constructorDataSegStr + newFuncBodyStr + self.dataSegStr)
 
-    # def __resCollector(self, resQueue, resLock):
-    #     '''
-    #     多线程收集求解结果
-    #     :param resQueue: 结果队列，用来接收子进程的求解结果
-    #     :param resLock: 结果队列的访问控制锁
-    #     :return:
-    #     '''
-    #     self.log.info("约束收集线程已启动")
-    #     resNum = 0  # 获取到的结果数量
-    #     totalNum = len(self.invalidPaths)
-    #     while resNum < totalNum:
-    #         resLock.acquire()
-    #         # print("收集器获取到结果锁")
-    #         if resQueue.empty():
-    #             # print("结果队列为空，收集器释放结果锁")
-    #             resLock.release()
-    #             time.sleep(0.5)
-    #             continue
-    #         pathId, reachable, isTimeout = resQueue.get()  # 直接用阻塞的方法去获取
-    #         print("收集器获取到结果:{}".format(pathId))
-    #         resLock.release()
-    #
-    #         if isTimeout:
-    #             # 出现了超时，该invalid会被置为不分析状态，它的所有路径都会被置为可达，因此不会被当做冗余
-    #             invNode = self.invalidPaths[pathId].getInvNode()
-    #             if self.checkInvNode[invNode]:  # 还没有设置为不分析
-    #                 self.checkInvNode[invNode] = False
-    #                 for pathId in self.invalidNode2PathIds[invNode]:
-    #                     self.pathReachable[pathId] = True
-    #                     self.invalidPaths[pathId].setUndo()
-    #         else:
-    #             self.pathReachable[pathId] = reachable
-    #         resNum += 1
-    #         if self.outputProcessInfo:  # 需要输出处理信息
-    #             self.log.processing("收集到求解结果:{}/{}".format(resNum, totalNum))
-    #
-    #     self.log.info("约束收集线程已关闭")
-
     def __constrainWorkerThread(self):
         manager = multiprocessing.Manager()
         resQueue = manager.Queue()
@@ -1601,7 +1530,6 @@ def constrainWorkerProcess(cfg: Cfg, path: Path, resQueue):
         s = Solver(ctx=executor.getCtx())
         reachable = s.check(constrains) == sat
     resQueue.put(reachable)
-
 
 # def strainWorker(workerId: int, cfg: Cfg, pathQueue, pathLock, resQueue, resLock):
 #     '''

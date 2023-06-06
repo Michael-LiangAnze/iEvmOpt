@@ -36,13 +36,10 @@ if __name__ == "__main__":
 
         cmd = "python3 ../iEvmOpt/Main.py " + binPath + "/" + binFile + " " + outputPath + " newBin -pd"
         print(time.strftime('%Y-%m-%d %H:%M:%S - : ', time.localtime()) + str(totalContract) + cmd)
-        reportFile = outputPath + "/" + binFile + "_report.json"
-        if os.path.exists(reportFile):
-            os.remove(reportFile)
 
-        reportFile = outputPath + "/" + binFile + "_report.txt"
+        logFile = outputPath + "/" + binFile + "_log.txt"
         oldStdOut, oldStdErr = sys.stdout, sys.stderr
-        fp = open(reportFile, "w")
+        fp = open(logFile, "w")
         p = subprocess.Popen(cmd, stdout=fp, stderr=fp, shell=True, close_fds=True, preexec_fn=os.setsid)
 
         returnCode = 0
@@ -56,7 +53,6 @@ if __name__ == "__main__":
         except Exception as ex:
             print("Timeout: " + cmd)
             os.killpg(os.getpgid(p.pid), signal.SIGKILL)
-            # os.killpg(p.pid, signal.SIGINT)
             returnCode = -1
             timeoutCnt += 1
             timeOutList.append(dataDir)
@@ -65,7 +61,8 @@ if __name__ == "__main__":
         fp.close()
         sys.stdout = oldStdOut
         sys.stderr = oldStdErr
-        processInfo[binFile] = str(returnCode)
+        processInfo["return code"] = str(returnCode)
+        processInfo["time"] = str(int(end - start))
         if returnCode == 0:
             sucessFile.append(dataDir)
             successCnt += 1
@@ -73,24 +70,24 @@ if __name__ == "__main__":
         else:
             print("error occurs!")
 
-    jsonFile = outputPath + "/return_code.json"
-    if os.path.exists(jsonFile):
-        os.remove(jsonFile)
-    with open(jsonFile, "w") as f:
-        json.dump(processInfo, f, indent=2)
+        reportFile = outputPath + "/report.json"
+        if os.path.exists(reportFile):
+            os.remove(reportFile)
+        with open(reportFile, "w") as f:
+            json.dump(processInfo, f, indent=2)
 
-resString = "总合约数：{} 返回正常：{} 返回异常：{} 超时：{} 返回正常合约总用时：{}\n\n返回正常的合约有:\n".format(totalContract, successCnt, failCnt,
-                                                                               timeoutCnt, totalTime)
-for f in sucessFile:
-    resString += f + '\n'
+    resString = "总合约数：{} 返回正常：{} 返回异常：{} 超时：{} 返回正常合约总用时：{}\n\n返回正常的合约有:\n".format(totalContract, successCnt, failCnt,
+                                                                                   timeoutCnt, totalTime)
+    for f in sucessFile:
+        resString += f + '\n'
 
-resString += "\n返回异常的合约有:\n"
-for f in failList:
-    resString += f + '\n'
+    resString += "\n返回异常的合约有:\n"
+    for f in failList:
+        resString += f + '\n'
 
-resString += "\n超时的合约有:\n"
-for f in timeOutList:
-    resString += f + '\n'
-with open(dataPath + "_processinfo.txt", "w") as f:
-    f.write(resString)
-print(resString)
+    resString += "\n超时的合约有:\n"
+    for f in timeOutList:
+        resString += f + '\n'
+    with open(dataPath + "_processinfo.txt", "w") as f:
+        f.write(resString)
+    print(resString)

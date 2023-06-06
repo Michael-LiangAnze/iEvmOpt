@@ -263,7 +263,7 @@ class SimplifiedExecutor:
         if a is None or b is None:
             self.stack.push(None)
         else:
-            self.stack.push(a+b)
+            self.stack.push(a + b)
 
     def __execMul(self):  # 0x02
         a, b = self.stack.pop(), self.stack.pop()
@@ -284,7 +284,10 @@ class SimplifiedExecutor:
         if a is None or b is None:
             self.stack.push(None)
         else:
-            self.stack.push(a / b)
+            if b == 0:  # 不可能出现地址除0的情况
+                self.stack.push(None)
+            else:
+                self.stack.push(a // b)  # 整除
 
     def __execSDiv(self):  # 0x05
         self.stack.pop()
@@ -508,7 +511,6 @@ class SimplifiedExecutor:
     def __execMStore(self):  # 0x52
         self.stack.pop()
         self.stack.pop()
-
 
     def __execMStore8(self):  # 0x53
         self.stack.pop()
