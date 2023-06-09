@@ -51,9 +51,11 @@ class PathGenerator:
 
         # 控制搜索深度，增加超时/路径爆炸限制
         sys.setrecursionlimit(2000)  # 设置最大递归深度
-        self.timeoutLimit = 600  # 最大搜索时间，设置为10min
+        # self.timeoutLimit = 600  # 最大搜索时间，设置为10min
+        self.timeoutLimit = 9999999  # 最大搜索时间
         self.beginTime = None  # 开始搜索时间
-        self.maxPathNum = 400000  # 40w
+        # self.maxPathNum = 400000  # 40w
+        self.maxPathNum = 1000000  # 100w
 
     def genPath(self):
         # dfs寻路
@@ -211,7 +213,7 @@ class PathGenerator:
             # 两条边都走一次
             self.__dfs(targetNode, curTagStack, curReturnAddrStack, curPathRecorder, curExecutor, list(curCallChain))
             self.__dfs(curNode + self.blocks[curNode].length, curTagStack, curReturnAddrStack, curPathRecorder,
-                       curExecutor,list(curCallChain))
+                       curExecutor, list(curCallChain))
         elif self.blocks[curNode].jumpType == "fall":
             targetNode = curNode + self.blocks[curNode].length
             self.__dfs(targetNode, curTagStack, curReturnAddrStack, curPathRecorder, curExecutor, list(curCallChain))
@@ -221,7 +223,6 @@ class PathGenerator:
         # 第五步，消除访问限制并返回父节点
         if self.isLoopRelated[curNode]:
             self.sccVisiting[curCallChainStr][curNode] = False
-
 
     # def __dfs(self, curNode: int, parentTagStack: TagStack, parentReturnAddrStack: Stack, parentPathRecorder: Stack,
     #           curCallChain: list):
@@ -457,10 +458,8 @@ class PathGenerator:
     def getPath(self):
         return self.paths
 
-
     def getJumpEdgeInfo(self):
         return self.jumpEdgeInfo
-
 
     def getCodecopyInfo(self):
         return self.codecopyInfo

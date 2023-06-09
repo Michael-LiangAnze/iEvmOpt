@@ -38,11 +38,11 @@ if __name__ == "__main__":
         print(time.strftime('%Y-%m-%d %H:%M:%S - : ', time.localtime()) + str(totalContract) + cmd)
 
         logFile = outputPath + "/" + binFile + "_log.txt"
-        oldStdOut, oldStdErr = sys.stdout, sys.stderr
         fp = open(logFile, "w")
         p = subprocess.Popen(cmd, stdout=fp, stderr=fp, shell=True, close_fds=True, preexec_fn=os.setsid)
 
         returnCode = 0
+        isTimeout = 0
         start = time.perf_counter()
         try:
             p.wait(timeout=timeoutTime)
@@ -54,15 +54,15 @@ if __name__ == "__main__":
             print("Timeout: " + cmd)
             os.killpg(os.getpgid(p.pid), signal.SIGKILL)
             returnCode = -1
+            isTimeout = 1
             timeoutCnt += 1
             timeOutList.append(dataDir)
         end = time.perf_counter()
 
         fp.close()
-        sys.stdout = oldStdOut
-        sys.stderr = oldStdErr
         processInfo["return code"] = str(returnCode)
         processInfo["time"] = str(int(end - start))
+        processInfo["timeout"] = str(isTimeout)
         if returnCode == 0:
             sucessFile.append(dataDir)
             successCnt += 1
@@ -76,7 +76,7 @@ if __name__ == "__main__":
         with open(reportFile, "w") as f:
             json.dump(processInfo, f, indent=2)
 
-    resString = "总合约数：{} 返回正常：{} 返回异常：{} 超时：{} 返回正常合约总用时：{}\n\n返回正常的合约有:\n".format(totalContract, successCnt, failCnt,
+    resString = "总合约数：{} 运行正常：{} 运行异常：{} 超时：{} 返回正常合约总用时：{}\n\n返回正常的合约有:\n".format(totalContract, successCnt, failCnt,
                                                                                    timeoutCnt, totalTime)
     for f in sucessFile:
         resString += f + '\n'

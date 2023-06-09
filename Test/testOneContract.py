@@ -1,60 +1,92 @@
 import os
 import json
 import shutil
+import signal
 import subprocess
 import sys
 import time
 
-"""
-用ievmopt跑某一个特定合约
-"""
+# 跑选定的测试数据集
 if __name__ == "__main__":
 
-    dataPath = 'D:/Projects/iEvmOpt/testContract1'
-    dataDir = "0x00a7faa82cf9bd88f3643a73974e85d57205fea4"
-    timeoutTime = 360
+    dataPath = 'testContracts'
+    dataDir = "0xf2ff83844ffba41b4ebbf31296f9bb638107364b"
+    dataFileList = os.listdir(dataPath)
+    timeoutTime = 2400 # 40min
+    totalContract = 0  # 合约数
+    successCnt = 0  # 返回0
+    sucessFile = []
+    timeoutCnt = 0  # 超时的
+    timeOutList = []
+    failCnt = 0
+    failList = []
+    totalTime = 0
 
+    totalContract += 1
     processInfo = {}
     binPath = dataPath + '/' + dataDir + '/bin'
-    newBinPath = dataPath + '/' + dataDir + '/optimized'
+    outputPath = dataPath + '/' + dataDir + '/iEvmOptRes'
 
-    if os.path.exists(newBinPath):
-        shutil.rmtree(newBinPath)
-    os.mkdir(newBinPath)
+    if os.path.exists(outputPath):
+        shutil.rmtree(outputPath)
+    os.mkdir(outputPath)
 
-    for f in os.listdir(binPath):
-        cmd = "python iEvmOpt/Main.py " + binPath + "/" + f + " " + newBinPath + "/" + f
-        print(time.strftime('%Y-%m-%d %H:%M:%S - : ', time.localtime()) + cmd)
-        reportFile = dataPath + '/' + dataDir + "/" + f + "_report.json"
-        if os.path.exists(reportFile):
-            os.remove(reportFile)
+    assert len(os.listdir(binPath)) == 1
+    binFile = os.listdir(binPath)[0]
 
-        reportFile = dataPath + '/' + dataDir + "/" + f + "_report.txt"
-        oldStdOut, oldStdErr = sys.stdout, sys.stderr
-        fp = open(reportFile, "w")
-        p = subprocess.Popen(cmd, stdout=fp, stderr=fp)
+    cmd = "python3 ../iEvmOpt/Main.py " + binPath + "/" + binFile + " " + outputPath + " newBin -pd"
+    print(time.strftime('%Y-%m-%d %H:%M:%S - : ', time.localtime()) + str(totalContract) + cmd)
 
-        returnCode = 0
-        try:
-            p.wait(timeout=timeoutTime)
-            returnCode = p.returncode
-        except Exception as ex:
-            print("Timeout: " + cmd)
-            cmd = "taskkill /F /PID " + str(p.pid)
-            os.system(cmd)
-            returnCode = -1
+    logFile = outputPath + "/" + binFile + "_log.txt"
+    fp = open(logFile, "w")
+    p = subprocess.Popen(cmd, stdout=fp, stderr=fp, shell=True, close_fds=True, preexec_fn=os.setsid)
 
+    returnCode = 0
+    isTimeout = 0
+    start = time.perf_counter()
+    try:
+        p.wait(timeout=timeoutTime)
+        returnCode = p.returncode
+        if returnCode != 0:
+            failCnt += 1
+            failList.append(dataDir)
+    except Exception as ex:
+        print("Timeout: " + cmd)
+        os.killpg(os.getpgid(p.pid), signal.SIGKILL)
+        returnCode = -1
+        isTimeout = 1
+        timeoutCnt += 1
+        timeOutList.append(dataDir)
+    end = time.perf_counter()
 
-        fp.close()
-        sys.stdout = oldStdOut
-        sys.stderr = oldStdErr
-        processInfo[f] = str(returnCode)
+    fp.close()
+    processInfo["return code"] = str(returnCode)
+    processInfo["time"] = str(int(end - start))
+    processInfo["timeout"] = str(isTimeout)
+    if returnCode == 0:
+        sucessFile.append(dataDir)
+        successCnt += 1
+        totalTime += end - start
+    else:
+        print("error occurs!")
 
-        jsonFile = dataPath + '/' + dataDir + "/return_code.json"
-        if os.path.exists(jsonFile):
-            os.remove(jsonFile)
-        if os.path.exists(dataPath + '/' + dataDir + "/report.json"):
-            os.remove(dataPath + '/' + dataDir + "/report.json")
-        with open(jsonFile, "w") as f:
-            json.dump(processInfo, f, indent=2)
+    reportFile = outputPath + "/report.json"
+    if os.path.exists(reportFile):
+        os.remove(reportFile)
+    with open(reportFile, "w") as f:
+        json.dump(processInfo, f, indent=2)
 
+    resString = "总合约数：{} 运行正常：{} 运行异常：{} 超时：{} 返回正常合约总用时：{}\n\n返回正常的合约有:\n".format(totalContract, successCnt, failCnt,
+                                                                                   timeoutCnt, totalTime)
+    for f in sucessFile:
+        resString += f + '\n'
+
+    resString += "\n返回异常的合约有:\n"
+    for f in failList:
+        resString += f + '\n'
+
+    resString += "\n超时的合约有:\n"
+    for f in timeOutList:
+        resString += f + '\n'
+
+    print(resString)

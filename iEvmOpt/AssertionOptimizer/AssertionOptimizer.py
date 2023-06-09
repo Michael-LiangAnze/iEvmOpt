@@ -8,7 +8,6 @@ import time
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from threading import Thread
-import eventlet
 from z3 import *
 
 from AssertionOptimizer.Function import Function
@@ -442,7 +441,7 @@ class AssertionOptimizer:
                 continue  # 函数起始节点已经被标记为某个函数？真的有这个情况吗？不确定，但是不影响结果
             funcEnd = None  # 先找出这个函数的可能范围，即从funcBegin开始的，没有被标记为任何函数节点的一个连续序列(不包含exit block)
             for n in self.nodes:  # 已排序
-                if n <= funcBegin:
+                if n < funcBegin:
                     continue
                 elif self.node2FuncId[n] is None and n != self.cfg.exitBlockId:
                     continue
@@ -1531,114 +1530,3 @@ def constrainWorkerProcess(cfg: Cfg, path: Path, resQueue):
         reachable = s.check(constrains) == sat
     resQueue.put(reachable)
 
-# def strainWorker(workerId: int, cfg: Cfg, pathQueue, pathLock, resQueue, resLock):
-#     '''
-#
-#     :param cfg: 控制流程图
-#     :param pathQueue: 路径队列，传递约束路径
-#     :param pathLock: 路径队列锁，一次只能有一个子进程对队列进行访问
-#     :param resQueue: 结果队列，返回结果
-#     :param resLock: 结果队列锁，一次只能有一个结果子进程传递返回结果
-#     :return:
-#     '''
-#     executor = SymbolicExecutor(cfg)
-#     reachable = False  # 路径是否可达
-#     isTimeout = False
-#     timeoutLimit = 20000  # 20s
-#     log = Logger()
-#
-#     while True:
-#         # 获取路径
-#         pathLock.acquire()
-#         # print("求解器：{} 获取到路径锁".format(workerId))
-#         if pathQueue.empty():
-#             pathLock.release()
-#             # print("求解器：{} 获取路径失败，路径队列为空，释放路径锁".format(workerId))
-#             time.sleep(0.5)
-#             continue
-#         path = pathQueue.get()
-#         # print("求解器：{} 获取到路径：{} ".format(workerId,path.getId()))
-#         pathLock.release()
-#
-#         # 获取路径信息
-#         nodeList = path.getPathNodes()
-#         pathId = path.getId()
-#         if pathId == -1:  # 所有路径约束已经求解完毕，可以结束子进程
-#             break
-#         if not path.doCheck():  # 这个路径已经被设置为了不分析，直接返回一个timeout的结果给收集器
-#             resLock.acquire()
-#             # print("正在对路径:{} 进行求解".format(pathId))
-#             resQueue.put([pathId, True, True])
-#             # print("路径:{} 求解完毕".format(pathId))
-#             resLock.release()
-#             continue
-#
-#         # 使用符号执行和求解器进行求解
-#         executor.clearExecutor()
-#         isSolve = True  # 默认是做约束求解的。如果发现路径走到了一个不应该到达的节点，则不做check，相当于是优化了过程
-#         constrains = []  # 路径上的约束
-#         for nodeIndex in range(0, len(nodeList) - 1):  # invalid节点不计入计算
-#             node = nodeList[nodeIndex]  # 取出一个节点
-#             executor.setBeginBlock(node)
-#             while not executor.allInstrsExecuted():  # block还没有执行完
-#                 executor.execNextOpCode()
-#             jumpType = cfg.blocks[node].jumpType
-#             if jumpType == "conditional":
-#                 # 先判断，是否为确定的跳转地址
-#                 curNode = nodeList[nodeIndex]
-#                 nextNode = nodeList[nodeIndex + 1]
-#                 isCertainJumpDest, jumpCond = executor.checkIsCertainJumpDest()
-#                 if isCertainJumpDest:  # 是一个固定的跳转地址
-#                     # 检查预期的跳转地址是否和栈的信息匹配
-#                     expectedTarget = cfg.blocks[curNode].jumpiDest[jumpCond]
-#                     if nextNode != expectedTarget:  # 不匹配，直接置为不可达，后续不做check
-#                         reachable = False
-#                         isSolve = False  # 不对这一条路径使用约束求解了
-#                         break
-#                 else:  # 不是确定的跳转地址
-#                     if nextNode == cfg.blocks[curNode].jumpiDest[True]:
-#                         constrains.append(executor.getJumpCond(True))
-#                     elif nextNode == cfg.blocks[curNode].jumpiDest[False]:
-#                         constrains.append(executor.getJumpCond(False))
-#                     else:
-#                         assert 0
-#         if isSolve:
-#             set_option(timeout=20000)
-#             s = Solver(ctx=executor.getCtx())
-#             s.set("timeout", 20000)
-#             res = s.check(constrains)
-#             #
-#             # signal.signal(signal.SIGALRM, _handle_timeout)
-#             # signal.alarm(20)
-#             # try:
-#             #     res = s.check(constrains)
-#             # except Exception as e:
-#             #     res = unknown
-#             # finally:
-#             #     signal.alarm(0)
-#
-#             # eventlet.monkey_patch()
-#             # try:
-#             #     with eventlet.Timeout(20, True):
-#             #         # log.info("开始对路径：{} 进行求解".format(pathId))
-#             #         res = s.check(constrains)
-#             # except eventlet.timeout.Timeout:
-#             #     res = unknown
-#             # log.info("路径：{} 求解超时".format(pathId))
-#
-#             if res == sat:  # 约束可满足
-#                 reachable = True
-#                 isTimeout = False
-#             elif res == unknown:  # 约束求解超时
-#                 # log.info("路径：{} 求解超时".format(pathId))
-#                 reachable = True
-#                 isTimeout = True
-#             else:  # 约束不可满足
-#                 reachable = False
-#                 isTimeout = False
-#         # print("路径:{} 求解完毕".format(pathId))
-#         # 返回可达性信息
-#         # 格式为：[pathId,是否可达,是否超时]
-#         resLock.acquire()
-#         resQueue.put([pathId, reachable, isTimeout])
-#         resLock.release()
